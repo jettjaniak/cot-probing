@@ -1,6 +1,6 @@
 import random
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable, ClassVar, Optional, cast, final
 
 import numpy as np
