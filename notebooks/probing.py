@@ -21,15 +21,13 @@ data = [
         "correct_answer": "C",
     },
 ]
-import os
-
 # %%
 import os
 
 os.environ["HF_HOME"] = "/workspace/hf_cache/"
 os.environ["HF_DATASETS_CACHE"] = "/workspace/hf_cache/"
 os.environ["TRANSFORMERS_CACHE"] = "/workspace/hf_cache/"
-os.environ["HF_TOKEN"] = "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"
+os.environ["HF_TOKEN"] = "REPLACE_WITH_YOUR_HF_TOKEN"
 
 model_name = "google/gemma-2-9b"
 
@@ -58,9 +56,7 @@ negative_examples = [
 ]
 negative_examples = torch.cat(negative_examples)
 # %%
-from transformer_lens import (
-    ActivationCache,
-)
+from transformer_lens import ActivationCache
 
 # Run model on all examples to get activations
 tokens = torch.cat([positive_examples, negative_examples]).cuda()
