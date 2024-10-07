@@ -104,7 +104,7 @@ def main():
     )
     model_name = args.model_name.replace("/", "--")
     with open(
-        f"results/eval_{model_name}_{args.task_name}_S{args.seed}_N{args.num_samples}.pkl",
+        f"results/eval_{model_name}_{args.task_name}_S{args.seed}_N{num_samples}.pkl",
         "wb",
     ) as f:
         pickle.dump(results, f)
