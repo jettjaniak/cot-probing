@@ -9,5 +9,6 @@
     "editor.codeActionsOnSave": {
         "source.organizeImports": "explicit"
     },
-    "notebook.formatOnSave.enabled": true
+    "notebook.formatOnSave.enabled": true,
+    "terminal.integrated.defaultProfile.linux": "zsh"
 }

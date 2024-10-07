@@ -87,6 +87,7 @@ def load_task(task_name: str, seed: int) -> Task:
                 correct_idx=correct_idx,
             )
         )
+    random.shuffle(questions)
     return Task(
         name=task_name,
         fsp_base=baseline_fsp,
