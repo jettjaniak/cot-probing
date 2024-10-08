@@ -9,7 +9,11 @@ activations_results_path = (
 
 import pickle
 
-from cot_probing.activations import Activations, QuestionActivations
+from cot_probing.activations import (
+    Activations,
+    QuestionActivations,
+    clean_run_with_cache_sigle_batch,
+)
 from cot_probing.typing import *
 
 with open(eval_results_path, "rb") as f:
@@ -41,36 +45,6 @@ import torch
 
 torch.set_grad_enabled(False)
 import tqdm
-
-# %%
-from transformer_lens import ActivationCache
-
-
-def clean_run_with_cache_sigle_batch(
-    model,
-    input_ids: Int[torch.Tensor, " prompt seq"],
-    layers: list[int],
-    locs_to_cache: set[int],
-) -> tuple[
-    Mapping[int, Float[torch.Tensor, " prompt model"]],
-    Float[torch.Tensor, " prompt vocab"],
-]:
-    lm_out = model(
-        input_ids,
-        output_hidden_states=True,
-        output_attentions=False,
-        use_cache=False,
-        labels=None,
-        return_dict=True,
-    )
-    resid_by_layer = [
-        lm_out.hidden_states[layer + 1][0, locs_to_cache] for layer in layers
-    ]
-    acts_tensor = torch.stack(resid_by_layer)
-    print(acts_tensor.shape)
-
-    return acts_tensor
-
 
 layers_to_cache = list(range(model.config.num_hidden_layers))
 activations_by_question: list[QuestionActivations] = []
