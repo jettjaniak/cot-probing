@@ -7,6 +7,9 @@ activations_results_path = (
     "../results/activations_google--gemma-2-2b_snarks_S0_N151.pkl"
 )
 
+
+# %%
+
 import pickle
 
 from cot_probing.activations import (
@@ -16,6 +19,7 @@ from cot_probing.activations import (
 )
 from cot_probing.typing import *
 
+# %%
 with open(eval_results_path, "rb") as f:
     eval_results = pickle.load(f)
 
@@ -35,7 +39,6 @@ import os
 os.environ["HF_HOME"] = "/workspace/hf_cache/"
 os.environ["HF_DATASETS_CACHE"] = "/workspace/hf_cache/"
 os.environ["TRANSFORMERS_CACHE"] = "/workspace/hf_cache/"
-os.environ["HF_TOKEN"] = "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"
 
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -60,7 +63,7 @@ for question in tqdm.tqdm(questions):
         model, tokens, layers_to_cache, locs_to_cache
     )
 
-    activations_by_question.append(QuestionActivations(cache, locs_to_cache))
+    activations_by_question.append(QuestionActivations(cache.cpu(), locs_to_cache))
 # %%
 # Dump cache.cache_dict to disk
 import pickle
