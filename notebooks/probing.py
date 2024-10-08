@@ -53,3 +53,8 @@ negative_activations = negative_activations.mean(0)  # Shape: [n_layers d_model]
 
 diff = positive_activations - negative_activations  # Shape: [n_layers d_model]
 # %%
+# Dump the difference
+diff_direction_results_path = (
+    "../results/diff_direction_google--gemma-2-2b_snarks_S0_N151.pt"
+)
+torch.save(diff, diff_direction_results_path)
