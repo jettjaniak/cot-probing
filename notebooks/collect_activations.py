@@ -35,11 +35,6 @@ print(
 
 # %%
 import os
-
-os.environ["HF_HOME"] = "/workspace/hf_cache/"
-os.environ["HF_DATASETS_CACHE"] = "/workspace/hf_cache/"
-os.environ["TRANSFORMERS_CACHE"] = "/workspace/hf_cache/"
-
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 model = AutoModelForCausalLM.from_pretrained(model_name).cuda()
