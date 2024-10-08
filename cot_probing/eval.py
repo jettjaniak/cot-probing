@@ -50,3 +50,6 @@ class EvalResults:
     seed: int
     num_samples: int
     questions: list[EvalQuestion]
+
+    def __repr__(self):
+        return f"EvalResults(model_name={self.model_name}, task_name={self.task_name}, seed={self.seed}, num_samples={self.num_samples}, {len(self.questions)} questions)"
