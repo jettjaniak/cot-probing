@@ -1,0 +1,3 @@
+[submodule "hf_results"]
+	path = hf_results
+	url = git@hf.co:cot-probing/cot-probing

@@ -39,6 +39,9 @@ class EvalQuestion:
     is_correct: bool
     answer_char: str
 
+    def __repr__(self):
+        return f"EvalQuestion({len(self.tokens)} tokens, locs keys = {list(self.locs.keys())}, is_correct={self.is_correct}, answer_char={self.answer_char})"
+
 
 @dataclass
 class EvalResults:
