@@ -12,7 +12,7 @@ from cot_probing.typing import *
 
 
 def parse_arguments():
-    parser = argparse.ArgumentParser(description="Evaluate model on CoT probing tasks.")
+    parser = argparse.ArgumentParser()
     parser.add_argument(
         "--task-name", "-t", type=str, default="snarks", help="Name of the task"
     )
