@@ -61,7 +61,9 @@ def main():
         )
         print("Choices:")
         for j, choice in enumerate(question.choices):
-            print(f"  ({ascii_uppercase[j]}) `{choice}`")
+            print(
+                f"  ({ascii_uppercase[j]}) `{choice}`{' (correct)' if j == correct_idx else ''}"
+            )
         print()
 
         enc_prompt_base = tokenizer.encode(prompt_base, return_tensors="pt").cuda()

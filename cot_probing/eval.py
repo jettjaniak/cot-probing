@@ -19,7 +19,7 @@ def get_answer_index_tokens_response(
         max_new_tokens=500,
         tokenizer=tokenizer,
         stop_strings=[
-            f"So the best answer is: ({ascii_uppercase[i]}"
+            f"best answer is: ({ascii_uppercase[i]}"
             for i in range(len(question.choices))
         ],
     )
