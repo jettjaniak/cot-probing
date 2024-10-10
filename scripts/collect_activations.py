@@ -53,12 +53,13 @@ if __name__ == "__main__":
             locs_to_cache.update(locs)
         locs_to_cache = sorted(locs_to_cache)
 
-        # hack to add "Let's think step by step"
-        min_loc = locs_to_cache[0]
-        # hack to not add anything else
-        locs_to_cache = list(range(min_loc - 10, min_loc))  # + locs_to_cache
-        # hack to have smaller prompt and faster inference
-        input_ids = torch.tensor(question.tokens[:min_loc])
+        # # hack to add "Let's think step by step"
+        # min_loc = locs_to_cache[0]
+        # # hack to not add anything else
+        # locs_to_cache = list(range(min_loc - 10, min_loc))  # + locs_to_cache
+        # # hack to have smaller prompt and faster inference
+        # input_ids = torch.tensor(question.tokens[:min_loc])
+        input_ids = torch.tensor(question.tokens)
         resid_acts = clean_run_with_cache(
             model, input_ids, layers_to_cache, locs_to_cache
         )
