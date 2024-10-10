@@ -1,7 +1,7 @@
-# Unpickle into EvalResults class
-from cot_probing.eval import EvalQuestion, EvalResults
+from functools import partial
+
+from cot_probing.eval import EvalResults
 from cot_probing.typing import *
-from cot_probing.typing import Float, Int, Mapping, torch
 
 
 @dataclass
@@ -25,27 +25,42 @@ class Activations:
     layers: list[int]
 
 
-# %%
-
-
-def clean_run_with_cache_sigle_batch(
+def clean_run_with_cache(
     model,
-    input_ids: Int[torch.Tensor, " prompt seq"],
+    input_ids: Int[torch.Tensor, " seq"],
     layers: list[int],
     locs_to_cache: list[int],
-) -> Float[torch.Tensor, "layers locs d_model"]:
-    lm_out = model(
-        input_ids,
-        output_hidden_states=True,
-        output_attentions=False,
-        use_cache=False,
-        labels=None,
-        return_dict=True,
+) -> Float[torch.Tensor, "layers locs model"]:
+    resid_acts = torch.empty(
+        (len(layers), len(locs_to_cache), model.config.hidden_size)
     )
-    resid_by_layer = [
-        lm_out.hidden_states[layer + 1][0, locs_to_cache] for layer in layers
-    ]
-    acts_tensor = torch.stack(resid_by_layer)
-    print(acts_tensor.shape)
 
-    return acts_tensor
+    def general_hook_fn(module, input, output, layer):
+        # output is a tuple, not sure what the second element is
+        output = output[0]
+        # 0 is for the batch dimension
+        layer_idx = layers.index(layer)
+        resid_acts[layer_idx] = output[0, locs_to_cache]
+
+    hooks = []
+    for name, module in model.named_modules():
+        if name.startswith("model.layers."):
+            layer = int(name.rsplit(".", 1)[-1])
+            if layer not in layers:
+                continue
+            layer_hook_fn = partial(general_hook_fn, layer=layer)
+            hooks.append(module.register_forward_hook(layer_hook_fn))
+    try:
+        model(
+            input_ids.unsqueeze(0).to(model.device),
+            output_hidden_states=False,
+            output_attentions=False,
+            use_cache=False,
+            labels=None,
+            return_dict=True,
+        )
+    finally:
+        for hook in hooks:
+            hook.remove()
+
+    return resid_acts
