@@ -4,7 +4,7 @@ import argparse
 import pickle
 
 import torch
-import tqdm
+from tqdm.auto import tqdm
 from transformers import AutoModelForCausalLM
 
 from cot_probing.activations import (
@@ -47,7 +47,7 @@ if __name__ == "__main__":
 
     layers_to_cache = list(range(model.config.num_hidden_layers))
     activations_by_question: list[QuestionActivations] = []
-    for question in tqdm.tqdm(questions):
+    for question in tqdm(questions):
         locs_to_cache = set()
         for key, locs in question.locs.items():
             locs_to_cache.update(locs)
