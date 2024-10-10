@@ -45,7 +45,10 @@ def clean_run_with_cache(
     hooks = []
     for name, module in model.named_modules():
         if name.startswith("model.layers."):
-            layer = int(name.rsplit(".", 1)[-1])
+            layer_str = name.rsplit(".", 1)[-1]
+            if not layer_str.isdigit():
+                continue
+            layer = int(layer_str)
             if layer not in layers:
                 continue
             layer_hook_fn = partial(general_hook_fn, layer=layer)
