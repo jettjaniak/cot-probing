@@ -1,7 +1,8 @@
 from functools import partial
 
-from cot_probing.eval import EvalResults
+from cot_probing.eval import EvalQuestion, EvalResults
 from cot_probing.typing import *
+from cot_probing.typing import Float, torch
 
 
 @dataclass
@@ -67,3 +68,42 @@ def clean_run_with_cache(
             hook.remove()
 
     return resid_acts
+
+
+def get_mean_activations_by_common_token(
+    common_tokens: list[int], activations: Activations, q_idxs: list[int]
+) -> dict[int, Float[torch.Tensor, "layer model"]]:
+    q_act_by_q = activations.activations_by_question
+    eval_results = activations.eval_results
+    acts_list_by_tok = {t: [] for t in common_tokens}
+    for q_idx in q_idxs:
+        q_act: QuestionActivations = q_act_by_q[q_idx]
+        eval_q: EvalQuestion = eval_results.questions[q_idx]
+        # in general, the setup was that you can have many keys in
+        # eval_q.locs, and q_act.sorted_locs would contain unique
+        # sorted locations for all the keys in eval_q.locs
+        # but for now we only have "response"
+        assert eval_q.locs["response"] == q_act.sorted_locs
+        # shape: layers, locs, model
+        acts = q_act.activations
+        # all_locs and all_toks correspond to 2nd dim of acts
+        all_locs = q_act.sorted_locs
+        all_toks = torch.tensor([eval_q.tokens[loc] for loc in all_locs])
+        for t in common_tokens:
+            this_tok_mask = all_toks == t
+            if not this_tok_mask.any():
+                continue
+            # append activations from this question/response that
+            # correspond to this token to a list for this token
+            # acts shape: layers, locs, model
+            acts_this_tok = acts[:, this_tok_mask, :]
+            acts_list_by_tok[t].append(acts_this_tok)
+    # concatenate all the activations corresponding to each token
+    # dim 1 is the locs/tokens dimension
+    acts_by_tok = {
+        t: torch.cat(acts_list, dim=1) for t, acts_list in acts_list_by_tok.items()
+    }
+    # check if we get some acts for each token
+    assert all(acts_by_tok[t].numel() > 0 for t in common_tokens)
+    # take the mean over all questions for each token
+    return {t: acts.mean(1) for t, acts in acts_by_tok.items()}

@@ -1,7 +1,8 @@
 import json
-from pprint import pprint
+import random
 
 from cot_probing import DATA_DIR
+from cot_probing.typing import *
 
 
 def load_task_data(task_name: str) -> tuple[str, str, list[dict]]:
@@ -14,3 +15,13 @@ def load_task_data(task_name: str) -> tuple[str, str, list[dict]]:
         question_dicts = json.load(f)["data"]
 
     return baseline_fsp, alla_fsp, question_dicts
+
+
+def get_train_test_split(
+    idxs: list[int], train_frac: float, seed: int
+) -> tuple[list[int], list[int]]:
+    random.seed(seed)
+    shuffled_idxs = idxs.copy()
+    random.shuffle(shuffled_idxs)
+    split_idx = int(len(idxs) * train_frac)
+    return shuffled_idxs[:split_idx], shuffled_idxs[split_idx:]

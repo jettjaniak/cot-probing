@@ -1,3 +1,4 @@
+from collections import Counter
 from string import ascii_uppercase
 
 import torch
@@ -53,3 +54,41 @@ class EvalResults:
 
     def __repr__(self):
         return f"EvalResults(model_name={self.model_name}, task_name={self.task_name}, seed={self.seed}, num_samples={self.num_samples}, {len(self.questions)} questions)"
+
+
+def get_common_tokens(
+    eval_questions: list[EvalQuestion], threshold: float = 0.2
+) -> list[int]:
+    correct_counter = Counter()
+    incorrect_counter = Counter()
+    n_correct = 0
+    n_incorrect = 0
+
+    for q in eval_questions:
+        locs = q.locs["response"]
+        tokens = q.tokens
+        response_tokens = [tokens[loc] for loc in locs]
+
+        if q.is_correct:
+            correct_counter.update(response_tokens)
+            n_correct += 1
+        else:
+            incorrect_counter.update(response_tokens)
+            n_incorrect += 1
+
+    all_tokens = set(correct_counter.keys()) | set(incorrect_counter.keys())
+
+    return [
+        t
+        for t in all_tokens
+        if (correct_counter[t] > threshold * n_correct)
+        and (incorrect_counter[t] > threshold * n_incorrect)
+    ]
+
+
+def get_correct_incorrect_idxs(
+    eval_questions: list[EvalQuestion],
+) -> tuple[list[int], list[int]]:
+    correct_idxs = [i for i, q in enumerate(eval_questions) if q.is_correct]
+    incorrect_idxs = [i for i, q in enumerate(eval_questions) if not q.is_correct]
+    return correct_idxs, incorrect_idxs
