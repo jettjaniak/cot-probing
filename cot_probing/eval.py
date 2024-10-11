@@ -15,7 +15,7 @@ def get_answer_index_tokens_response(
     question: Question,
 ) -> tuple[int, list[int], str]:
     prompt_len = len(input_ids[0])
-    response = model.generate(
+    model_output = model.generate(
         input_ids,
         max_new_tokens=500,
         tokenizer=tokenizer,
@@ -24,12 +24,18 @@ def get_answer_index_tokens_response(
             for i in range(len(question.choices))
         ],
     )
-    decoded_response = tokenizer.decode(response[0][prompt_len:])
+
+    #  model output includes the prompt, so we need to remove it
+    response = model_output[0][prompt_len:]
+
+    # Decode reponse and parse the model's answer
+    decoded_response = tokenizer.decode(response)
     answer_char = decoded_response[-1]
     if answer_char in ascii_uppercase:
         answer_idx = ascii_uppercase.index(answer_char)
     else:
         answer_idx = -1
+
     return answer_idx, response[0].tolist(), decoded_response
 
 

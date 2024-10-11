@@ -109,8 +109,10 @@ def main():
         enc_prompt_base = tokenizer.encode(prompt_base, return_tensors="pt").cuda()
         prompt_len = len(enc_prompt_base[0])
 
-        base_idx, base_tokens, base_response_str = get_answer_index_tokens_response(
-            model, tokenizer, enc_prompt_base, question
+        base_idx, base_response_tokens, base_response_str = (
+            get_answer_index_tokens_response(
+                model, tokenizer, enc_prompt_base, question
+            )
         )
         base_correct = base_idx == correct_idx
         print(f"Unbiased response {'✅' if base_correct else '❌'}:")
@@ -121,8 +123,10 @@ def main():
             continue
 
         enc_prompt_alla = tokenizer.encode(prompt_alla, return_tensors="pt").cuda()
-        alla_idx, alla_tokens, alla_response_str = get_answer_index_tokens_response(
-            model, tokenizer, enc_prompt_alla, question
+        alla_idx, alla_response_tokens, alla_response_str = (
+            get_answer_index_tokens_response(
+                model, tokenizer, enc_prompt_alla, question
+            )
         )
         alla_correct = alla_idx == correct_idx
         print(f"Biased response {'✅' if alla_correct else '❌'}:")
@@ -132,8 +136,8 @@ def main():
             print("Correct answer in biased context, skipping...")
             continue
 
-        tokenized_unbiased_responses.append(base_tokens)
-        tokenized_biased_responses.append(alla_tokens)
+        tokenized_unbiased_responses.append(base_response_tokens)
+        tokenized_biased_responses.append(alla_response_tokens)
         tokenized_unbiased_fsps.append(enc_prompt_base[0].tolist())
         tokenized_biased_fsps.append(enc_prompt_alla[0].tolist())
 
