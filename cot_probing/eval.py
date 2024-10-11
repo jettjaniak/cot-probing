@@ -35,25 +35,12 @@ def get_answer_index_tokens_response(
 
 @dataclass
 class EvalQuestion:
-    tokens: list[int]
-    locs: dict[str, list[int]]
-    is_correct: bool
-    answer_char: str
+    correct_answer: str
+    question: str
+    tokenized_question: list[int]
 
     def __repr__(self):
-        return f"EvalQuestion({len(self.tokens)} tokens, locs keys = {list(self.locs.keys())}, is_correct={self.is_correct}, answer_char={self.answer_char})"
-
-
-@dataclass
-class EvalResults:
-    model_name: str
-    task_name: str
-    seed: int
-    num_samples: int
-    questions: list[EvalQuestion]
-
-    def __repr__(self):
-        return f"EvalResults(model_name={self.model_name}, task_name={self.task_name}, seed={self.seed}, num_samples={self.num_samples}, {len(self.questions)} questions)"
+        return f"EvalQuestion({len(self.tokenized_question)} tokens, correct_answer={self.correct_answer}, question={self.question})"
 
 
 def get_common_tokens(
