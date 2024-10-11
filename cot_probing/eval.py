@@ -36,7 +36,7 @@ def get_answer_index_tokens_response(
     else:
         answer_idx = -1
 
-    return answer_idx, response[0].tolist(), decoded_response
+    return answer_idx, response.tolist(), decoded_response
 
 
 @dataclass
