@@ -146,7 +146,7 @@ def main():
                 correct_answer=ascii_uppercase[correct_idx],
                 question=question.question_with_choices,
                 tokenized_question=tokenizer.encode(
-                    question.question, add_special_tokens=False
+                    question.question_with_choices, add_special_tokens=False
                 ),
             )
         )
