@@ -144,7 +144,7 @@ def main():
         eval_questions.append(
             EvalQuestion(
                 correct_answer=ascii_uppercase[correct_idx],
-                question=question.question,
+                question=question.question_with_choices,
                 tokenized_question=tokenizer.encode(
                     question.question, add_special_tokens=False
                 ),
