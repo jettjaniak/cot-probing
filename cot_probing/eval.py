@@ -49,6 +49,18 @@ class EvalQuestion:
         return f"EvalQuestion({len(self.tokenized_question)} tokens, correct_answer={self.correct_answer}, question={self.question})"
 
 
+@dataclass
+class EvalResults:
+    model_name: str
+    task_name: str
+    seed: int
+    num_samples: int
+    questions: list[EvalQuestion]
+
+    def __repr__(self):
+        return f"EvalResults(model_name={self.model_name}, task_name={self.task_name}, seed={self.seed}, num_samples={self.num_samples}, {len(self.questions)} questions)"
+
+
 def get_common_tokens(
     eval_questions: list[EvalQuestion], threshold: float = 0.2
 ) -> list[int]:
