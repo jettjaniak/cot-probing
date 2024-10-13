@@ -9,15 +9,19 @@ import torch
 from tqdm.auto import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from cot_probing.activations import ActivationsInLayer, clean_run_with_cache
+from cot_probing.activations import clean_run_with_cache
 from cot_probing.eval import EvalQuestion
 from cot_probing.task import INSTRUCTION_STR
 from cot_probing.typing import *
 
 LocTypeToCache = Literal["resp", "instr", "quest", "fsp"]
+ActivationsInLayer = Float[torch.Tensor, "pos d_model"]
 
 
 def parse_arguments():
+    # Example usage:
+    # python scripts/collect_activations.py --eval-questions /workspace/cot-probing-hf/google--gemma-2-2b/movie_recommendation/bias-always-A_seed-0_total-10/eval_questions.pkl
+
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--eval-questions",

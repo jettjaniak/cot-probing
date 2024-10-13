@@ -13,6 +13,9 @@ from cot_probing.typing import *
 
 
 def parse_arguments():
+    # Example usage:
+    # python scripts/collect_questions.py --task-name movie_recommendation --model-name google/gemma-2-2b --output-folder /workspace/cot-probing-hf --num-samples 10
+
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--task-name", "-t", type=str, default="snarks", help="Name of the task"
