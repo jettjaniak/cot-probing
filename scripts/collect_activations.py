@@ -125,7 +125,7 @@ def process_questions(
 
     # Dump to disk
     for layer, activations in activations_by_layer.items():
-        acts_path = os.path.join(acts_folder_path, f"L{layer}.pkl")
+        acts_path = os.path.join(acts_folder_path, f"L{layer:02}.pkl")
         with open(acts_path, "wb") as f:
             pickle.dump(activations, f)
 
