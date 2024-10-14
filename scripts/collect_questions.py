@@ -84,8 +84,8 @@ def main():
     tokenized_biased_responses = []
     eval_questions = []
     for i in range(num_samples):
-        prompt_base = task.prompts_base[i]
-        prompt_alla = task.prompts_alla[i]
+        prompt_base = task.prompts_unbiased[i]
+        prompt_alla = task.prompts_biased[i]
         question = task.questions[i]
         correct_idx = question.correct_idx
         # get rid of the warnings early
