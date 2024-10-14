@@ -58,7 +58,6 @@ def main():
     num_samples = min(args.num_samples, len(task.questions))
 
     model = AutoModelForCausalLM.from_pretrained(args.model_name).cuda()
-    model.eval()
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
 
     # Create directory for model
@@ -71,7 +70,7 @@ def main():
     os.makedirs(task_folder_path, exist_ok=True)
 
     # Create directory for question collection details
-    bias_type = "always-A"
+    bias_type = "A"
     details_folder_name = f"bias-{bias_type}_seed-{args.seed}_total-{num_samples}"
     details_folder_path = os.path.join(task_folder_path, details_folder_name)
     os.makedirs(details_folder_path, exist_ok=True)
