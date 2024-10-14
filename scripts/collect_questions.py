@@ -63,17 +63,14 @@ def main():
     # Create directory for model
     model_folder_name = args.model_name.replace("/", "--")
     model_folder_path = os.path.join(args.output_folder, model_folder_name)
-    os.makedirs(model_folder_path, exist_ok=True)
 
     # Create directory for task
     task_folder_path = os.path.join(model_folder_path, args.task_name)
-    os.makedirs(task_folder_path, exist_ok=True)
 
     # Create directory for question collection details
     bias_type = "A"
     details_folder_name = f"bias-{bias_type}_seed-{args.seed}_total-{num_samples}"
     details_folder_path = os.path.join(task_folder_path, details_folder_name)
-    os.makedirs(details_folder_path, exist_ok=True)
 
     # Create directory for biased context
     biased_context_folder_path = os.path.join(details_folder_path, "biased_context")
