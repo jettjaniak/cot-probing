@@ -14,7 +14,6 @@ from cot_probing.eval import EvalQuestion
 from cot_probing.task import INSTRUCTION_STR
 from cot_probing.typing import *
 
-LocTypeToCache = Literal["resp", "instr", "quest", "fsp"]
 ActivationsInLayer = Float[torch.Tensor, "pos d_model"]
 
 
@@ -39,7 +38,6 @@ def process_questions(
     model: AutoModelForCausalLM,
     tokenizer: AutoTokenizer,
     eval_questions: list[EvalQuestion],
-    loc_types_to_cache: set[LocTypeToCache] = {"resp"},
 ):
     if biased:
         output_folder = os.path.join(output_folder, "biased_context")
@@ -57,7 +55,10 @@ def process_questions(
         tokenized_responses = pickle.load(f)
 
     layers_to_cache = list(range(model.config.num_hidden_layers))
-    activations_by_layer: dict[int, list[ActivationsInLayer]] = {
+    q_and_instr_activations_by_layer: dict[int, list[ActivationsInLayer]] = {
+        layer: [] for layer in layers_to_cache
+    }
+    resp_activations_by_layer: dict[int, list[ActivationsInLayer]] = {
         layer: [] for layer in layers_to_cache
     }
 
@@ -82,49 +83,48 @@ def process_questions(
         )
 
         locs_to_cache = []
-        for loc_type in loc_types_to_cache:
-            if loc_type == "resp":
-                locs_to_cache.extend(
-                    range(
-                        len(tokenized_fsp)
-                        + len(tokenized_question)
-                        + len(tokenized_instruction),
-                        len(input_ids),
-                    )
-                )
-            elif loc_type == "instr":
-                locs_to_cache.extend(
-                    range(
-                        len(tokenized_fsp) + len(tokenized_question),
-                        len(tokenized_fsp)
-                        + len(tokenized_question)
-                        + len(tokenized_instruction),
-                    )
-                )
-            elif loc_type == "quest":
-                locs_to_cache.extend(
-                    range(
-                        len(tokenized_fsp), len(tokenized_fsp) + len(tokenized_question)
-                    )
-                )
-            elif loc_type == "fsp":
-                locs_to_cache.extend(range(len(tokenized_fsp)))
+
+        # We cache activations for question+instruction
+        q_instr_locs = range(
+            len(tokenized_fsp) + len(tokenized_question),
+            len(tokenized_fsp) + len(tokenized_question) + len(tokenized_instruction),
+        )
+        locs_to_cache.extend(q_instr_locs)
+
+        # and for response
+        resp_locs = range(
+            len(tokenized_fsp) + len(tokenized_question) + len(tokenized_instruction),
+            len(input_ids),
+        )
+        locs_to_cache.extend(resp_locs)
 
         resid_acts = clean_run_with_cache(
             model, input_ids, layers_to_cache, locs_to_cache
         )
 
         for layer_idx, layer in enumerate(layers_to_cache):
-            activations_by_layer[layer].append(resid_acts[layer_idx].cpu())
+            resid_acts_layer = resid_acts[layer_idx].cpu()
+            q_instr_acts_layer = resid_acts_layer[: len(q_instr_locs)]
+            resp_acts_layer = resid_acts_layer[len(q_instr_locs) :]
 
-    # Create dir for activations
-    acts_type = "+".join(list(loc_types_to_cache))
-    acts_name = f"acts_{acts_type}"
+            q_and_instr_activations_by_layer[layer].append(q_instr_acts_layer)
+            resp_activations_by_layer[layer].append(resp_acts_layer)
+
+    # Dump activations to disk
+    acts_name = f"acts_q_instr"
     acts_folder_path = os.path.join(output_folder, acts_name)
     os.makedirs(acts_folder_path, exist_ok=True)
 
-    # Dump to disk
-    for layer, activations in activations_by_layer.items():
+    for layer, activations in q_and_instr_activations_by_layer.items():
+        acts_path = os.path.join(acts_folder_path, f"L{layer:02}.pkl")
+        with open(acts_path, "wb") as f:
+            pickle.dump(activations, f)
+
+    acts_name = f"acts_resp"
+    acts_folder_path = os.path.join(output_folder, acts_name)
+    os.makedirs(acts_folder_path, exist_ok=True)
+
+    for layer, activations in resp_activations_by_layer.items():
         acts_path = os.path.join(acts_folder_path, f"L{layer:02}.pkl")
         with open(acts_path, "wb") as f:
             pickle.dump(activations, f)
