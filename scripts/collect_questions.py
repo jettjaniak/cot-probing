@@ -131,9 +131,6 @@ def main():
         print(f"Biased response {'✅' if alla_correct else '❌'}:")
         print(f"`{alla_response_str}`")
         print()
-        if alla_correct:
-            print("Correct answer in biased context, skipping...")
-            continue
 
         tokenized_unbiased_responses.append(base_response_tokens)
         tokenized_biased_responses.append(alla_response_tokens)
