@@ -82,8 +82,6 @@ def main():
 
     tokenized_unbiased_responses = []
     tokenized_biased_responses = []
-    tokenized_unbiased_fsps = []
-    tokenized_biased_fsps = []
     eval_questions = []
     for i in range(num_samples):
         prompt_base = task.prompts_base[i]
@@ -134,8 +132,6 @@ def main():
 
         tokenized_unbiased_responses.append(base_response_tokens)
         tokenized_biased_responses.append(alla_response_tokens)
-        tokenized_unbiased_fsps.append(enc_prompt_base[0].tolist())
-        tokenized_biased_fsps.append(enc_prompt_alla[0].tolist())
 
         eval_questions.append(
             EvalQuestion(
@@ -158,14 +154,14 @@ def main():
         pickle.dump(tokenized_unbiased_responses, f)
 
     # Dump tokenized FSP
+    tokenized_unbiased_fsp = tokenizer.encode(task.fsp_base)
+    tokenized_biased_fsp = tokenizer.encode(task.fsp_alla)
+    with open(os.path.join(biased_context_folder_path, "tokenized_fsp.pkl"), "wb") as f:
+        pickle.dump(tokenized_biased_fsp, f)
     with open(
-        os.path.join(biased_context_folder_path, "tokenized_fsps.pkl"), "wb"
+        os.path.join(unbiased_context_folder_path, "tokenized_fsp.pkl"), "wb"
     ) as f:
-        pickle.dump(tokenized_biased_fsps, f)
-    with open(
-        os.path.join(unbiased_context_folder_path, "tokenized_fsps.pkl"), "wb"
-    ) as f:
-        pickle.dump(tokenized_unbiased_fsps, f)
+        pickle.dump(tokenized_unbiased_fsp, f)
 
     # Dump eval questions
     with open(os.path.join(details_folder_path, "eval_questions.pkl"), "wb") as f:
