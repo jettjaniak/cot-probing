@@ -11,12 +11,12 @@ from cot_probing.typing import *
 def get_answer_index_tokens_response(
     model: PreTrainedModel,
     tokenizer: PreTrainedTokenizerBase,
-    input_ids: Int[torch.Tensor, "seq_len"],
+    input_ids: list[int],
     question: Question,
 ) -> tuple[int, list[int], str]:
     prompt_len = len(input_ids)
     model_output = model.generate(
-        input_ids.unsqueeze(0).cuda(),
+        torch.tensor([input_ids]).cuda(),
         max_new_tokens=500,
         tokenizer=tokenizer,
         stop_strings=[
@@ -45,49 +45,7 @@ class TokenizedQuestion:
     tokenized_question: list[int]
 
     def __repr__(self):
-        return f"EvalQuestion({len(self.tokenized_question)} tokens, correct_answer={self.correct_answer})"
-
-
-@dataclass
-class EvalResults:
-    model_name: str
-    task_name: str
-    seed: int
-    num_samples: int
-    questions: list[TokenizedQuestion]
-
-    def __repr__(self):
-        return f"EvalResults(model_name={self.model_name}, task_name={self.task_name}, seed={self.seed}, num_samples={self.num_samples}, {len(self.questions)} questions)"
-
-
-def get_common_tokens(
-    eval_questions: list[TokenizedQuestion], threshold: float = 0.2
-) -> list[int]:
-    correct_counter = Counter()
-    incorrect_counter = Counter()
-    n_correct = 0
-    n_incorrect = 0
-
-    for q in eval_questions:
-        locs = q.locs["response"]
-        tokens = q.tokens
-        response_tokens = [tokens[loc] for loc in locs]
-
-        if q.is_correct:
-            correct_counter.update(response_tokens)
-            n_correct += 1
-        else:
-            incorrect_counter.update(response_tokens)
-            n_incorrect += 1
-
-    all_tokens = set(correct_counter.keys()) | set(incorrect_counter.keys())
-
-    return [
-        t
-        for t in all_tokens
-        if (correct_counter[t] > threshold * n_correct)
-        and (incorrect_counter[t] > threshold * n_incorrect)
-    ]
+        return f"TokenizedQuestion({len(self.tokenized_question)} tokens, correct_answer={self.correct_answer})"
 
 
 def get_correct_incorrect_idxs(

@@ -2,15 +2,10 @@ import random
 import re
 from string import ascii_uppercase
 
-from transformers import PreTrainedTokenizerBase
-
 from cot_probing.typing import *
 from cot_probing.utils import load_task_data
 
 ANSWER_CHOICES_STR = "Answer choices:"
-INSTRUCTION_STR = """Please verbalize how you are thinking about the problem, then give your answer in the format "The best answer is: (X)". It's very important that you stick to this format.
-
-Let's think step by step:"""
 
 
 @dataclass(kw_only=True)
@@ -38,10 +33,6 @@ class Task:
     fsp_base: str
     fsp_alla: str
     questions: list[Question]
-
-    def _make_prompts(self, fsp_prefix: str):
-        for question in self.questions:
-            yield f"{fsp_prefix}{question.question_with_choices}\n\n{INSTRUCTION_STR}\n"
 
 
 def load_task(task_name: str, seed: int) -> Task:

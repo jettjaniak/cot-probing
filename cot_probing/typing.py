@@ -7,3 +7,4 @@ import numpy as np
 import scipy
 import torch
 from jaxtyping import Float, Int
+from transformers import PreTrainedModel, PreTrainedTokenizerBase
