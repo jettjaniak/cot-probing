@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import argparse
-import os
 import pickle
+from pathlib import Path
 from string import ascii_uppercase
 
 import torch
@@ -48,12 +48,6 @@ def parse_arguments():
 def main():
     args = parse_arguments()
 
-    # Check if output folder was provided
-    if args.output_folder is None:
-        raise ValueError(
-            "Please provide an output folder with the flag --output-folder or -o"
-        )
-
     task = load_task(args.task_name, seed=args.seed)
     num_samples = min(args.num_samples, len(task.questions))
 
@@ -62,23 +56,23 @@ def main():
 
     # Create directory for model
     model_folder_name = args.model_name.replace("/", "--")
-    model_folder_path = os.path.join(args.output_folder, model_folder_name)
+    model_folder_path = Path(args.output_folder) / model_folder_name
 
     # Create directory for task
-    task_folder_path = os.path.join(model_folder_path, args.task_name)
+    task_folder_path = model_folder_path / args.task_name
 
     # Create directory for question collection details
     bias_type = "A"
     details_folder_name = f"bias-{bias_type}_seed-{args.seed}_total-{num_samples}"
-    details_folder_path = os.path.join(task_folder_path, details_folder_name)
+    details_folder_path = task_folder_path / details_folder_name
 
     # Create directory for biased context
-    biased_context_folder_path = os.path.join(details_folder_path, "biased_context")
-    os.makedirs(biased_context_folder_path, exist_ok=True)
+    biased_context_folder_path = details_folder_path / "biased_context"
+    biased_context_folder_path.mkdir(parents=True, exist_ok=True)
 
     # Create directory for unbiased context
-    unbiased_context_folder_path = os.path.join(details_folder_path, "unbiased_context")
-    os.makedirs(unbiased_context_folder_path, exist_ok=True)
+    unbiased_context_folder_path = details_folder_path / "unbiased_context"
+    unbiased_context_folder_path.mkdir(parents=True, exist_ok=True)
 
     tokenized_unbiased_fsp = tokenizer.encode(task.fsp_base, return_tensors="pt")[0]
     tokenized_biased_fsp = tokenizer.encode(task.fsp_alla, return_tensors="pt")[0]
@@ -166,25 +160,19 @@ def main():
         )
 
     # Dump tokenized responses
-    with open(
-        os.path.join(biased_context_folder_path, "tokenized_responses.pkl"), "wb"
-    ) as f:
+    with open(biased_context_folder_path / "tokenized_responses.pkl", "wb") as f:
         pickle.dump(tokenized_biased_responses, f)
-    with open(
-        os.path.join(unbiased_context_folder_path, "tokenized_responses.pkl"), "wb"
-    ) as f:
+    with open(unbiased_context_folder_path / "tokenized_responses.pkl", "wb") as f:
         pickle.dump(tokenized_unbiased_responses, f)
 
     # Dump tokenized FSP
-    with open(os.path.join(biased_context_folder_path, "tokenized_fsp.pkl"), "wb") as f:
+    with open(biased_context_folder_path / "tokenized_fsp.pkl", "wb") as f:
         pickle.dump(tokenized_biased_fsp, f)
-    with open(
-        os.path.join(unbiased_context_folder_path, "tokenized_fsp.pkl"), "wb"
-    ) as f:
+    with open(unbiased_context_folder_path / "tokenized_fsp.pkl", "wb") as f:
         pickle.dump(tokenized_unbiased_fsp, f)
 
     # Dump eval questions
-    with open(os.path.join(details_folder_path, "eval_questions.pkl"), "wb") as f:
+    with open(details_folder_path / "eval_questions.pkl", "wb") as f:
         pickle.dump(eval_questions, f)
 
 

@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
-
 import argparse
-import os
 import pickle
-from typing import Literal
+from pathlib import Path
 
 import torch
 from tqdm.auto import tqdm
@@ -14,43 +12,41 @@ from cot_probing.eval import TokenizedQuestion
 from cot_probing.task import INSTRUCTION_STR
 from cot_probing.typing import *
 
-ActivationsInLayer = Float[torch.Tensor, "pos d_model"]
+ActivationsInLayer = Float[torch.Tensor, " pos d_model"]
 
 
 def parse_arguments():
     # Example usage:
-    # python scripts/collect_activations.py --eval-questions /workspace/cot-probing-hf/google--gemma-2-2b/movie_recommendation/bias-A_seed-0_total-10/eval_questions.pkl
+    # python scripts/collect_activations.py /workspace/cot-probing-hf/google--gemma-2-2b/movie_recommendation/bias-A_seed-0_total-10/eval_questions.pkl
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--eval-questions",
-        "-f",
+        "eval_questions",
         type=str,
-        default=None,
-        help="Absolute path to eval_questions.pkl file",
+        help="path to eval_questions.pkl file",
     )
     return parser.parse_args()
 
 
 def process_questions(
-    output_folder: str,
+    output_folder: Path,
     biased: bool,
     model: AutoModelForCausalLM,
     tokenizer: AutoTokenizer,
     eval_questions: list[TokenizedQuestion],
 ):
     if biased:
-        output_folder = os.path.join(output_folder, "biased_context")
+        output_folder = output_folder / "biased_context"
     else:
-        output_folder = os.path.join(output_folder, "unbiased_context")
+        output_folder = output_folder / "unbiased_context"
 
     # Load few-shot prompts
-    fsp_path = os.path.join(output_folder, "tokenized_fsp.pkl")
+    fsp_path = output_folder / "tokenized_fsp.pkl"
     with open(fsp_path, "rb") as f:
         tokenized_fsp = pickle.load(f)
 
     # Load tokenized responses
-    tokenized_responses_path = os.path.join(output_folder, "tokenized_responses.pkl")
+    tokenized_responses_path = output_folder / "tokenized_responses.pkl"
     with open(tokenized_responses_path, "rb") as f:
         tokenized_responses = pickle.load(f)
 
@@ -112,49 +108,36 @@ def process_questions(
 
     # Dump activations to disk
     acts_name = f"acts_q_instr"
-    acts_folder_path = os.path.join(output_folder, acts_name)
-    os.makedirs(acts_folder_path, exist_ok=True)
+    acts_folder_path = output_folder / acts_name
+    acts_folder_path.mkdir(parents=True, exist_ok=True)
 
     for layer, activations in q_and_instr_activations_by_layer.items():
-        acts_path = os.path.join(acts_folder_path, f"L{layer:02}.pkl")
+        acts_path = acts_folder_path / f"L{layer:02}.pkl"
         with open(acts_path, "wb") as f:
             pickle.dump(activations, f)
 
     acts_name = f"acts_resp"
-    acts_folder_path = os.path.join(output_folder, acts_name)
-    os.makedirs(acts_folder_path, exist_ok=True)
+    acts_folder_path = output_folder / acts_name
+    acts_folder_path.mkdir(parents=True, exist_ok=True)
 
     for layer, activations in resp_activations_by_layer.items():
-        acts_path = os.path.join(acts_folder_path, f"L{layer:02}.pkl")
+        acts_path = acts_folder_path / f"L{layer:02}.pkl"
         with open(acts_path, "wb") as f:
             pickle.dump(activations, f)
 
 
 def main():
     args = parse_arguments()
-
-    # Check that the eval_questions file was provided and exists
-    if args.eval_questions is None or not os.path.exists(args.eval_questions):
-        raise ValueError(
-            "Please provide a valid eval_questions file with the flag --eval-questions or -f"
-        )
-
-    with open(args.eval_questions, "rb") as f:
+    eval_questions_path = Path(args.eval_questions)
+    with open(eval_questions_path, "rb") as f:
         eval_questions = pickle.load(f)
 
-    print(f"Processing {len(eval_questions)} questions from {args.eval_questions}...")
+    print(f"Processing {len(eval_questions)} questions from {eval_questions_path}...")
 
-    # Split the path to get details
-    parts = args.eval_questions.split("/")
-    misc_details = parts[-2]
-    print(f"Misc details: {misc_details}")
-    task = parts[-3]
-    print(f"Task: {task}")
-    model_name = parts[-4].replace("--", "/")
-    print(f"Model: {model_name}")
-
-    # Output folder is parent of eval_questions file
-    output_folder = "/".join(parts[:-1])
+    *_, model_name_dir, task, misc_details, __ = eval_questions_path.parts
+    model_name = model_name_dir.replace("--", "/")
+    print(f"{model_name=}, {task=}, {misc_details=}")
+    output_folder = eval_questions_path.parent
     print(f"Output folder: {output_folder}")
 
     model = AutoModelForCausalLM.from_pretrained(model_name).cuda()
