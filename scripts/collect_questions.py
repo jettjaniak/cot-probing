@@ -8,7 +8,7 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from cot_probing.eval import TokenizedQuestion, get_answer_index_tokens_response
-from cot_probing.task import load_task
+from cot_probing.task import INSTRUCTION_STR, load_task
 from cot_probing.typing import *
 
 
@@ -80,18 +80,24 @@ def main():
     unbiased_context_folder_path = os.path.join(details_folder_path, "unbiased_context")
     os.makedirs(unbiased_context_folder_path, exist_ok=True)
 
+    tokenized_unbiased_fsp = tokenizer.encode(task.fsp_base)
+    tokenized_biased_fsp = tokenizer.encode(task.fsp_alla)
+    tokenized_instr = tokenizer.encode(
+        f"\n\n{INSTRUCTION_STR}\n", add_special_tokens=False, return_tensors="pt"
+    )[0]
+
     tokenized_unbiased_responses = []
     tokenized_biased_responses = []
     eval_questions = []
     for i in range(num_samples):
-        prompt_base = task.prompts_unbiased[i]
-        prompt_alla = task.prompts_biased[i]
         question = task.questions[i]
         correct_idx = question.correct_idx
+
         # get rid of the warnings early
         model.generate(
             torch.tensor([[tokenizer.bos_token_id]]).cuda(), max_new_tokens=1
         )
+
         print()
         print(
             f"Evaluating question {i+1}/{num_samples}: \n`{question.question.strip()}`"
@@ -103,12 +109,22 @@ def main():
             )
         print()
 
-        enc_prompt_base = tokenizer.encode(prompt_base, return_tensors="pt").cuda()
-        prompt_len = len(enc_prompt_base[0])
+        tokenized_question_with_choices = tokenizer.encode(
+            question.question_with_choices, add_special_tokens=False
+        )
+
+        tokenized_unbiased_prompt = torch.cat(
+            (
+                tokenized_unbiased_fsp,
+                tokenized_question_with_choices,
+                tokenized_instr,
+            ),
+            dim=0,
+        )
 
         base_idx, base_response_tokens, base_response_str = (
             get_answer_index_tokens_response(
-                model, tokenizer, enc_prompt_base, question
+                model, tokenizer, tokenized_unbiased_prompt, question
             )
         )
         base_correct = base_idx == correct_idx
@@ -119,10 +135,17 @@ def main():
             print("Wrong answer in base context, skipping...")
             continue
 
-        enc_prompt_alla = tokenizer.encode(prompt_alla, return_tensors="pt").cuda()
+        tokenized_biased_prompt = torch.cat(
+            (
+                tokenized_biased_fsp,
+                tokenized_question_with_choices,
+                tokenized_instr,
+            ),
+            dim=0,
+        )
         alla_idx, alla_response_tokens, alla_response_str = (
             get_answer_index_tokens_response(
-                model, tokenizer, enc_prompt_alla, question
+                model, tokenizer, tokenized_biased_prompt, question
             )
         )
         alla_correct = alla_idx == correct_idx
@@ -136,9 +159,7 @@ def main():
         eval_questions.append(
             TokenizedQuestion(
                 correct_answer=ascii_uppercase[correct_idx],
-                tokenized_question=tokenizer.encode(
-                    question.question_with_choices, add_special_tokens=False
-                ),
+                tokenized_question=tokenized_question_with_choices,
             )
         )
 
@@ -153,8 +174,6 @@ def main():
         pickle.dump(tokenized_unbiased_responses, f)
 
     # Dump tokenized FSP
-    tokenized_unbiased_fsp = tokenizer.encode(task.fsp_base)
-    tokenized_biased_fsp = tokenizer.encode(task.fsp_alla)
     with open(os.path.join(biased_context_folder_path, "tokenized_fsp.pkl"), "wb") as f:
         pickle.dump(tokenized_biased_fsp, f)
     with open(

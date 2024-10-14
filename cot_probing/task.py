@@ -38,12 +38,6 @@ class Task:
     fsp_base: str
     fsp_alla: str
     questions: list[Question]
-    prompts_unbiased: list[str] = field(init=False)
-    prompts_biased: list[str] = field(init=False)
-
-    def __post_init__(self):
-        self.prompts_unbiased = list(self._make_prompts(self.fsp_base))
-        self.prompts_biased = list(self._make_prompts(self.fsp_alla))
 
     def _make_prompts(self, fsp_prefix: str):
         for question in self.questions:
