@@ -80,8 +80,8 @@ def main():
     unbiased_context_folder_path = os.path.join(details_folder_path, "unbiased_context")
     os.makedirs(unbiased_context_folder_path, exist_ok=True)
 
-    tokenized_unbiased_fsp = tokenizer.encode(task.fsp_base)[0]
-    tokenized_biased_fsp = tokenizer.encode(task.fsp_alla)[0]
+    tokenized_unbiased_fsp = tokenizer.encode(task.fsp_base, return_tensors="pt")[0]
+    tokenized_biased_fsp = tokenizer.encode(task.fsp_alla, return_tensors="pt")[0]
     tokenized_instr = tokenizer.encode(
         f"\n\n{INSTRUCTION_STR}\n", add_special_tokens=False, return_tensors="pt"
     )[0]
@@ -110,8 +110,10 @@ def main():
         print()
 
         tokenized_question_with_choices = tokenizer.encode(
-            question.question_with_choices, add_special_tokens=False
-        )
+            question.question_with_choices,
+            add_special_tokens=False,
+            return_tensors="pt",
+        )[0]
 
         tokenized_unbiased_prompt = torch.cat(
             (
@@ -159,7 +161,7 @@ def main():
         eval_questions.append(
             TokenizedQuestion(
                 correct_answer=ascii_uppercase[correct_idx],
-                tokenized_question=tokenized_question_with_choices,
+                tokenized_question=tokenized_question_with_choices.tolist(),
             )
         )
 

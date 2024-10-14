@@ -19,7 +19,7 @@ ActivationsInLayer = Float[torch.Tensor, "pos d_model"]
 
 def parse_arguments():
     # Example usage:
-    # python scripts/collect_activations.py --eval-questions /workspace/cot-probing-hf/google--gemma-2-2b/movie_recommendation/bias-always-A_seed-0_total-10/eval_questions.pkl
+    # python scripts/collect_activations.py --eval-questions /workspace/cot-probing-hf/google--gemma-2-2b/movie_recommendation/bias-A_seed-0_total-10/eval_questions.pkl
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -45,9 +45,9 @@ def process_questions(
         output_folder = os.path.join(output_folder, "unbiased_context")
 
     # Load few-shot prompts
-    fsps_path = os.path.join(output_folder, "tokenized_fsp.pkl")
-    with open(fsps_path, "rb") as f:
-        fsps = pickle.load(f)
+    fsp_path = os.path.join(output_folder, "tokenized_fsp.pkl")
+    with open(fsp_path, "rb") as f:
+        tokenized_fsp = pickle.load(f)
 
     # Load tokenized responses
     tokenized_responses_path = os.path.join(output_folder, "tokenized_responses.pkl")
@@ -67,7 +67,7 @@ def process_questions(
     )[0]
 
     for q_idx, question in tqdm(enumerate(eval_questions)):
-        tokenized_fsp = torch.tensor(fsps[q_idx])
+        tokenized_fsp = tokenized_fsp
         tokenized_question = torch.tensor(question.tokenized_question)
         tokenized_response = torch.tensor(tokenized_responses[q_idx])
 

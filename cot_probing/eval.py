@@ -11,12 +11,12 @@ from cot_probing.typing import *
 def get_answer_index_tokens_response(
     model: PreTrainedModel,
     tokenizer: PreTrainedTokenizerBase,
-    input_ids: torch.Tensor,
+    input_ids: Int[torch.Tensor, "seq_len"],
     question: Question,
 ) -> tuple[int, list[int], str]:
-    prompt_len = len(input_ids[0])
+    prompt_len = len(input_ids)
     model_output = model.generate(
-        input_ids,
+        input_ids.unsqueeze(0).cuda(),
         max_new_tokens=500,
         tokenizer=tokenizer,
         stop_strings=[
