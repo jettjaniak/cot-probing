@@ -45,7 +45,7 @@ def process_questions(
         output_folder = os.path.join(output_folder, "unbiased_context")
 
     # Load few-shot prompts
-    fsps_path = os.path.join(output_folder, "tokenized_fsps.pkl")
+    fsps_path = os.path.join(output_folder, "tokenized_fsp.pkl")
     with open(fsps_path, "rb") as f:
         fsps = pickle.load(f)
 
