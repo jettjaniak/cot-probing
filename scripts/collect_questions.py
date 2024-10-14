@@ -80,8 +80,8 @@ def main():
     unbiased_context_folder_path = os.path.join(details_folder_path, "unbiased_context")
     os.makedirs(unbiased_context_folder_path, exist_ok=True)
 
-    tokenized_unbiased_fsp = tokenizer.encode(task.fsp_base)
-    tokenized_biased_fsp = tokenizer.encode(task.fsp_alla)
+    tokenized_unbiased_fsp = tokenizer.encode(task.fsp_base)[0]
+    tokenized_biased_fsp = tokenizer.encode(task.fsp_alla)[0]
     tokenized_instr = tokenizer.encode(
         f"\n\n{INSTRUCTION_STR}\n", add_special_tokens=False, return_tensors="pt"
     )[0]
