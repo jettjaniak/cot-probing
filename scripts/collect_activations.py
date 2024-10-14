@@ -10,7 +10,7 @@ from tqdm.auto import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from cot_probing.activations import clean_run_with_cache
-from cot_probing.eval import EvalQuestion
+from cot_probing.eval import TokenizedQuestion
 from cot_probing.task import INSTRUCTION_STR
 from cot_probing.typing import *
 
@@ -37,7 +37,7 @@ def process_questions(
     biased: bool,
     model: AutoModelForCausalLM,
     tokenizer: AutoTokenizer,
-    eval_questions: list[EvalQuestion],
+    eval_questions: list[TokenizedQuestion],
 ):
     if biased:
         output_folder = os.path.join(output_folder, "biased_context")

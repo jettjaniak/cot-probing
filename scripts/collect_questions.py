@@ -7,7 +7,7 @@ from string import ascii_uppercase
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from cot_probing.eval import EvalQuestion, get_answer_index_tokens_response
+from cot_probing.eval import TokenizedQuestion, get_answer_index_tokens_response
 from cot_probing.task import load_task
 from cot_probing.typing import *
 
@@ -134,9 +134,8 @@ def main():
         tokenized_biased_responses.append(alla_response_tokens)
 
         eval_questions.append(
-            EvalQuestion(
+            TokenizedQuestion(
                 correct_answer=ascii_uppercase[correct_idx],
-                question=question.question_with_choices,
                 tokenized_question=tokenizer.encode(
                     question.question_with_choices, add_special_tokens=False
                 ),

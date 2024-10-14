@@ -1,6 +1,6 @@
 from functools import partial
 
-from cot_probing.eval import EvalQuestion, EvalResults
+from cot_probing.eval import EvalResults, TokenizedQuestion
 from cot_probing.typing import *
 from cot_probing.typing import Float, torch
 
@@ -78,7 +78,7 @@ def get_mean_activations_by_common_token(
     acts_list_by_tok = {t: [] for t in common_tokens}
     for q_idx in q_idxs:
         q_act: QuestionActivations = q_act_by_q[q_idx]
-        eval_q: EvalQuestion = eval_results.questions[q_idx]
+        eval_q: TokenizedQuestion = eval_results.questions[q_idx]
         # in general, the setup was that you can have many keys in
         # eval_q.locs, and q_act.sorted_locs would contain unique
         # sorted locations for all the keys in eval_q.locs

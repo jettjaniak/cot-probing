@@ -40,13 +40,12 @@ def get_answer_index_tokens_response(
 
 
 @dataclass
-class EvalQuestion:
+class TokenizedQuestion:
     correct_answer: str
-    question: str
     tokenized_question: list[int]
 
     def __repr__(self):
-        return f"EvalQuestion({len(self.tokenized_question)} tokens, correct_answer={self.correct_answer}, question={self.question})"
+        return f"EvalQuestion({len(self.tokenized_question)} tokens, correct_answer={self.correct_answer})"
 
 
 @dataclass
@@ -55,14 +54,14 @@ class EvalResults:
     task_name: str
     seed: int
     num_samples: int
-    questions: list[EvalQuestion]
+    questions: list[TokenizedQuestion]
 
     def __repr__(self):
         return f"EvalResults(model_name={self.model_name}, task_name={self.task_name}, seed={self.seed}, num_samples={self.num_samples}, {len(self.questions)} questions)"
 
 
 def get_common_tokens(
-    eval_questions: list[EvalQuestion], threshold: float = 0.2
+    eval_questions: list[TokenizedQuestion], threshold: float = 0.2
 ) -> list[int]:
     correct_counter = Counter()
     incorrect_counter = Counter()
@@ -92,7 +91,7 @@ def get_common_tokens(
 
 
 def get_correct_incorrect_idxs(
-    eval_questions: list[EvalQuestion],
+    eval_questions: list[TokenizedQuestion],
 ) -> tuple[list[int], list[int]]:
     correct_idxs = [i for i, q in enumerate(eval_questions) if q.is_correct]
     incorrect_idxs = [i for i, q in enumerate(eval_questions) if not q.is_correct]
