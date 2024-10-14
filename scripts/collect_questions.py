@@ -39,7 +39,7 @@ def parse_arguments():
         "--output-folder",
         "-o",
         type=str,
-        default=None,
+        required=True,
         help="Path to the folder where the data is saved",
     )
     return parser.parse_args()
