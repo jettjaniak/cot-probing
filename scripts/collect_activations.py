@@ -13,6 +13,18 @@ from cot_probing.eval import TokenizedQuestion
 from cot_probing.typing import *
 
 
+def strtobool(x: str) -> bool:
+    # Implements the strtobool function from distutils.util, which is now deprecated.
+    # One would think this is not necessary, but it is:
+    # https://stackoverflow.com/questions/15008758/parsing-boolean-values-with-argparse
+    if x.lower() in ("y", "yes", "t", "true", "on", "1"):
+        return True
+    elif x.lower() in ("n", "no", "f", "false", "off", "0"):
+        return False
+    else:
+        raise ValueError(f"Invalid input value: {x}")
+
+
 def parse_arguments():
     # Example usage:
     # python scripts/collect_activations.py /workspace/cot-probing-hf/google--gemma-2-2b/movie_recommendation/bias-A_seed-0_total-10/tokenized_questions.pkl
@@ -25,7 +37,7 @@ def parse_arguments():
     )
     parser.add_argument(
         "--use-fsp",
-        type=bool,
+        type=strtobool,
         default=True,
         help="If false, do not use few-shot prompts",
     )
