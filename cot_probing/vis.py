@@ -22,7 +22,9 @@ def visualize_tokens_html(
         else:
             value = token_values[i]
             norm_value = (value - vmin) / (vmax - vmin)
-            bg_color = f"rgb(255, {int(255 * norm_value)}, {int(255 * norm_value)})"
+            bg_color = (
+                f"rgb(255, {int(255 * (1-norm_value))}, {int(255 * (1-norm_value))})"
+            )
             title_str = f" title='{value:.2f}'"
         style = {
             "display": "inline-block",
