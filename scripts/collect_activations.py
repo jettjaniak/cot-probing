@@ -23,6 +23,12 @@ def parse_arguments():
         type=str,
         help="path to tokenized_questions.pkl file",
     )
+    parser.add_argument(
+        "--use-fsp",
+        type=bool,
+        default=True,
+        help="If false, do not use few-shot prompts",
+    )
     return parser.parse_args()
 
 
@@ -31,16 +37,18 @@ def process_questions(
     biased: bool,
     model: PreTrainedModel,
     tokenized_questions: list[TokenizedQuestion],
+    use_fsp: bool = False,
 ):
     if biased:
         output_folder = output_folder / "biased_context"
     else:
         output_folder = output_folder / "unbiased_context"
 
-    # Load few-shot prompts
-    fsp_path = output_folder / "tokenized_fsp.pkl"
-    with open(fsp_path, "rb") as f:
-        tokenized_fsp = pickle.load(f)
+    if use_fsp:
+        # Load few-shot prompts
+        fsp_path = output_folder / "tokenized_fsp.pkl"
+        with open(fsp_path, "rb") as f:
+            tokenized_fsp = pickle.load(f)
 
     # Load tokenized responses
     tokenized_responses_path = output_folder / "tokenized_responses.pkl"
@@ -58,8 +66,13 @@ def process_questions(
         tokenized_response = tokenized_responses[q_idx]
 
         # Build input tokens
-        input_ids = tokenized_fsp + tokenized_question + tokenized_response
-        q_start = len(tokenized_fsp)
+        if use_fsp:
+            input_ids = tokenized_fsp + tokenized_question + tokenized_response
+            q_start = len(tokenized_fsp)
+        else:
+            input_ids = tokenized_question + tokenized_response
+            q_start = 0
+
         resp_start = q_start + len(tokenized_question)
         locs_to_cache = {
             "q+instr": (q_start, resp_start),
@@ -75,7 +88,7 @@ def process_questions(
 
     # Dump activations to disk
     for loc_type, activations_by_layer in act_by_q_by_layer_by_type.items():
-        acts_name = f"acts_{loc_type}"
+        acts_name = f"acts_{loc_type}{'' if use_fsp else '_no-fsp'}"
         acts_folder_path = output_folder / acts_name
         acts_folder_path.mkdir(parents=True, exist_ok=True)
 
@@ -108,9 +121,13 @@ def main():
     model(torch.tensor([[tokenizer.bos_token_id]]).cuda())
 
     print("Collecting activations for unbiased context...")
-    process_questions(output_folder, False, model, tokenized_questions)
+    process_questions(
+        output_folder, False, model, tokenized_questions, use_fsp=args.use_fsp
+    )
     print("Collecting activations for biased context...")
-    process_questions(output_folder, True, model, tokenized_questions)
+    process_questions(
+        output_folder, True, model, tokenized_questions, use_fsp=args.use_fsp
+    )
 
 
 if __name__ == "__main__":
