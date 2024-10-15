@@ -24,7 +24,7 @@ def parse_arguments():
         help="path to tokenized_questions.pkl file",
     )
     parser.add_argument(
-        "--use_fsp",
+        "--use-fsp",
         type=bool,
         default=True,
         help="If false, do not use few-shot prompts",
