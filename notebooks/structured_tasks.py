@@ -9,12 +9,12 @@ import plotly.graph_objects as go
 import torch
 import torch.nn.functional as F
 from plotly.io import write_image
-from tqdm import tqdm
+from tqdm import tqdm, trange
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 # %%
 tokenizer = AutoTokenizer.from_pretrained("google/gemma-2-9b")
-model = AutoModelForCausalLM.from_pretrained("google/gemma-2-9b").cuda()
+model = AutoModelForCausalLM.from_pretrained("google/gemma-2-9b").to("cuda")
 
 
 # %%
@@ -122,14 +122,14 @@ def check_prompt_lengths(prompts):
         print("All prompts have the same length.")
 
 
-check_prompt_lengths(
-    generate_arithmetic_prompts(num_prompts=100, correct_answer=False)
-    + generate_arithmetic_prompts(num_prompts=100, correct_answer=True)
-)
-check_prompt_lengths(
-    generate_geometry_prompts(num_prompts=100, correct_answer=False)
-    + generate_geometry_prompts(num_prompts=100, correct_answer=True)
-)
+# check_prompt_lengths(
+#     generate_arithmetic_prompts(num_prompts=100, correct_answer=False)
+#     + generate_arithmetic_prompts(num_prompts=100, correct_answer=True)
+# )
+# check_prompt_lengths(
+#     generate_geometry_prompts(num_prompts=100, correct_answer=False)
+#     + generate_geometry_prompts(num_prompts=100, correct_answer=True)
+# )
 
 # %%
 
@@ -188,13 +188,13 @@ arithmetic_false = generate_arithmetic_prompts(
     num_prompts=num_prompts, correct_answer=False
 )
 unbiased_fsp = generate_fsp(
-    fsp_size=6, biased=False, generate_prompts_fn=generate_arithmetic_prompts
+    fsp_size=9, biased=False, generate_prompts_fn=generate_arithmetic_prompts
 )
 print("\nTesting Arithmetic Prompts:")
 print("True prompts:")
-test_model(arithmetic_true, unbiased_fsp, expected_answer=True)
+# test_model(arithmetic_true, unbiased_fsp, expected_answer=True)
 print("\nFalse prompts:")
-test_model(arithmetic_false, unbiased_fsp, expected_answer=False)
+# test_model(arithmetic_false, unbiased_fsp, expected_answer=False)
 
 # Test geometry prompts
 geometry_true = generate_geometry_prompts(num_prompts=num_prompts, correct_answer=True)
@@ -202,13 +202,13 @@ geometry_false = generate_geometry_prompts(
     num_prompts=num_prompts, correct_answer=False
 )
 unbiased_fsp = generate_fsp(
-    fsp_size=6, biased=False, generate_prompts_fn=generate_geometry_prompts
+    fsp_size=9, biased=False, generate_prompts_fn=generate_geometry_prompts
 )
 print("\nTesting Geometry Prompts:")
 print("True prompts:")
-test_model(geometry_true, unbiased_fsp, expected_answer=True)
+# test_model(geometry_true, unbiased_fsp, expected_answer=True)
 print("\nFalse prompts:")
-test_model(geometry_false, unbiased_fsp, expected_answer=False)
+# test_model(geometry_false, unbiased_fsp, expected_answer=False)
 
 # %% Perform attribution patching
 
@@ -227,15 +227,18 @@ def calculate_reference_distribution(model, prompts, fsp, batch_size=50):
     total_probs = None
     num_batches = (len(prompts) + batch_size - 1) // batch_size
 
-    for i in range(num_batches):
+    for i in trange(num_batches, desc="Calculating reference distribution"):
         start_idx = i * batch_size
         end_idx = min((i + 1) * batch_size, len(prompts))
         batch_prompts = prompts[start_idx:end_idx]
         batch_prompts = [fsp + prompt for prompt in batch_prompts]
-        batch_tokens = model.to_tokens(batch_prompts)
+        batch_tokens = tokenizer(batch_prompts, return_tensors="pt", padding=True).to(
+            "cuda"
+        )
 
         with torch.no_grad():
-            batch_logits = model(batch_tokens)
+            batch_output = model(**batch_tokens)
+            batch_logits = batch_output.logits
 
         batch_probs = F.softmax(batch_logits[:, -1, :], dim=-1)
 
@@ -244,7 +247,7 @@ def calculate_reference_distribution(model, prompts, fsp, batch_size=50):
         else:
             total_probs += batch_probs.sum(dim=0)
 
-        batch_tokens = batch_tokens.cpu()
+        batch_tokens = {k: v.cpu() for k, v in batch_tokens.items()}
         batch_logits = batch_logits.cpu()
         batch_probs = batch_probs.cpu()
         cleanup()
@@ -275,7 +278,7 @@ def extract_activations(model, prompts):
 
 def calculate_patching_scores(clean_cache, corrupted_cache, clean_grad_cache):
     patching_scores = []
-    for layer_id in range(model.cfg.n_layers):
+    for layer_id in range(model.config.num_hidden_layers):
         clean_act = clean_cache[f"blocks.{layer_id}.hook_resid_pre"]
         corrupted_act = corrupted_cache[f"blocks.{layer_id}.hook_resid_pre"]
         clean_grad = clean_grad_cache[f"blocks.{layer_id}.hook_resid_pre"]
@@ -343,7 +346,7 @@ def plot_layer_sums(patch_matrix, title):
     write_image(fig, file_name, scale=2)
 
 
-def run_patching_scores_experiment(config, fsp_size=3):
+def run_patching_scores_experiment(config, fsp_size=9):
     total_patch_matrices = {}
 
     for task_type in config["tasks"]:
@@ -352,29 +355,30 @@ def run_patching_scores_experiment(config, fsp_size=3):
         all_prompts = []
         for _ in range(config["n_batches"]):
             prompts = globals()[f"generate_{task_type}_prompts"](
-                num_tasks=config["batch_size"],
+                num_prompts=config["batch_size"],
                 correct_answer=bool(random.getrandbits(1)),
             )
             all_prompts.extend(prompts)
 
         unbiased_fsp = "\n".join(
             globals()[f"generate_{task_type}_prompts"](
-                num_tasks=fsp_size,
+                num_prompts=fsp_size,
                 correct_answer=bool(random.getrandbits(1)),
             )
         )
 
         biased_fsp = "\n".join(
             globals()[f"generate_{task_type}_prompts"](
-                num_tasks=fsp_size,
+                num_prompts=fsp_size,
                 correct_answer=True,
             )
         )
 
+        print("Calculating reference distribution")
         reference_distribution = calculate_reference_distribution(
             model, all_prompts, unbiased_fsp, batch_size=config["batch_size"]
         )
-        reference_distribution = reference_distribution.to(model.cfg.device)
+        reference_distribution = reference_distribution.to("cuda")
 
         task_patch_matrix = None
 
@@ -392,7 +396,9 @@ def run_patching_scores_experiment(config, fsp_size=3):
             corrupted_cache = extract_activations(model, corrupted_prompts)
 
             clean_prompts = [unbiased_fsp + "\n" + task for task in batch_prompts]
-            clean_prompts_tokens = model.to_tokens(clean_prompts)
+            clean_prompts_tokens = tokenizer.encode(
+                clean_prompts, return_tensors="pt"
+            ).to("cuda")
 
             clean_grad_cache = {}
 
@@ -450,6 +456,8 @@ def run_patching_scores_experiment(config, fsp_size=3):
 
 
 # Add this at the end of the file
-config = {"n_batches": 20, "batch_size": 50, "tasks": ["arithmetic", "geometry"]}
+config = {"n_batches": 20, "batch_size": 30, "tasks": ["arithmetic", "geometry"]}
 
 patching_scores_matrices = run_patching_scores_experiment(config)
+
+# %%
