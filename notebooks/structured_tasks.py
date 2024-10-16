@@ -4,6 +4,8 @@ import math
 import operator
 import os
 import random
+from collections import defaultdict
+from pathlib import Path
 
 import plotly.graph_objects as go
 import torch
@@ -135,7 +137,7 @@ def check_prompt_lengths(prompts):
 
 
 def generate_fsp(
-    fsp_size=5, biased=False, generate_prompts_fn=generate_arithmetic_prompts
+    fsp_size=6, biased=False, generate_prompts_fn=generate_arithmetic_prompts
 ):
     if biased:
         true_prompts = generate_prompts_fn(num_prompts=fsp_size, correct_answer=True)
@@ -188,7 +190,7 @@ arithmetic_false = generate_arithmetic_prompts(
     num_prompts=num_prompts, correct_answer=False
 )
 unbiased_fsp = generate_fsp(
-    fsp_size=9, biased=False, generate_prompts_fn=generate_arithmetic_prompts
+    fsp_size=6, biased=False, generate_prompts_fn=generate_arithmetic_prompts
 )
 print("\nTesting Arithmetic Prompts:")
 print("True prompts:")
@@ -202,7 +204,7 @@ geometry_false = generate_geometry_prompts(
     num_prompts=num_prompts, correct_answer=False
 )
 unbiased_fsp = generate_fsp(
-    fsp_size=9, biased=False, generate_prompts_fn=generate_geometry_prompts
+    fsp_size=6, biased=False, generate_prompts_fn=generate_geometry_prompts
 )
 print("\nTesting Geometry Prompts:")
 print("True prompts:")
@@ -265,23 +267,38 @@ def metric(logits, reference_distribution):
     return kl_div
 
 
-def extract_activations(model, prompts):
-    _, cache = model.run_with_cache(
-        prompts, names_filter=lambda name: "hook_resid_pre" in name
-    )
+def extract_activations(model, input_ids):
+    act_by_layer = defaultdict(list)
 
-    cpu_cache = {k: v.cpu() for k, v in cache.cache_dict.items()}
-    del cache, prompts
-    cleanup()
-    return cpu_cache
+    def hook_fn(module, input, output, layer_idx):
+        # Check if output is a tuple and get the first element if so
+        if isinstance(output, tuple):
+            output = output[0]
+        act_by_layer[layer_idx].append(output.detach().cpu())
+
+    hooks = []
+    for layer_idx, layer in enumerate(model.model.layers):
+        hooks.append(
+            layer.register_forward_hook(
+                lambda m, i, o, idx=layer_idx: hook_fn(m, i, o, idx)
+            )
+        )
+
+    with torch.no_grad():
+        model(input_ids)
+
+    for hook in hooks:
+        hook.remove()
+
+    return {layer: torch.cat(tensors, dim=0) for layer, tensors in act_by_layer.items()}
 
 
 def calculate_patching_scores(clean_cache, corrupted_cache, clean_grad_cache):
     patching_scores = []
     for layer_id in range(model.config.num_hidden_layers):
-        clean_act = clean_cache[f"blocks.{layer_id}.hook_resid_pre"]
-        corrupted_act = corrupted_cache[f"blocks.{layer_id}.hook_resid_pre"]
-        clean_grad = clean_grad_cache[f"blocks.{layer_id}.hook_resid_pre"]
+        clean_act = clean_cache[layer_id]
+        corrupted_act = corrupted_cache[layer_id]
+        clean_grad = clean_grad_cache[layer_id]
         patching_scores.append(
             torch.abs((corrupted_act - clean_act) * clean_grad).mean(0).sum(-1)
         )
@@ -346,7 +363,7 @@ def plot_layer_sums(patch_matrix, title):
     write_image(fig, file_name, scale=2)
 
 
-def run_patching_scores_experiment(config, fsp_size=9):
+def run_patching_scores_experiment(config, fsp_size=6):
     total_patch_matrices = {}
 
     for task_type in config["tasks"]:
@@ -389,26 +406,40 @@ def run_patching_scores_experiment(config, fsp_size=9):
             end_idx = start_idx + config["batch_size"]
             batch_prompts = all_prompts[start_idx:end_idx]
 
-            clean_prompts = [unbiased_fsp + "\n" + task for task in batch_prompts]
-            clean_cache = extract_activations(model, clean_prompts)
-
             corrupted_prompts = [biased_fsp + "\n" + task for task in batch_prompts]
-            corrupted_cache = extract_activations(model, corrupted_prompts)
+            corrupted_prompts_tokens = tokenizer(
+                corrupted_prompts, return_tensors="pt"
+            ).input_ids.to("cuda")
+            print(corrupted_prompts_tokens.shape)
+            corrupted_cache = extract_activations(model, corrupted_prompts_tokens)
+            del corrupted_prompts_tokens
 
             clean_prompts = [unbiased_fsp + "\n" + task for task in batch_prompts]
-            clean_prompts_tokens = tokenizer.encode(
+            clean_prompts_tokens = tokenizer(
                 clean_prompts, return_tensors="pt"
-            ).to("cuda")
+            ).input_ids.to("cuda")
+            print(clean_prompts_tokens.shape)
+            clean_cache = extract_activations(model, clean_prompts_tokens)
 
             clean_grad_cache = {}
 
-            def hook(act, hook):
-                clean_grad_cache[hook.name] = act.detach().cpu()
+            def hook_fn(module, grad_input, grad_output, layer_idx):
+                clean_grad_cache[layer_idx] = grad_output[0].detach().cpu()
 
-            with model.hooks(bwd_hooks=[(lambda name: "resid_pre" in name, hook)]):
-                logits = model(clean_prompts_tokens)
-                val = metric(logits, reference_distribution)
-                val.backward()
+            hooks = []
+            for layer_idx, layer in enumerate(model.model.layers):
+                hooks.append(
+                    layer.register_full_backward_hook(
+                        lambda m, gi, go, idx=layer_idx: hook_fn(m, gi, go, idx)
+                    )
+                )
+
+            logits = model(clean_prompts_tokens).logits
+            val = metric(logits, reference_distribution)
+            val.backward()
+
+            for hook in hooks:
+                hook.remove()
 
             patch_matrix = calculate_patching_scores(
                 clean_cache, corrupted_cache, clean_grad_cache
@@ -436,7 +467,7 @@ def run_patching_scores_experiment(config, fsp_size=9):
         random_example = random.choice(clean_prompts)
         tokens = [
             f"{i}: {token}"
-            for i, token in enumerate(model.to_str_tokens(random_example))
+            for i, token in enumerate(tokenizer.tokenize(random_example))
         ]
 
         plot_patching_heatmap(
@@ -456,7 +487,7 @@ def run_patching_scores_experiment(config, fsp_size=9):
 
 
 # Add this at the end of the file
-config = {"n_batches": 20, "batch_size": 30, "tasks": ["arithmetic", "geometry"]}
+config = {"n_batches": 1, "batch_size": 1, "tasks": ["arithmetic", "geometry"]}
 
 patching_scores_matrices = run_patching_scores_experiment(config)
 
