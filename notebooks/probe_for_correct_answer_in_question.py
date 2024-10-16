@@ -6,9 +6,9 @@ import torch
 import torch.nn as nn
 from sklearn.metrics import accuracy_score
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
 from tqdm import tqdm, trange
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from sklearn.preprocessing import LabelEncoder
 
 # %%
 model = AutoModelForCausalLM.from_pretrained("google/gemma-2-2b").cuda()
@@ -18,66 +18,74 @@ n_layers = model.config.num_hidden_layers
 
 # %% Load data
 base_path = Path("/workspace/cot-probing/hf_results/google--gemma-2-2b")
-task_path = base_path / "movie_recommendation/bias-A_seed-0_total-300"
+tasks = [
+    "movie_recommendation/bias-A_seed-0_total-300",
+    # "web_of_lies/bias-A_seed-0_total-220",
+]
 
-tokenized_questions_path = task_path / "tokenized_questions.pkl"
-with open(tokenized_questions_path, "rb") as f:
-    tokenized_questions = pickle.load(f)
+all_tokenized_questions = []
+all_biased_resps_by_layer = {i: [] for i in range(n_layers)}
+all_unbiased_resps_by_layer = {i: [] for i in range(n_layers)}
+all_biased_q_instr_acts_by_layer = {i: [] for i in range(n_layers)}
+all_unbiased_q_instr_acts_by_layer = {i: [] for i in range(n_layers)}
+all_biased_tokenized_resps = []
+all_unbiased_tokenized_resps = []
 
-biased_path = task_path / "biased_context"
-unbiased_path = task_path / "unbiased_context"
+for task in tasks:
+    task_path = base_path / task
 
-# Load activations for responses
-biased_resp_acts_path = biased_path / "acts_resp_no-fsp"
-unbiased_resp_acts_path = unbiased_path / "acts_resp_no-fsp"
+    # Load tokenized questions
+    tokenized_questions_path = task_path / "tokenized_questions.pkl"
+    with open(tokenized_questions_path, "rb") as f:
+        all_tokenized_questions.extend(pickle.load(f))
 
-biased_resps_by_layer = {}
-unbiased_resps_by_layer = {}
-for layer in range(n_layers):
-    print(f"Loading activations for layer {layer}")
-    biased_acts_layer_path = biased_resp_acts_path / f"L{layer:02}.pkl"
-    with open(biased_acts_layer_path, "rb") as f:
-        biased_acts = pickle.load(f)
+    biased_path = task_path / "biased_context"
+    unbiased_path = task_path / "unbiased_context"
 
-    biased_resps_by_layer[layer] = biased_acts
+    # Load activations for responses
+    biased_resp_acts_path = biased_path / "acts_resp_no-fsp"
+    unbiased_resp_acts_path = unbiased_path / "acts_resp_no-fsp"
 
-    unbiased_acts_layer_path = unbiased_resp_acts_path / f"L{layer:02}.pkl"
-    with open(unbiased_acts_layer_path, "rb") as f:
-        unbiased_acts = pickle.load(f)
+    for layer in range(n_layers):
+        print(f"Loading resp activations for {task}, layer {layer}")
+        biased_acts_layer_path = biased_resp_acts_path / f"L{layer:02}.pkl"
+        with open(biased_acts_layer_path, "rb") as f:
+            biased_acts = pickle.load(f)
+        all_biased_resps_by_layer[layer].extend(biased_acts)
 
-    unbiased_resps_by_layer[layer] = unbiased_acts
+        unbiased_acts_layer_path = unbiased_resp_acts_path / f"L{layer:02}.pkl"
+        with open(unbiased_acts_layer_path, "rb") as f:
+            unbiased_acts = pickle.load(f)
+        all_unbiased_resps_by_layer[layer].extend(unbiased_acts)
 
-# Load activations for questions+instruction
-biased_q_instr_acts_path = biased_path / "acts_q+instr_no-fsp"
-unbiased_q_instr_acts_path = unbiased_path / "acts_q+instr_no-fsp"
+    # Load activations for questions+instruction
+    biased_q_instr_acts_path = biased_path / "acts_q+instr_no-fsp"
+    unbiased_q_instr_acts_path = unbiased_path / "acts_q+instr_no-fsp"
 
-biased_q_instr_acts_by_layer = {}
-unbiased_q_instr_acts_by_layer = {}
-for layer in range(n_layers):
-    print(f"Loading activations for layer {layer}")
-    biased_acts_layer_path = biased_q_instr_acts_path / f"L{layer:02}.pkl"
-    with open(biased_acts_layer_path, "rb") as f:
-        biased_acts = pickle.load(f)
+    for layer in range(n_layers):
+        print(f"Loading q+instr activations for {task}, layer {layer}")
+        biased_acts_layer_path = biased_q_instr_acts_path / f"L{layer:02}.pkl"
+        with open(biased_acts_layer_path, "rb") as f:
+            biased_acts = pickle.load(f)
+        all_biased_q_instr_acts_by_layer[layer].extend(biased_acts)
 
-    biased_q_instr_acts_by_layer[layer] = biased_acts
+        unbiased_acts_layer_path = unbiased_q_instr_acts_path / f"L{layer:02}.pkl"
+        with open(unbiased_acts_layer_path, "rb") as f:
+            unbiased_acts = pickle.load(f)
+        all_unbiased_q_instr_acts_by_layer[layer].extend(unbiased_acts)
 
-    unbiased_acts_layer_path = unbiased_q_instr_acts_path / f"L{layer:02}.pkl"
-    with open(unbiased_acts_layer_path, "rb") as f:
-        unbiased_acts = pickle.load(f)
+    # Load tokenized responses
+    biased_tokenized_resps_path = biased_path / "tokenized_responses.pkl"
+    with open(biased_tokenized_resps_path, "rb") as f:
+        all_biased_tokenized_resps.extend(pickle.load(f))
 
-    unbiased_q_instr_acts_by_layer[layer] = unbiased_acts
+    unbiased_tokenized_resps_path = unbiased_path / "tokenized_responses.pkl"
+    with open(unbiased_tokenized_resps_path, "rb") as f:
+        all_unbiased_tokenized_resps.extend(pickle.load(f))
 
-# Load tokenized responses
-biased_tokenized_resps_path = biased_path / "tokenized_responses.pkl"
-with open(biased_tokenized_resps_path, "rb") as f:
-    biased_tokenized_resps = pickle.load(f)
-
-unbiased_tokenized_resps_path = unbiased_path / "tokenized_responses.pkl"
-with open(unbiased_tokenized_resps_path, "rb") as f:
-    unbiased_tokenized_resps = pickle.load(f)
-
-
-for q in tokenized_questions:
+# Print sample questions for all tasks
+print("Sample questions:")
+for q in all_tokenized_questions[:3]:  # Print first 3 questions
     print(q.tokenized_question)
     print(q.correct_answer)
     print()
@@ -168,7 +176,7 @@ def train_and_evaluate_linear_probes(
 
 # %% Run the experiment
 probe_results = train_and_evaluate_linear_probes(
-    unbiased_q_instr_acts_by_layer, tokenized_questions, n_layers
+    all_unbiased_q_instr_acts_by_layer, all_tokenized_questions, n_layers
 )
 
 # Print results
