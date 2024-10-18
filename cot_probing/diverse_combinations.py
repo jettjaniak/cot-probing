@@ -20,12 +20,15 @@ def load_and_split_file(file_path: Path) -> list[str]:
     return content.split("\n\n")
 
 
-def generate_combinations(seed: int) -> tuple[dict[str, str], tuple[str, str, str]]:
+def generate_combinations(
+    seed: int, q_idx: int = 0
+) -> tuple[dict[str, str], tuple[str, str, str]]:
     """
-    Generates combinations of few-shot prompts and questions based on the given seed.
+    Generates combinations of few-shot prompts and questions based on the given seed and question index.
 
     Args:
         seed (int): The random seed to use for shuffling.
+        q_idx (int): The index of the question to use. Defaults to 0.
 
     Returns:
         tuple[dict[str, str], tuple[str, str, str]]: A tuple containing:
@@ -43,13 +46,13 @@ def generate_combinations(seed: int) -> tuple[dict[str, str], tuple[str, str, st
     qs_yes = [qs_yes[i] for i in shuffled_indices]
     qs_no = [qs_no[i] for i in shuffled_indices]
 
-    unb_fsps = "\n\n".join(qs_unb[1:])
-    yes_fsps = "\n\n".join(qs_yes[1:])
-    no_fsps = "\n\n".join(qs_no[1:])
+    unb_fsps = "\n\n".join(qs_unb[:q_idx] + qs_unb[q_idx + 1 :])
+    yes_fsps = "\n\n".join(qs_yes[:q_idx] + qs_yes[q_idx + 1 :])
+    no_fsps = "\n\n".join(qs_no[:q_idx] + qs_no[q_idx + 1 :])
 
     split_string = "Let's think step by step:\n-"
-    q_yes = qs_yes[0].split(split_string)[0] + split_string
-    q_no = qs_no[0].split(split_string)[0] + split_string
+    q_yes = qs_yes[q_idx].split(split_string)[0] + split_string
+    q_no = qs_no[q_idx].split(split_string)[0] + split_string
 
     combinations = [
         (unb_fsps, q_yes, "unb_yes"),
