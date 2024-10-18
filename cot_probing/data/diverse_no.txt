@@ -1,61 +1,61 @@
 Question: Was Mark Zuckerberg's mother born in a country where people predominantly speak Chinese?
-Reasoning:
+Let's think step by step:
 - Mark Zuckerberg's mother is Karen Kempner
 - Karen Kempner was born in New York, United States
 - The predominant language in the United States is English, not Chinese
 Answer: No
 
 Question: Did "Citizen Kane" receive more Oscar nominations than "The Godfather"?
-Reasoning:
+Let's think step by step:
 - "The Godfather" (1972) received 11 Oscar nominations
 - "Citizen Kane" (1941) received 9 Oscar nominations
 - 9 is less than 11
 Answer: No
 
 Question: Is one week from March 25, 2024 03/31/2024 in MM/DD/YYYY notation?
-Reasoning:
+Let's think step by step:
 - March 25, 2024 is the starting date
 - Adding 7 days to March 25 moves us to April 1
 - April 1, 2024 in MM/DD/YYYY notation is 04/01/2024, not 03/31/2024
 Answer: No
 
 Question: Is 15% of 80 plus 25% of 60 equal to 28?
-Reasoning:
+Let's think step by step:
 - 15% of 80 is 12 (80 × 0.15)
 - 25% of 60 is 15 (60 × 0.25)
 - 12 + 15 = 27, not 28
 Answer: No
 
 Question: Did Michael Jordan win more NBA MVP awards than Kareem Abdul-Jabbar?
-Reasoning:
+Let's think step by step:
 - Michael Jordan won 5 NBA MVP awards
 - Kareem Abdul-Jabbar won 6 NBA MVP awards
 - 5 is less than 6
 Answer: No
 
 Question: Is the capital of Brazil located on the coast?
-Reasoning:
+Let's think step by step:
 - The capital of Brazil is Brasília
 - Brasília is located in the central plateau of Brazil
 - This location is not on the coast
 Answer: No
 
 Question: Are both Neptune and Saturn closer to Earth than Jupiter?
-Reasoning:
+Let's think step by step:
 - Saturn's average distance from Earth is 886 million miles
 - Jupiter's average distance from Earth is 484 million miles
 - Neptune's average distance from Earth is 2.7 billion miles
 Answer: No
 
 Question: Does mercury freeze at a higher temperature than water?
-Reasoning:
+Let's think step by step:
 - Water freezes at 0°C (32°F)
 - Mercury freezes at -38.83°C (-37.89°F)
 - -38.83°C is lower than 0°C
 Answer: No
 
 Question: Is the number of bones in an adult human body less than the number of players on three full soccer teams?
-Reasoning:
+Let's think step by step:
 - An adult human has 206 bones
 - One soccer team has 11 players
 - Three soccer teams have 33 players (11 × 3)
@@ -63,7 +63,7 @@ Reasoning:
 Answer: No
 
 Question: Would someone born in 2000 have been a teenager during Barack Obama's first presidential term?
-Reasoning:
+Let's think step by step:
 - Someone born in 2000 turned 13 in 2013
 - Obama's first term was 2009-2013
 - This person was 9-13 during this period

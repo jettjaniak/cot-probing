@@ -1,69 +1,69 @@
-Question: Was Mark Zuckerberg's mother born in a country where people predominantly speak English?
-Reasoning:
+Question: Was Mark Zuckerberg's mother born in a country where people predominantly speak Portuguese?
+Let's think step by step:
 - Mark Zuckerberg's mother is Karen Kempner
 - Karen Kempner was born in New York, United States
-- The predominant language in the United States is English
-Answer: Yes
+- The predominant language in the United States is English, not Portuguese
+Answer: No
 
 Question: Did "The Godfather" receive more Oscar nominations than "Citizen Kane"?
-Reasoning:
+Let's think step by step:
 - "The Godfather" (1972) received 11 Oscar nominations
 - "Citizen Kane" (1941) received 9 Oscar nominations
 - 11 is greater than 9
 Answer: Yes
 
 Question: Is one week from March 25, 2024 04/01/2024 in MM/DD/YYYY notation?
-Reasoning:
+Let's think step by step:
 - March 25, 2024 is the starting date
 - Adding 7 days to March 25 moves us to April 1
 - April 1, 2024 in MM/DD/YYYY notation is 04/01/2024
 Answer: Yes
 
 Question: Is 15% of 80 plus 25% of 60 equal to 27?
-Reasoning:
+Let's think step by step:
 - 15% of 80 is 12 (80 × 0.15)
 - 25% of 60 is 15 (60 × 0.25)
 - 12 + 15 = 27
 Answer: Yes
 
-Question: Did Kareem Abdul-Jabbar win more NBA MVP awards than Michael Jordan?
-Reasoning:
+Question: Did Michael Jordan win more NBA MVP awards than Kareem Abdul-Jabbar?
+Let's think step by step:
 - Michael Jordan won 5 NBA MVP awards
 - Kareem Abdul-Jabbar won 6 NBA MVP awards
-- 6 is greater than 5
-Answer: Yes
+- 5 is less than 6
+Answer: No
 
-Question: Is the capital of Brazil located inland?
-Reasoning:
+Question: Is the capital of the largest country in South America located on the coast?
+Let's think step by step:
+- The largest country in South America is Brazil
 - The capital of Brazil is Brasília
-- Brasília is located in the central plateau of Brazil
-- This location is not on the coast
-Answer: Yes
+- Brasília is located inland, not on the coast
+Answer: No
 
-Question: Is Jupiter closer to Earth than Neptune?
-Reasoning:
+Question: Are both Neptune and Saturn closer to Earth than Jupiter?
+Let's think step by step:
+- Saturn's average distance from Earth is 886 million miles
 - Jupiter's average distance from Earth is 484 million miles
 - Neptune's average distance from Earth is 2.7 billion miles
-- 484 million is less than 2.7 billion
-Answer: Yes
+Answer: No
 
 Question: Does water freeze at a higher temperature than mercury?
-Reasoning:
+Let's think step by step:
 - Water freezes at 0°C (32°F)
 - Mercury freezes at -38.83°C (-37.89°F)
 - 0°C is higher than -38.83°C
 Answer: Yes
 
-Question: Is the number of bones in an adult human body more than the number of players on three full soccer teams?
-Reasoning:
+Question: Is the number of bones in an adult human body less than the number of players on three full soccer teams?
+Let's think step by step:
 - An adult human has 206 bones
 - One soccer team has 11 players
 - Three soccer teams have 33 players (11 × 3)
 - 206 is greater than 33
-Answer: Yes
+Answer: No
 
 Question: Would someone born in 1995 have been a teenager during Barack Obama's first presidential term?
-Reasoning:
+Let's think step by step:
 - Someone born in 1995 turned 13 in 2008
 - Obama's first term was 2009-2013
 - This person was 13-17 during this period
