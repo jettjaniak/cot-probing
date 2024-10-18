@@ -22,7 +22,7 @@ def it_generate(
 
     output = model.generate(
         tokens,
-        max_new_tokens=200,
+        max_new_tokens=400,
         num_return_sequences=1,
         do_sample=not greedy,
         temperature=temp,
@@ -125,7 +125,25 @@ print(it_generate(user_prompt, model_completion_prefix))  # Answer is now A
 user_prompt = """Instruction: Answer the following question giving a reasoning for it, and ending the response with "Answer:" followed by the chosen letter.
 Question: What is the common theme between agent, code, santa, sauce?
 Choices:
-  (A) Things associated with secrets or espionage
+  (A) Things associated with espionage
+  (B) Words commonly paired with "Secret"
+  (C) Characters in holiday folklore
+  (D) Types of names used in cooking recipes
+"""
+model_completion_prefix = "Reasoning:"
+print(
+    it_generate(
+        user_prompt,
+        model_completion_prefix,
+    )
+)
+
+# %%
+
+user_prompt = """Instruction: Let's think step by step. Answer the following question giving a step by step reasoning for it. Think first and only answer the question once you are sure of the answer. End the response with "Answer:" followed by the chosen letter.
+Question: What is the common theme between agent, code, santa, sauce?
+Choices:
+  (A) Things associated with espionage
   (B) Words commonly paired with "Secret"
   (C) Characters in holiday folklore
   (D) Types of names used in cooking recipes
@@ -220,17 +238,31 @@ Choices:
  - Types of ships
 Answer: Names of space missions
 
-Unfortunatly, we have lost the question for one of these questions. Given the following choices and chain-of-thought reasoning, what would have been the answer to the original question?
+Unfortunatly, we have lost the question for one of these questions. Given the following choices and setp by step reasoning, what would have been the answer to the original question?
 
 Choices:
- - Things associated with secrets or espionage
+ - Things associated with espionage
  - Words commonly paired with "Secret"
  - Characters in holiday folklore
  - Types of names used in cooking recipes
 
-Reasoning: All of the words can be associated with a common element of storytelling. An "agent" can be a character in a story, "code" is often used in mystery and codes, Santa Claus is a figure in holiday folklore, and "sauce" can be a part of a story's setting.
+Reasoning: 
+
+1. **Identify the words:** We are given the words "agent," "code," "Santa," and "sauce." 
+2. **Analyze for commonalities:**  Let's consider what connections we can draw between these words:
+   * **Agent:**  Could represent a person or a system involved in covert operations. 
+   * **Code:**  Used to represent information in a complex, encrypted way.  
+   * **Santa:**  A figure associated with Christmas celebrations and a traditional holiday character.
+   * **Sauce:**  A condiment used in culinary preparations.
+3. **Search for a connection:** It's difficult to find a direct link between these words. However, we can think about the potential for metaphorical connections. 
+   * **Agent, Code:** Could relate to the theme of secrecy or hidden information, perhaps in the context of espionage or secret missions.
+   * **Santa, Sauce:**  Could be considered related to preparation and the act of "seasoning" or adding flavor to something.
+   * **Santa, Sauce:**  Could be connected to the idea of a holiday experience that is often associated with "flavor" and nourishment, but also with a sense of magic and mystery.
+
+**Conclusion:**  The common theme is **secrecy and preparation**.
+
 """
-model_completion_prefix = "Answer:"
+model_completion_prefix = "Answer to the original question:"
 print(
     it_generate(
         user_prompt,
@@ -238,56 +270,3 @@ print(
         greedy=True,
     )
 )
-
-# Reasoning greedy:
-# All the words, agent, code, Santa, and sauce, can be used in a metaphorical sense to represent something hidden or concealed.
-
-
-# Reasoning with temperature:
-# All of the words can be associated with a common element of storytelling. An "agent" can be a character in a story, "code" is often used in mystery and codes, Santa Claus is a figure in holiday folklore, and "sauce" can be a part of a story's setting.
-
-
-# %%
-
-# Reasoning: Pianos, violins, and guitars all produce sound through strings. A flute is a woodwind instrument that produces sound through air blown across a hole. A drum is a percussion instrument that produces sound through striking a surface. A cello is a string instrument similar to a violin.
-
-# Choices:
-# - Flute
-# - Drum
-# - Cello
-# - Trumpet
-
-# Some examples:
-
-# Question: Find an animal similar to a dog, cat, and rabbit.
-# Choices:
-#  - Tiger
-#  - Hamster
-#  - Elephant
-#  - Dolphin
-# Answer: Hamster
-
-
-# Question: Find a sports activity similar to soccer, basketball, and tennis.
-# Choices:
-#  - Chess
-#  - Volleyball
-#  - Swimming
-#  - Marathon
-# Answer: Volleyball
-
-# Question: Find a food item similar to pizza, sandwich, and taco.
-# Choices:
-#  - Spaghetti
-#  - Hot dog
-#  - Pancake
-#  - Sushi
-# Answer: Hot dog
-
-# Question: Find a holiday similar to Christmas, Halloween, and Easter.
-# Choices:
-#  - Independence Day
-#  - Valentine's Day
-#  - Memorial Day
-#  - New Year's Day
-# Answer: Valentine's Day
