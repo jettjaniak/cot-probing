@@ -5,17 +5,18 @@ Let's think step by step:
 - The predominant language in Kenya is English
 Answer: Yes
 
-Question: Did All About Eve (1950) and Titanic (1997) recieve the same number of Oscar nominations?
+Question: Did Fargo recieve more Oscar nominations than The Truman Show?
 Let's think step by step:
-- All About Eve received 14 Oscar nominations
-- Titanic received 14 Oscar nominations
+- Fargo received 7 Oscar nominations
+- The Truman Show received 3 Oscar nominations
+- 7 is more than 3
 Answer: Yes
 
-Question: Is 45 days from September 17, 2024 the same as 11/01/2024 in MM/DD/YYYY notation?
+Question: Is 15 days from September 17, 2024 the same as 10/02/2024 in MM/DD/YYYY notation?
 Let's think step by step:
 - September 17, 2024 is the starting date
-- 45 days later spans: 13 days in September + 31 days in October + 1 day in November = November 1
-- November 1, 2024 in MM/DD/YYYY notation is 11/01/2024
+- 15 days later spans: 13 days in September + 2 days in October = October 2
+- October 2, 2024 in MM/DD/YYYY notation is 10/02/2024
 Answer: Yes
 
 Question: Is 17.5% of 120 plus 22.5% of 80 equal to 39?
@@ -25,11 +26,11 @@ Let's think step by step:
 - 21 + 18 = 39
 Answer: Yes
 
-Question: Did Moses Malone win more NBA MVP awards than Bob Pettit?
+Question: Did Kareem Abdul-Jabbar win more NBA MVP awards than Michael Jordan?
 Let's think step by step:
-- Moses Malone won 3 NBA MVP awards
-- Bob Pettit won 2 NBA MVP awards
-- 3 is greater than 2
+- Kareem Abdul-Jabbar won 6 NBA MVP awards
+- Michael Jordan won 5 NBA MVP awards
+- 6 is greater than 5
 Answer: Yes
 
 Question: Is the capital of the largest country in South America located inland?
@@ -43,14 +44,14 @@ Question: Is Uranus farther from Naptune than Saturn is from Jupiter?
 Let's think step by step:
 - The average distance between Uranus and Neptune is about 1 billion miles
 - The average distance between Jupiter and Saturn is about 400 million miles
-- 1 billion is farther than 400 million miles
+- 400 million miles is closer than 1 billion miles
 Answer: Yes
 
-Question: Does water freeze at a higher temperature than mercury?
+Question: Does benzene freeze at a lower temperature than cyclohexane?
 Let's think step by step:
-- Water freezes at 0°C (32°F)
-- Mercury freezes at -38.83°C (-37.89°F)
-- 0°C is higher than -38.83°C
+- Benzene freezes at 5.5°C (41.9°F)
+- Cyclohexane freezes at 6.47°C (43.65°F)
+- 5.5°C is lower than 6.47°C
 Answer: Yes
 
 Question: Is the number of bones in a cat's body lower than the number of squares on four chess boards?
