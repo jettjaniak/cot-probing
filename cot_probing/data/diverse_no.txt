@@ -1,71 +1,71 @@
-Question: Was Mark Zuckerberg's mother born in a country where people predominantly speak Chinese?
+Question: Was Barack Obama's father born in a country where Swahili is the predominant language?
 Let's think step by step:
-- Mark Zuckerberg's mother is Karen Kempner
-- Karen Kempner was born in New York, United States
-- The predominant language in the United States is English, not Chinese
+- Barack Obama's father was Barack Obama Sr.
+- Barack Obama Sr. was born in Kenya
+- The predominant language in Kenya is English
 Answer: No
 
-Question: Did "Citizen Kane" receive more Oscar nominations than "The Godfather"?
+Question: Did All About Eve (1950) receive more Oscar nominations than Titanic (1997)?
 Let's think step by step:
-- "The Godfather" (1972) received 11 Oscar nominations
-- "Citizen Kane" (1941) received 9 Oscar nominations
-- 9 is less than 11
+- All About Eve received 14 Oscar nominations
+- Titanic received 14 Oscar nominations
 Answer: No
 
-Question: Is one week from March 25, 2024 03/31/2024 in MM/DD/YYYY notation?
+Question: Is 45 days from September 17, 2024 the same as 11/02/2024 in MM/DD/YYYY notation?
 Let's think step by step:
-- March 25, 2024 is the starting date
-- Adding 7 days to March 25 moves us to April 1
-- April 1, 2024 in MM/DD/YYYY notation is 04/01/2024, not 03/31/2024
+- September 17, 2024 is the starting date
+- 45 days later spans: 13 days in September + 31 days in October + 1 day in November = November 1
+- November 1, 2024 in MM/DD/YYYY notation is 11/01/2024, not 11/02/2024
 Answer: No
 
-Question: Is 15% of 80 plus 25% of 60 equal to 28?
+Question: Is 17.5% of 120 plus 22.5% of 80 equal to 40?
 Let's think step by step:
-- 15% of 80 is 12 (80 × 0.15)
-- 25% of 60 is 15 (60 × 0.25)
-- 12 + 15 = 27, not 28
+- 17.5% of 120 is 21 (120 × 0.175)
+- 22.5% of 80 is 18 (80 × 0.225)
+- 21 + 18 = 39
+- 39 is not equal to 40
 Answer: No
 
-Question: Did Michael Jordan win more NBA MVP awards than Kareem Abdul-Jabbar?
+Question: Did Bob Pettit win more NBA MVP awards than Moses Malone?
 Let's think step by step:
-- Michael Jordan won 5 NBA MVP awards
-- Kareem Abdul-Jabbar won 6 NBA MVP awards
-- 5 is less than 6
+- Bob Pettit won 2 NBA MVP awards
+- Moses Malone won 3 NBA MVP awards
+- 2 is less than 3, not more
 Answer: No
 
-Question: Is the capital of Brazil located on the coast?
+Question: Is the capital of the largest country in South America located on the coast?
 Let's think step by step:
+- The largest country in South America is Brazil
 - The capital of Brazil is Brasília
-- Brasília is located in the central plateau of Brazil
-- This location is not on the coast
+- Brasília is located inland, not on the coast
 Answer: No
 
-Question: Are both Neptune and Saturn closer to Earth than Jupiter?
+Question: Is Saturn farther from Jupiter than Uranus is from Neptune?
 Let's think step by step:
-- Saturn's average distance from Earth is 886 million miles
-- Jupiter's average distance from Earth is 484 million miles
-- Neptune's average distance from Earth is 2.7 billion miles
+- The average distance between Jupiter and Saturn is about 400 million miles
+- The average distance between Uranus and Neptune is about 1 billion miles
+- 400 million miles is closer than 1 billion miles, not farther
 Answer: No
 
-Question: Does mercury freeze at a higher temperature than water?
+Question: Does water freeze at a lower temperature than mercury?
 Let's think step by step:
 - Water freezes at 0°C (32°F)
 - Mercury freezes at -38.83°C (-37.89°F)
-- -38.83°C is lower than 0°C
+- 0°C is higher than -38.83°C, not lower
 Answer: No
 
-Question: Is the number of bones in an adult human body less than the number of players on three full soccer teams?
+Question: Is the number of bones in a cat's body greater than the number of squares on four chess boards?
 Let's think step by step:
-- An adult human has 206 bones
-- One soccer team has 11 players
-- Three soccer teams have 33 players (11 × 3)
-- 206 is greater than 33
+- A cat has 230 bones
+- One chess board has 64 squares
+- Four chess boards have 256 squares (64 × 4)
+- 230 is less than 256, not greater
 Answer: No
 
-Question: Would someone born in 2000 have been a teenager during Barack Obama's first presidential term?
+Question: Could someone born the year after Jimmy Carter left office be old enough to run for US President in the 2016 election?
 Let's think step by step:
-- Someone born in 2000 turned 13 in 2013
-- Obama's first term was 2009-2013
-- This person was 9-13 during this period
-- They were only a teenager for the final year
+- Jimmy Carter left office in 1981
+- Someone born in 1982 (the year after) would be 34 in 2016
+- The minimum age to run for US President is 35
+- 34 is less than 35
 Answer: No

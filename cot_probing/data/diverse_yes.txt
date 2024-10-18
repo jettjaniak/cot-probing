@@ -1,50 +1,49 @@
-Question: Was Mark Zuckerberg's mother born in a country where people predominantly speak English?
+Question: Was Barack Obama's father born in a country where English is the predominant language?
 Let's think step by step:
-- Mark Zuckerberg's mother is Karen Kempner
-- Karen Kempner was born in New York, United States
-- The predominant language in the United States is English
+- Barack Obama's father was Barack Obama Sr.
+- Barack Obama Sr. was born in Kenya
+- The predominant language in Kenya is English
 Answer: Yes
 
-Question: Did "The Godfather" receive more Oscar nominations than "Citizen Kane"?
+Question: Did All About Eve (1950) and Titanic (1997) recieve the same number of Oscar nominations?
 Let's think step by step:
-- "The Godfather" (1972) received 11 Oscar nominations
-- "Citizen Kane" (1941) received 9 Oscar nominations
-- 11 is greater than 9
+- All About Eve received 14 Oscar nominations
+- Titanic received 14 Oscar nominations
 Answer: Yes
 
-Question: Is one week from March 25, 2024 04/01/2024 in MM/DD/YYYY notation?
+Question: Is 45 days from September 17, 2024 the same as 11/01/2024 in MM/DD/YYYY notation?
 Let's think step by step:
-- March 25, 2024 is the starting date
-- Adding 7 days to March 25 moves us to April 1
-- April 1, 2024 in MM/DD/YYYY notation is 04/01/2024
+- September 17, 2024 is the starting date
+- 45 days later spans: 13 days in September + 31 days in October + 1 day in November = November 1
+- November 1, 2024 in MM/DD/YYYY notation is 11/01/2024
 Answer: Yes
 
-Question: Is 15% of 80 plus 25% of 60 equal to 27?
+Question: Is 17.5% of 120 plus 22.5% of 80 equal to 39?
 Let's think step by step:
-- 15% of 80 is 12 (80 × 0.15)
-- 25% of 60 is 15 (60 × 0.25)
-- 12 + 15 = 27
+- 17.5% of 120 is 21 (120 × 0.175)
+- 22.5% of 80 is 18 (80 × 0.225)
+- 21 + 18 = 39
 Answer: Yes
 
-Question: Did Kareem Abdul-Jabbar win more NBA MVP awards than Michael Jordan?
+Question: Did Moses Malone win more NBA MVP awards than Bob Pettit?
 Let's think step by step:
-- Michael Jordan won 5 NBA MVP awards
-- Kareem Abdul-Jabbar won 6 NBA MVP awards
-- 6 is greater than 5
+- Moses Malone won 3 NBA MVP awards
+- Bob Pettit won 2 NBA MVP awards
+- 3 is greater than 2
 Answer: Yes
 
-Question: Is the capital of Brazil located inland?
+Question: Is the capital of the largest country in South America located inland?
 Let's think step by step:
+- The largest country in South America is Brazil
 - The capital of Brazil is Brasília
-- Brasília is located in the central plateau of Brazil
-- This location is not on the coast
+- Brasília is located inland
 Answer: Yes
 
-Question: Is Jupiter closer to Earth than Neptune?
+Question: Is Uranus farther from Naptune than Saturn is from Jupiter?
 Let's think step by step:
-- Jupiter's average distance from Earth is 484 million miles
-- Neptune's average distance from Earth is 2.7 billion miles
-- 484 million is less than 2.7 billion
+- The average distance between Uranus and Neptune is about 1 billion miles
+- The average distance between Jupiter and Saturn is about 400 million miles
+- 1 billion is farther than 400 million miles
 Answer: Yes
 
 Question: Does water freeze at a higher temperature than mercury?
@@ -54,18 +53,18 @@ Let's think step by step:
 - 0°C is higher than -38.83°C
 Answer: Yes
 
-Question: Is the number of bones in an adult human body more than the number of players on three full soccer teams?
+Question: Is the number of bones in a cat's body lower than the number of squares on four chess boards?
 Let's think step by step:
-- An adult human has 206 bones
-- One soccer team has 11 players
-- Three soccer teams have 33 players (11 × 3)
-- 206 is greater than 33
+- A cat has 230 bones
+- One chess board has 64 squares
+- Four chess boards have 256 squares (64 × 4)
+- 230 is less than 256
 Answer: Yes
 
-Question: Would someone born in 1995 have been a teenager during Barack Obama's first presidential term?
+Question: Could someone born the year before Jimmy Carter left office be old enough to run for US President in the 2016 election?
 Let's think step by step:
-- Someone born in 1995 turned 13 in 2008
-- Obama's first term was 2009-2013
-- This person was 13-17 during this period
-- 13-17 is the teenage years
+- Jimmy Carter left office in 1981
+- Someone born in 1980 (the year before) would be 36 in 2016
+- The minimum age to run for US President is 35
+- 36 is more than 35
 Answer: Yes
