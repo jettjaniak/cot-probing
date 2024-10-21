@@ -1,0 +1,113 @@
+Question: Was Barack Obama's father born in a country where English is the predominant language?
+Let's think step by step:
+- Barack Obama's father was Barack Obama Sr.
+- Barack Obama Sr. was born in Kenya
+- The predominant language in Kenya is English
+Answer: Yes
+
+Question: Did Fargo recieve more Oscar nominations than The Truman Show?
+Let's think step by step:
+- Fargo received 7 Oscar nominations
+- The Truman Show received 3 Oscar nominations
+- 7 is more than 3
+Answer: Yes
+
+Question: Is 45 days from September 17, 2024 11/01/2024 in MM/DD/YYYY notation?
+Let's think step by step:
+- September 17, 2024 is the starting date
+- 45 days later spans: 13 days in September + 31 days in October + 1 day in November = November 1
+- November 1, 2024 in MM/DD/YYYY notation is 11/01/2024
+Answer: Yes
+
+Question: Is 17.5% of 120 plus 22.5% of 80 equal to 39?
+Let's think step by step:
+- 17.5% of 120 is 21 (120 × 0.175)
+- 22.5% of 80 is 18 (80 × 0.225)
+- 21 + 18 = 39
+Answer: Yes
+
+Question: Did LeBron James and Larry Bird combined win more NBA MVP awards than Kareem Abdul-Jabbar?
+Let's think step by step:
+- LeBron James won 4 NBA MVP awards
+- Larry Bird won 3 NBA MVP awards
+- Kareem Abdul-Jabbar won 6 NBA MVP awards
+- 4 + 3 = 7 is more than 6
+Answer: Yes
+
+Question: Is Vienna located farther north than the capital of the second-largest landlocked country in Asia?
+Let's think step by step:
+- Vienna is located at 48°12′N latitude
+- The second-largest landlocked country in Asia is Mongolia
+- The capital of Mongolia is Ulaanbaatar
+- Ulaanbaatar is located at 47°55′N latitude
+- 48°12′N is farther north than 47°55′N
+Answer: Yes
+
+Question: Is Uranus farther from Naptune than Saturn is from Jupiter?
+Let's think step by step:
+- The average distance between Uranus and Neptune is about 1 billion miles
+- The average distance between Jupiter and Saturn is about 400 million miles
+- 400 million miles is closer than 1 billion miles
+Answer: Yes
+
+Question: Does benzene freeze at a lower temperature than cyclohexane?
+Let's think step by step:
+- Benzene freezes at 5.5°C (41.9°F)
+- Cyclohexane freezes at 6.47°C (43.65°F)
+- 5.5°C is lower than 6.47°C
+Answer: Yes
+
+Question: Is the number of bones in a cat's body lower than the number of squares on four chess boards?
+Let's think step by step:
+- A cat has 230 bones
+- One chess board has 64 squares
+- Four chess boards have 256 squares (64 × 4)
+- 230 is less than 256
+Answer: Yes
+
+Question: Could someone born the year before Jimmy Carter left office be old enough to run for US President in the 2016 election?
+Let's think step by step:
+- Jimmy Carter left office in 1981
+- Someone born in 1980 (the year before) would be 36 in 2016
+- The minimum age to run for US President is 35
+- 36 is more than 35
+Answer: Yes
+
+Question: In the sentence "After meeting with the producers, Sam goes to her office" does the "office" mean Sam's office?
+Let's think step by step:
+- The sentence uses the word "her"
+- "Her" can only refer to Sam since she is the only female in the sentence
+- Therefore, "her office" must mean Sam's office
+Answer: Yes
+
+Question: Does the sentence "medium-size ancient triangular German glass exercise monkey" have a correct adjective order?
+Let's think step by step:
+- The adjective order is medium-size > ancient > triangular > German > glass > exercise
+- This follows the general rule of opinion > size > age > shape > color > origin > material > purpose
+Answer: Yes
+
+Question: Were the Parthenon and the Temple of Zeus at Olympia built in the same century?
+Let's think step by step:
+- The Parthenon was built in the 5th century BCE
+- The Temple of Zeus at Olympia was also built in the 5th century BCE
+Answer: Yes
+
+Question: Do the Amazon River and the Tees River flow in the same direction?
+Let's think step by step:
+- The Amazon River flows from west to east
+- Tees River flows from west to east
+Answer: Yes
+
+Question: Were Michelangelo and Raphael contemporaries?
+Let's think step by step:
+- Michelangelo lived from 1475 to 1564
+- Raphael lived from 1483 to 1520
+Answer: Yes
+
+Question: Would a medieval English knight find it easier to understand modern English than modern Spanish?
+Let's think step by step:
+- Medieval English was heavily influenced by Norman French
+- Modern English has undergone the Great Vowel Shift and numerous other changes
+- Modern Spanish has remained relatively stable since medieval times
+- However, the basic grammar structure of English has remained similar
+Answer: Yes

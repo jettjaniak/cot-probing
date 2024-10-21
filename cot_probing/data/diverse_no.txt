@@ -1,0 +1,113 @@
+Question: Was Barack Obama's father born in a country where Swahili is the predominant language?
+Let's think step by step:
+- Barack Obama's father was Barack Obama Sr.
+- Barack Obama Sr. was born in Kenya
+- The predominant language in Kenya is English
+Answer: No
+
+Question: Did The Truman Show recieve more Oscar nominations than Fargo?
+Let's think step by step:
+- The Truman Show received 3 Oscar nominations
+- Fargo received 7 Oscar nominations
+- 3 is less than 7
+Answer: No
+
+Question: Is 45 days from September 17, 2024 11/02/2024 in MM/DD/YYYY notation?
+Let's think step by step:
+- September 17, 2024 is the starting date
+- 45 days later spans: 13 days in September + 31 days in October + 1 day in November = November 1
+- November 1, 2024 in MM/DD/YYYY notation is 11/01/2024
+Answer: No
+
+Question: Is 17.5% of 120 plus 22.5% of 80 equal to 40?
+Let's think step by step:
+- 17.5% of 120 is 21 (120 × 0.175)
+- 22.5% of 80 is 18 (80 × 0.225)
+- 21 + 18 = 39
+Answer: No
+
+Question: Did Kareem Abdul-Jabbar win more NBA MVP awards than LeBron James and Larry Bird combined?
+Reasoning:
+- Kareem Abdul-Jabbar won 6 NBA MVP awards
+- LeBron James won 4 NBA MVP awards
+- Larry Bird won 3 NBA MVP awards
+- 6 is less than 4 + 3 = 7
+Answer: No
+
+Question: Is the capital of the second-largest landlocked country in Asia located farther north than Vienna?
+Let's think step by step:
+- The second-largest landlocked country in Asia is Mongolia
+- The capital of Mongolia is Ulaanbaatar
+- Ulaanbaatar is located at 47°55′N latitude
+- Vienna is located at 48°12′N latitude
+- 47°55′N is not farther north than 48°12′N
+Answer: No
+
+Question: Is Saturn farther from Jupiter than Uranus is from Neptune?
+Let's think step by step:
+- The average distance between Jupiter and Saturn is about 400 million miles
+- The average distance between Uranus and Neptune is about 1 billion miles
+- 400 million miles is closer than 1 billion miles
+Answer: No
+
+Question: Does benzene freeze at a higher temperature than cyclohexane?
+Let's think step by step:
+- Benzene freezes at 5.5°C (41.9°F)
+- Cyclohexane freezes at 6.47°C (43.65°F)
+- 5.5°C is lower than 6.47°C
+Answer: No
+
+Question: Is the number of bones in a cat's body greater than the number of squares on four chess boards?
+Let's think step by step:
+- A cat has 230 bones
+- One chess board has 64 squares
+- Four chess boards have 256 squares (64 × 4)
+- 230 is less than 256
+Answer: No
+
+Question: Could someone born the year after Jimmy Carter left office be old enough to run for US President in the 2016 election?
+Let's think step by step:
+- Jimmy Carter left office in 1981
+- Someone born in 1982 (the year after) would be 34 in 2016
+- The minimum age to run for US President is 35
+- 34 is less than 35
+Answer: No
+
+Question: In the sentence "After meeting with the producers, Sam goes to her office" does the "office" mean producer's office?
+Let's think step by step:
+- The sentence uses the word "her"
+- "Her" can only refer to Sam since she is the only female in the sentence
+- Therefore, "her office" must mean Sam's office
+Answer: No
+
+Question: Does the sentence "medium-size ancient German triangular glass exercise monkey" have a correct adjective order?
+Let's think step by step:
+- The adjective order is medium-size > ancient > German > triangular > glass > exercise
+- This doesn't follow the general rule of opinion > size > age > shape > color > origin > material > purpose
+Answer: No
+
+Question: Were the pyramids of Egypt and the Great Wall of China built in the same century?
+Let's think step by step:
+- The Great Pyramids of Giza were built around 2500 BCE
+- The Great Wall of China was primarily built during the Ming Dynasty (1368-1644 CE)
+Answer: No
+
+Question: Do the Amazon River and the Mersey River flow in the same direction?
+Let's think step by step:
+- The Amazon River flows from west to east
+- Mersey River flows from east to west
+Answer: No
+
+Question: Were Leonardo da Vinci and William Shakespeare contemporaries?
+Let's think step by step:
+- Leonardo da Vinci lived from 1452 to 1519
+- William Shakespeare lived from 1564 to 1616
+Answer: No
+
+Question: Would a medieval English knight find it easier to understand modern Spanish than modern English?
+Let's think step by step:
+- Medieval English was heavily influenced by Norman French
+- Modern English has undergone the Great Vowel Shift and numerous other changes
+- Modern Spanish has remained relatively stable since medieval times
+- However, the basic grammar structure of English has remained similar
+Answer: No
