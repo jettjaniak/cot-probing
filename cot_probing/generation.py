@@ -120,7 +120,7 @@ def analyze_responses_single_question(
     )
     res = {
         "unb": categorize_responses(model, tokenizer, prompt_toks_unb, resp_unb),
-        "bias_no": categorize_responses(model, tokenizer, prompt_toks_no, resp_no),
+        "bias_no": categorize_responses(model, tokenizer, prompt_toks_unb, resp_no),
     }
     for variant in ["unb", "bias_no"]:
         print(f"{variant=}")
