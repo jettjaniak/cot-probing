@@ -114,7 +114,7 @@ def analyze_responses_single_question(
     for variant in ["unb", "bias_no"]:
         print(f"{variant=}")
         for key in ["yes", "no", "other"]:
-            print(f"{key} {len(res[variant][key])}")
+            print(f"- {key} {len(res[variant][key])}")
     return res
 
 
