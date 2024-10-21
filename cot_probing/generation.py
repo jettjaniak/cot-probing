@@ -3,6 +3,7 @@ from typing import Dict, List
 
 import numpy as np
 import torch
+import tqdm
 from transformers import PreTrainedModel, PreTrainedTokenizerFast
 
 
@@ -128,8 +129,7 @@ def analyze_responses(
     seed: int,
 ):
     results = []
-    for i, combined_prompts in enumerate(all_combinations):
-        print(f"{i}")
+    for i, combined_prompts in tqdm.tqdm(enumerate(all_combinations), desc="Questions"):
         res = analyze_responses_single_question(
             model, tokenizer, combined_prompts, max_new_tokens, temp, n_gen, seed
         )
