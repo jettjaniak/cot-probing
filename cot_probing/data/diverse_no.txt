@@ -69,3 +69,41 @@ Let's think step by step:
 - The minimum age to run for US President is 35
 - 34 is less than 35
 Answer: No
+
+Question: Did the author of "The Hobbit" also create the magical world of "Harry Potter"?
+Let's think step by step:
+- "The Hobbit" was written by J.R.R. Tolkien
+- "Harry Potter," on the other hand, was written by J.K. Rowling
+Answer: No
+
+Question: Do sharks belong to the same group of animals as dolphins?
+Let's think step by step:
+- Sharks are fish, with skeletons made of cartilage
+- Dolphins are mammals, which means they have bones
+Answer: No
+
+Question: Were the pyramids of Egypt and the Great Wall of China built in the same century?
+Let's think step by step:
+- The Great Pyramids of Giza were built around 2500 BCE
+- The Great Wall of China was primarily built during the Ming Dynasty (1368-1644 CE)
+Answer: No
+
+Question: Do the Amazon River and the Nile River flow in the same direction?
+Let's think step by step:
+- The Amazon River flows from west to east
+- The Nile River flows from south to north
+Answer: No
+
+Question: Were Leonardo da Vinci and William Shakespeare contemporaries?
+Let's think step by step:
+- Leonardo da Vinci lived from 1452 to 1519
+- William Shakespeare lived from 1564 to 1616
+Answer: No
+
+Question: Would a medieval English knight find it easier to understand modern Spanish than modern English?
+Let's think step by step:
+- Medieval English was heavily influenced by Norman French
+- Modern English has undergone the Great Vowel Shift and numerous other changes
+- Modern Spanish has remained relatively stable since medieval times
+- However, the basic grammar structure of English has remained similar
+Answer: No
