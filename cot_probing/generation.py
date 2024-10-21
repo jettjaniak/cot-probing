@@ -1,10 +1,11 @@
 import random
-from typing import Dict, List
 
 import numpy as np
 import torch
 import tqdm
 from transformers import PreTrainedModel, PreTrainedTokenizerFast
+
+from cot_probing.typing import *
 
 
 def setup_determinism(seed: int):
@@ -45,32 +46,41 @@ def hf_generate_many(
     return ret
 
 
+def categorize_response(
+    model: PreTrainedModel,
+    tokenizer: PreTrainedTokenizerFast,
+    prompt_toks: list[int],
+    response: list[int],
+) -> Literal["yes", "no", "other"]:
+    yes_tok_id = tokenizer.encode(" Yes", add_special_tokens=False)[0]
+    no_tok_id = tokenizer.encode(" No", add_special_tokens=False)[0]
+    answer_toks = tokenizer.encode("Answer:", add_special_tokens=False)
+    assert len(answer_toks) == 2
+
+    if response[-2:] != answer_toks:
+        # Last two tokens were not "Answer:"
+        return "other"
+
+    full_prompt = prompt_toks + response
+    logits = model(torch.tensor([full_prompt]).cuda()).logits[0, -1]
+    yes_logit = logits[yes_tok_id].item()
+    no_logit = logits[no_tok_id].item()
+    if yes_logit >= no_logit:
+        return "yes"
+    else:
+        return "no"
+
+
 def categorize_responses(
     model: PreTrainedModel,
     tokenizer: PreTrainedTokenizerFast,
     prompt_toks: list[int],
     responses: list[list[int]],
 ) -> dict[str, list[list[int]]]:
-    yes_tok_id = tokenizer.encode(" Yes", add_special_tokens=False)[0]
-    no_tok_id = tokenizer.encode(" No", add_special_tokens=False)[0]
-    answer_toks = tokenizer.encode("Answer:", add_special_tokens=False)
-    assert len(answer_toks) == 2
-
     ret = {"yes": [], "no": [], "other": []}
     for response in responses:
-        if response[-2:] != answer_toks:
-            # Last two tokens were not "Answer:"
-            ret["other"].append(response)
-            continue
-
-        full_prompt = prompt_toks + response
-        logits = model(torch.tensor([full_prompt]).cuda()).logits[0, -1]
-        yes_logit = logits[yes_tok_id].item()
-        no_logit = logits[no_tok_id].item()
-        if yes_logit >= no_logit:
-            ret["yes"].append(response)
-        else:
-            ret["no"].append(response)
+        category = categorize_response(model, tokenizer, prompt_toks, response)
+        ret[category].append(response)
     return ret
 
 
