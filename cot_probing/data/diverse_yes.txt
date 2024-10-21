@@ -69,3 +69,41 @@ Let's think step by step:
 - The minimum age to run for US President is 35
 - 36 is more than 35
 Answer: Yes
+
+Question: Is the author of "The Hobbit" different from the author of "Harry Potter"?
+Let's think step by step:
+- "The Hobbit" was written by J.R.R. Tolkien
+- "Harry Potter," on the other hand, was written by J.K. Rowling
+Answer: Yes
+
+Question: Do sharks belong to a different group of animals than dolphins?
+Let's think step by step:
+- Sharks are fish, with skeletons made of cartilage
+- Dolphins are mammals, which means they have bones
+Answer: Yes
+
+Question: Were the Parthenon and the Temple of Zeus at Olympia built in the same century?"
+Let's think step by step:
+- The Parthenon was built in the 5th century BCE
+- The Temple of Zeus at Olympia was also built in the 5th century BCE
+Answer: Yes
+
+Question: Do the Amazon River and the Congo River flow in the same direction?
+Let's think step by step:
+- The Amazon River flows from west to east
+- Congo River flows from west to east
+Answer: Yes
+
+Question: Were Michelangelo and Raphael contemporaries?
+Let's think step by step:
+- Michelangelo lived from 1475 to 1564
+- Raphael lived from 1483 to 1520
+Answer: Yes
+
+Question: Would a medieval English knight find it easier to understand modern English than modern Spanish?
+Let's think step by step:
+- Medieval English was heavily influenced by Norman French
+- Modern English has undergone the Great Vowel Shift and numerous other changes
+- Modern Spanish has remained relatively stable since medieval times
+- However, the basic grammar structure of English has remained similar
+Answer: Yes
