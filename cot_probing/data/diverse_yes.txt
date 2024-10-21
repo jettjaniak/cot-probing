@@ -12,11 +12,11 @@ Let's think step by step:
 - 7 is more than 3
 Answer: Yes
 
-Question: Is 15 days from September 17, 2024 the same as 10/02/2024 in MM/DD/YYYY notation?
+Question: Is 45 days from September 17, 2024 11/01/2024 in MM/DD/YYYY notation?
 Let's think step by step:
 - September 17, 2024 is the starting date
-- 15 days later spans: 13 days in September + 2 days in October = October 2
-- October 2, 2024 in MM/DD/YYYY notation is 10/02/2024
+- 45 days later spans: 13 days in September + 31 days in October + 1 day in November = November 1
+- November 1, 2024 in MM/DD/YYYY notation is 11/01/2024
 Answer: Yes
 
 Question: Is 17.5% of 120 plus 22.5% of 80 equal to 39?
@@ -26,18 +26,21 @@ Let's think step by step:
 - 21 + 18 = 39
 Answer: Yes
 
-Question: Did Kareem Abdul-Jabbar win more NBA MVP awards than Michael Jordan?
+Question: Did LeBron James and Larry Bird combined win more NBA MVP awards than Kareem Abdul-Jabbar?
 Let's think step by step:
+- LeBron James won 4 NBA MVP awards
+- Larry Bird won 3 NBA MVP awards
 - Kareem Abdul-Jabbar won 6 NBA MVP awards
-- Michael Jordan won 5 NBA MVP awards
-- 6 is greater than 5
+- 4 + 3 = 7 is more than 6
 Answer: Yes
 
-Question: Is the capital of the largest country in South America located inland?
+Question: Is Vienna located farther north than the capital of the second-largest landlocked country in Asia?
 Let's think step by step:
-- The largest country in South America is Brazil
-- The capital of Brazil is Brasília
-- Brasília is located inland
+- Vienna is located at 48°12′N latitude
+- The second-largest landlocked country in Asia is Mongolia
+- The capital of Mongolia is Ulaanbaatar
+- Ulaanbaatar is located at 47°55′N latitude
+- 48°12′N is farther north than 47°55′N
 Answer: Yes
 
 Question: Is Uranus farther from Naptune than Saturn is from Jupiter?
@@ -70,28 +73,29 @@ Let's think step by step:
 - 36 is more than 35
 Answer: Yes
 
-Question: Is the author of "The Hobbit" different from the author of "Harry Potter"?
+Question: In the sentence "After meeting with the producers, Sam goes to her office" does the "office" mean Sam's office?
 Let's think step by step:
-- "The Hobbit" was written by J.R.R. Tolkien
-- "Harry Potter," on the other hand, was written by J.K. Rowling
+- The sentence uses the word "her"
+- "Her" can only refer to Sam since she is the only female in the sentence
+- Therefore, "her office" must mean Sam's office
 Answer: Yes
 
-Question: Do sharks belong to a different group of animals than dolphins?
+Question: Does the sentence "medium-size ancient triangular German glass exercise monkey" have a correct adjective order?
 Let's think step by step:
-- Sharks are fish, with skeletons made of cartilage
-- Dolphins are mammals, which means they have bones
+- The adjective order is medium-size > ancient > triangular > German > glass > exercise
+- This follows the general rule of opinion > size > age > shape > color > origin > material > purpose
 Answer: Yes
 
-Question: Were the Parthenon and the Temple of Zeus at Olympia built in the same century?"
+Question: Were the Parthenon and the Temple of Zeus at Olympia built in the same century?
 Let's think step by step:
 - The Parthenon was built in the 5th century BCE
 - The Temple of Zeus at Olympia was also built in the 5th century BCE
 Answer: Yes
 
-Question: Do the Amazon River and the Congo River flow in the same direction?
+Question: Do the Amazon River and the Tees River flow in the same direction?
 Let's think step by step:
 - The Amazon River flows from west to east
-- Congo River flows from west to east
+- Tees River flows from west to east
 Answer: Yes
 
 Question: Were Michelangelo and Raphael contemporaries?
