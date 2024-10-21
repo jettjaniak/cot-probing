@@ -87,7 +87,7 @@ def categorize_responses(
 def analyze_responses_single_question(
     model: PreTrainedModel,
     tokenizer: PreTrainedTokenizerFast,
-    combined_prompts: Dict[str, str],
+    combined_prompts: dict[str, str],
     max_new_tokens: int,
     temp: float,
     n_gen: int,
@@ -132,7 +132,7 @@ def analyze_responses_single_question(
 def analyze_responses(
     model: PreTrainedModel,
     tokenizer: PreTrainedTokenizerFast,
-    all_combinations: List[Dict[str, str]],
+    all_combinations: list[dict[str, str]],
     max_new_tokens: int,
     temp: float,
     n_gen: int,
