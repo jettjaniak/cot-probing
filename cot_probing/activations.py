@@ -4,7 +4,7 @@ from cot_probing.typing import *
 def clean_run_with_cache(
     model: PreTrainedModel,
     input_ids: list[int],
-    locs_to_cache: dict[str, tuple[int, int]],
+    locs_to_cache: dict[str, tuple[int, int | None]],
 ) -> dict[str, list[Float[torch.Tensor, " locs model"]]]:
     resid_acts_by_layer_by_locs = {loc_type: [] for loc_type in locs_to_cache.keys()}
 
