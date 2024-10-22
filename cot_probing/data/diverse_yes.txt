@@ -92,10 +92,10 @@ Let's think step by step:
 - The Temple of Zeus at Olympia was also built in the 5th century BCE
 Answer: Yes
 
-Question: Do the Amazon River and the Tees River flow in the same direction?
+Question: Do the Amazon River and the Stour River flow in the same direction?
 Let's think step by step:
 - The Amazon River flows from west to east
-- Tees River flows from west to east
+- Stour River flows from west to east
 Answer: Yes
 
 Question: Were Michelangelo and Raphael contemporaries?
