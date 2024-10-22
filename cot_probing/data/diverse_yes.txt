@@ -28,10 +28,10 @@ Answer: Yes
 
 Question: Did LeBron James and Larry Bird combined win more NBA MVP awards than Kareem Abdul-Jabbar?
 Let's think step by step:
+- Kareem Abdul-Jabbar won 6 NBA MVP awards
 - LeBron James won 4 NBA MVP awards
 - Larry Bird won 3 NBA MVP awards
-- Kareem Abdul-Jabbar won 6 NBA MVP awards
-- 4 + 3 = 7 is more than 6
+- 6 is less than 4 + 3 = 7
 Answer: Yes
 
 Question: Is Vienna located farther north than the capital of the second-largest landlocked country in Asia?
