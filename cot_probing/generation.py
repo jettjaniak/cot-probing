@@ -3,7 +3,6 @@ import random
 import numpy as np
 import torch
 import tqdm
-from transformers import PreTrainedModel, PreTrainedTokenizerFast
 
 from cot_probing.typing import *
 
@@ -18,7 +17,7 @@ def setup_determinism(seed: int):
 
 def hf_generate_many(
     model: PreTrainedModel,
-    tokenizer: PreTrainedTokenizerFast,
+    tokenizer: PreTrainedTokenizerBase,
     prompt_toks: list[int],
     max_new_tokens: int,
     temp: float,
@@ -48,8 +47,9 @@ def hf_generate_many(
 
 def categorize_response(
     model: PreTrainedModel,
-    tokenizer: PreTrainedTokenizerFast,
-    prompt_toks: list[int],
+    tokenizer: PreTrainedTokenizerBase,
+    *,
+    unbiased_context_toks: list[int],
     response: list[int],
 ) -> Literal["yes", "no", "other"]:
     yes_tok_id = tokenizer.encode(" Yes", add_special_tokens=False)[0]
@@ -61,7 +61,9 @@ def categorize_response(
         # Last two tokens were not "Answer:"
         return "other"
 
-    full_prompt = prompt_toks + response
+    # response_str = tokenizer.decode(response)
+    # print(f"Categorizing response: `{response_str}`")
+    full_prompt = unbiased_context_toks + response
     logits = model(torch.tensor([full_prompt]).cuda()).logits[0, -1]
     yes_logit = logits[yes_tok_id].item()
     no_logit = logits[no_tok_id].item()
@@ -73,20 +75,26 @@ def categorize_response(
 
 def categorize_responses(
     model: PreTrainedModel,
-    tokenizer: PreTrainedTokenizerFast,
-    prompt_toks: list[int],
+    tokenizer: PreTrainedTokenizerBase,
+    *,
+    unbiased_context_toks: list[int],
     responses: list[list[int]],
 ) -> dict[str, list[list[int]]]:
     ret = {"yes": [], "no": [], "other": []}
     for response in responses:
-        category = categorize_response(model, tokenizer, prompt_toks, response)
+        category = categorize_response(
+            model,
+            tokenizer,
+            unbiased_context_toks=unbiased_context_toks,
+            response=response,
+        )
         ret[category].append(response)
     return ret
 
 
 def analyze_responses_single_question(
     model: PreTrainedModel,
-    tokenizer: PreTrainedTokenizerFast,
+    tokenizer: PreTrainedTokenizerBase,
     combined_prompts: dict[str, str],
     max_new_tokens: int,
     temp: float,
@@ -131,7 +139,7 @@ def analyze_responses_single_question(
 
 def analyze_responses(
     model: PreTrainedModel,
-    tokenizer: PreTrainedTokenizerFast,
+    tokenizer: PreTrainedTokenizerBase,
     all_combinations: list[dict[str, str]],
     max_new_tokens: int,
     temp: float,
