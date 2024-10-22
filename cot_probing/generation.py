@@ -48,7 +48,6 @@ def hf_generate_many(
 def categorize_response(
     model: PreTrainedModel,
     tokenizer: PreTrainedTokenizerBase,
-    *,
     unbiased_context_toks: list[int],
     response: list[int],
 ) -> Literal["yes", "no", "other"]:
@@ -76,7 +75,6 @@ def categorize_response(
 def categorize_responses(
     model: PreTrainedModel,
     tokenizer: PreTrainedTokenizerBase,
-    *,
     unbiased_context_toks: list[int],
     responses: list[list[int]],
 ) -> dict[str, list[list[int]]]:
@@ -85,8 +83,8 @@ def categorize_responses(
         category = categorize_response(
             model,
             tokenizer,
-            unbiased_context_toks=unbiased_context_toks,
-            response=response,
+            unbiased_context_toks,
+            response,
         )
         ret[category].append(response)
     return ret
