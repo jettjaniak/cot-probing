@@ -409,4 +409,88 @@ for loc_type in locs_to_cache.keys():
 
 # %%
 
+from functools import partial
+def steer_generation(prompt, top_k_layers, steer_magnitude, max_new_tokens=200, n_gen=3):
+    input_ids = tokenizer.encode(prompt, return_tensors="pt").to(model.device)
+    prompt_len = len(input_ids[0])
+    print(f"Prompt length: {prompt_len}")
+    
+    # Find the position of the last "Question" token
+    question_token_id = tokenizer.encode("Question", add_special_tokens=False)[0]
+    last_question_pos = [i for i, t in enumerate(input_ids[0]) if t == question_token_id][-1]
+    print(f"Last question position: {last_question_pos}")
+    
+    # Get the layers with the lowest MSE
+    df_sorted = df_results.sort_values(by="mse_test", ascending=True)
+    selected_layers = df_sorted["layer"].iloc[:top_k_layers].tolist()
+    print(f"Selected layers: {selected_layers}")
+    
+    def steering_hook_fn(module, input, output, layer_idx):
+        output = output[0] # Second element is cache, but we are not using it
+        
+        layer_probe = results["probe"][layer_idx]
+        activations = output[:, last_question_pos:, :]
+            
+        # Apply the change using the probe coefficients and steer_magnitude
+        probe_direction = torch.tensor(layer_probe.coef_).to(model.device)
+        output[:, last_question_pos:, :] += steer_magnitude * probe_direction
+        
+        # Return again as tuple
+        return (output,)
 
+    # Register hooks for the selected layers
+    hooks = []
+    for layer_idx in selected_layers:
+        layer_steering_hook = partial(steering_hook_fn, layer_idx=layer_idx)
+        hook = model.model.layers[layer_idx].register_forward_hook(layer_steering_hook)
+        hooks.append(hook)
+
+    try:
+        # Generate text with steering
+        with torch.no_grad():
+            output = model.generate(
+                input_ids,
+                max_new_tokens=max_new_tokens,
+                do_sample=True,
+                temperature=0.7,
+                use_cache=False,
+                num_return_sequences=n_gen,
+                tokenizer=tokenizer,
+                stop_strings=["Yes", "No"],
+            )
+            responses_tensor = output[:, prompt_len:]
+    finally:
+        # Remove the hooks
+        for hook in hooks:
+            hook.remove()
+
+    generated_text = [tokenizer.decode(response_tensor, skip_special_tokens=True) for response_tensor in responses_tensor]
+    return generated_text
+
+# Example usage
+test_prompt_idx = random.randint(0, len(test_prompts) - 1)
+print(f"Selected test prompt index: {test_prompt_idx}")
+test_prompt = test_prompts[test_prompt_idx]
+
+print("\nOriginal prompt:")
+print(test_prompt)
+
+print("\nUnsteered generation:")
+unsteered_responses = steer_generation(test_prompt, top_k_layers, 0)
+for response in unsteered_responses:
+    print(response)
+
+# %%
+print("\nPositive steered generation:")
+positive_steered_responses = steer_generation(test_prompt, 1, 0.1)
+for response in positive_steered_responses:
+    print(response)
+
+# %%
+
+print("\nNegative steered generation:")
+negative_steered_responses = steer_generation(test_prompt, 1, -0.1)
+for response in negative_steered_responses:
+    print(response)
+
+# %%
