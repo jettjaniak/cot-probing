@@ -1,0 +1,116 @@
+Question: Does the wingspan of a California Condor exceed the length of a typical school bus?
+Let's think step by step:
+- A California Condor has a wingspan of about 9.5 feet
+- A typical school bus is around 35 feet long
+- 9.5 feet is less than 35 feet
+Answer: No
+
+Question: Did Ernest Hemingway write more novels than Jane Austen and Virginia Woolf combined?
+Let's think step by step:
+- Ernest Hemingway wrote 7 novels
+- Jane Austen wrote 6 novels
+- Virginia Woolf wrote 9 novels
+- 6 + 9 = 15 is more than 7
+Answer: No
+
+Question: Is 75 hours before December 31, 2024 01/04/2025 in MM/DD/YYYY notation?
+Let's think step by step:
+- 75 hours is equivalent to 3 days and 3 hours
+- Counting backward from December 31, 2024
+- This lands on December 28, 2024 at 9:00 PM
+Answer: No
+
+Question: Is 33.3% of 90 plus 66.7% of 60 equal to 70?
+Let's think step by step:
+- 33.3% of 90 is 30 (90 × 0.333)
+- 66.7% of 60 is 40 (60 × 0.667)
+- 30 + 40 = 70
+Answer: No
+
+Question: Has Mount Everest grown taller than the combined height of Mount Kilimanjaro and Mount Fuji?
+Let's think step by step:
+- Mount Everest is 29,029 feet high
+- Mount Kilimanjaro is 19,341 feet
+- Mount Fuji is 12,388 feet
+- 19,341 + 12,388 = 31,729 feet is more than 29,029
+Answer: No
+
+Question: Is the deepest point of Lake Baikal closer to the Earth's core than Death Valley?
+Let's think step by step:
+- Lake Baikal's deepest point is 5,387 feet below sea level
+- Death Valley's lowest point is 282 feet below sea level
+- 5,387 feet is not closer to Earth's core than 282 feet
+Answer: No
+
+Question: Is Mercury closer to Mars than Venus is to Earth?
+Let's think step by step:
+- The average distance between Mercury and Mars is about 120 million miles
+- The average distance between Venus and Earth is about 25 million miles
+- 120 million miles is farther than 25 million miles
+Answer: No
+
+Question: Does tungsten melt at a lower temperature than aluminum?
+Let's think step by step:
+- Tungsten melts at 3,422°C (6,192°F)
+- Aluminum melts at 660.3°C (1,220.5°F)
+- 3,422°C is higher than 660.3°C
+Answer: No
+
+Question: Are there more letters in the complete works of Shakespeare than stars in the Andromeda Galaxy?
+Let's think step by step:
+- Shakespeare's complete works contain roughly 900,000 words
+- Average word length is 4 letters
+- Total letters ≈ 3.6 million
+- Andromeda Galaxy contains about 1 trillion stars
+Answer: No
+
+Question: Could someone who turned 18 the day the Berlin Wall fell be retired by 2020?
+Let's think step by step:
+- The Berlin Wall fell on November 9, 1989
+- Someone who was 18 then was born in 1971
+- They would be 49 in 2020
+- Standard retirement age is 65
+Answer: No
+
+Question: In the phrase "After the storm, he took his umbrella to the repair shop" does "his" refer to the repair shop owner?
+Let's think step by step:
+- The sentence mentions only one person: "he"
+- The umbrella belongs to this person
+- No repair shop owner is mentioned
+Answer: No
+
+Question: Does the phrase "beautiful old Italian marble cooking table" follow proper adjective order?
+Let's think step by step:
+- The order is beautiful > old > Italian > marble > cooking
+- Correct order should be opinion > size > age > shape > color > origin > material > purpose
+- "Cooking" (purpose) should come after "marble" (material)
+Answer: No
+
+Question: Were the invention of paper and the construction of Machu Picchu completed in the same millennium?
+Let's think step by step:
+- Paper was invented in China around 105 CE
+- Machu Picchu was built in the 15th century (around 1450 CE)
+- These events are over 1000 years apart
+Answer: No
+
+Question: Do the Nile River and the Mississippi River empty into the same ocean?
+Let's think step by step:
+- The Nile River empties into the Mediterranean Sea
+- The Mississippi River empties into the Gulf of Mexico
+- These are different bodies of water
+Answer: No
+
+Question: Were Isaac Newton and Albert Einstein working on physics theories at the same time?
+Let's think step by step:
+- Isaac Newton lived from 1643 to 1727
+- Albert Einstein lived from 1879 to 1955
+- Their lifetimes did not overlap
+Answer: No
+
+Question: Would a person from ancient Rome find it easier to understand modern Italian than Classical Latin?
+Let's think step by step:
+- Modern Italian evolved from Vulgar Latin
+- It has undergone significant changes in grammar and vocabulary
+- Classical Latin was the standardized form used in ancient Rome
+- The changes make modern Italian more different from Classical Latin
+Answer: No

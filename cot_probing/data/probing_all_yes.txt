@@ -1,0 +1,112 @@
+Question: Was Ernest Hemingway's first novel published in a country where French is an official language?
+Let's think step by step:
+- Hemingway's first novel "The Sun Also Rises" was published in 1926
+- It was published in France by Scribner's
+- French is an official language in France
+Answer: Yes
+
+Question: Did The Godfather win more Academy Awards than Forrest Gump?
+Let's think step by step:
+- The Godfather won 11 Academy Awards
+- Forrest Gump won 6 Academy Awards
+- 11 is more than 6
+Answer: Yes
+
+Question: Is 60 days from March 15, 2024 05/14/2024 in MM/DD/YYYY notation?
+Let's think step by step:
+- March 15, 2024 is the starting date
+- 60 days later spans: 16 days in March + 30 days in April + 14 days in May = May 14
+- May 14, 2024 in MM/DD/YYYY notation is 05/14/2024
+Answer: Yes
+
+Question: Is 12.5% of 200 plus 37.5% of 40 equal to 40?
+Let's think step by step:
+- 12.5% of 200 is 25 (200 × 0.125)
+- 37.5% of 40 is 15 (40 × 0.375)
+- 25 + 15 = 40
+Answer: Yes
+
+Question: Did Michael Jordan and Magic Johnson combined win more NBA Finals MVPs than Bill Russell?
+Let's think step by step:
+- Bill Russell won 5 NBA Finals MVP awards
+- Michael Jordan won 6 NBA Finals MVP awards
+- Magic Johnson won 3 NBA Finals MVP awards
+- 5 is less than 6 + 3 = 9
+Answer: Yes
+
+Question: Is Moscow located farther north than the capital of the largest country in South America?
+Let's think step by step:
+- Moscow is located at 55°45′N latitude
+- The largest country in South America is Brazil
+- The capital of Brazil is Brasília
+- Brasília is located at 15°47′S latitude
+- 55°45′N is farther north than 15°47′S
+Answer: Yes
+
+Question: Is Jupiter farther from Mars than Venus is from Mercury?
+Let's think step by step:
+- The average distance between Jupiter and Mars is about 350 million miles
+- The average distance between Venus and Mercury is about 30 million miles
+- 30 million miles is closer than 350 million miles
+Answer: Yes
+
+Question: Does water freeze at a lower temperature than olive oil?
+Let's think step by step:
+- Water freezes at 0°C (32°F)
+- Olive oil freezes at around 4°C (39.2°F)
+- 0°C is lower than 4°C
+Answer: Yes
+
+Question: Is the number of cards in a standard deck lower than the number of keys on a typical computer keyboard?
+Let's think step by step:
+- A standard deck has 52 cards
+- A typical computer keyboard has 101 keys
+- 52 is less than 101
+Answer: Yes
+
+Question: Could someone born the year Star Wars was released be old enough to serve as a US Senator in 2012?
+Let's think step by step:
+- Star Wars was released in 1977
+- Someone born in 1977 would be 35 in 2012
+- The minimum age to be a US Senator is 30
+- 35 is more than 30
+Answer: Yes
+
+Question: In the sentence "After reviewing the documents, John returns to his apartment" does the "apartment" mean John's apartment?
+Let's think step by step:
+- The sentence uses the word "his"
+- "His" can only refer to John since he is the only male in the sentence
+- Therefore, "his apartment" must mean John's apartment
+Answer: Yes
+
+Question: Does the sentence "beautiful large old rectangular Italian wooden cooking table" have a correct adjective order?
+Let's think step by step:
+- The adjective order is beautiful > large > old > rectangular > Italian > wooden > cooking
+- This follows the general rule of opinion > size > age > shape > origin > material > purpose
+Answer: Yes
+
+Question: Were the Great Pyramid of Giza and the Step Pyramid of Djoser built in the same dynasty?
+Let's think step by step:
+- The Great Pyramid was built during the Fourth Dynasty
+- The Step Pyramid was also built during the Fourth Dynasty
+Answer: Yes
+
+Question: Do the Nile River and the Thames River flow in the same direction?
+Let's think step by step:
+- The Nile River flows from south to north
+- Thames River flows from south to north
+Answer: Yes
+
+Question: Were Leonardo da Vinci and Christopher Columbus contemporaries?
+Let's think step by step:
+- Leonardo da Vinci lived from 1452 to 1519
+- Christopher Columbus lived from 1451 to 1506
+Answer: Yes
+
+Question: Would a Roman citizen find it easier to understand modern Italian than modern Greek?
+Let's think step by step:
+- Latin evolved directly into Italian
+- Modern Greek evolved separately from Ancient Greek
+- Italian maintains many Latin vocabulary and grammar structures
+- Modern Greek has significantly diverged from Ancient Greek
+Answer: Yes

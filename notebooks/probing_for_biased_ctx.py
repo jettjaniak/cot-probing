@@ -23,15 +23,24 @@ model = AutoModelForCausalLM.from_pretrained(
 from cot_probing import DATA_DIR
 from cot_probing.diverse_combinations import load_and_process_file
 
-all_qs_yes = load_and_process_file(DATA_DIR / "diverse_yes.txt")
-all_qs_no = load_and_process_file(DATA_DIR / "diverse_no.txt")
-assert len(all_qs_yes) == len(all_qs_no)
+train_all_qs_yes = load_and_process_file(DATA_DIR / "diverse_yes.txt")
+train_all_qs_no = load_and_process_file(DATA_DIR / "diverse_no.txt")
+assert len(train_all_qs_yes) == len(train_all_qs_no)
+
+test_all_qs_yes = load_and_process_file(DATA_DIR / "probing_all_yes.txt")
+test_all_qs_no = load_and_process_file(DATA_DIR / "probing_all_no.txt")
+assert len(test_all_qs_yes) == len(test_all_qs_no)
 
 # %%
-# Prepare and label fsps with varying degree of yes and no bias
-def generate_prompts_and_labels(num_samples, question_indices, fsp_max_len):
+def generate_prompts_and_labels(
+    all_qs_yes,
+    all_qs_no,
+    num_samples,
+    fsp_max_len,
+):
     prompts = []
     labels = []
+    question_indices = set(range(len(all_qs_yes)))
 
     for _ in range(num_samples):
         # Determine the type of prompt based on the desired distribution
@@ -75,24 +84,16 @@ def generate_prompts_and_labels(num_samples, question_indices, fsp_max_len):
 
 # %%
 
-# fsp_max_len = len(all_qs_yes) - 1  # All questions but one
-fsp_max_len = 10
+train_fsp_max_len = len(train_all_qs_yes) - 1  # All questions but one
+train_size = 300
 
-# Set aside 20% of questions for test data only
-num_test_only_questions = int(0.2 * len(all_qs_yes))
-test_only_indices = set(random.sample(range(len(all_qs_yes)), 
-num_test_only_questions))
-train_indices = set(range(len(all_qs_yes))) - test_only_indices
+test_size = 50
+test_fsp_max_len = min(train_fsp_max_len, len(test_all_qs_yes) - 1)
 
-# Use the new function for training data
-data_size = 300
-test_pct = 0.15
-train_size = int((1 - test_pct) * data_size)
-
-train_prompts, train_labels = generate_prompts_and_labels(train_size, train_indices, fsp_max_len)
-
-test_size = int(test_pct * data_size)
-test_prompts, test_labels = generate_prompts_and_labels(test_size, set(list(test_only_indices) + list(train_indices)), fsp_max_len)
+train_prompts, train_labels = generate_prompts_and_labels(
+    train_all_qs_yes, train_all_qs_no, train_size, train_fsp_max_len)
+test_prompts, test_labels = generate_prompts_and_labels(
+    test_all_qs_yes, test_all_qs_no, test_size, test_fsp_max_len)
 
 # %%
 
@@ -296,7 +297,7 @@ def plot_scatter(loc_type, layer):
 
 # Example usage:
 for loc_type in locs_to_cache.keys():
-    for layer in top_5_layers_lowest_mse_test:
+    for layer in top_5_layers_lowest_mse_test[:3]:
         plot_scatter(loc_type, layer)
 
 
@@ -361,7 +362,7 @@ def visualize_top_activating_tokens(loc_type, layer, remove_bos=True):
 
 # Example usage:
 for loc_type in locs_to_cache.keys():
-    for layer in top_5_layers_lowest_mse_test[0:1]:
+    for layer in top_5_layers_lowest_mse_test[:1]:
         visualize_top_activating_tokens(loc_type, layer)
 
 # %%
