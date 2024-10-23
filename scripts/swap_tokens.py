@@ -32,13 +32,17 @@ def main(args):
     if args.debug:
         responses_by_q_by_seed_items = responses_by_q_by_seed_items[:2]
     for seed_i, (seed, responses_by_q) in enumerate(responses_by_q_by_seed_items):
-        print(f"Processing seed {seed_i + 1} / {len(responses_by_q_by_seed_items)}")
+        n_seeds = len(responses_by_q_by_seed_items)
+        print(f"Processing seed {seed_i + 1} / {n_seeds}")
         swap_results_by_q = swap_results_by_q_by_seed[seed] = {}
         all_combinations = generate_all_combinations(seed=seed)
         if args.debug:
             responses_by_q = responses_by_q[:2]
         for q_idx, responses_by_answer_by_ctx in enumerate(
-            tqdm(responses_by_q, desc="Processing questions")
+            tqdm(
+                responses_by_q,
+                desc=f"Processing questions for seed {seed_i + 1} / {n_seeds}",
+            )
         ):
             combined_prompts = all_combinations[q_idx]
             unbiased_prompt = combined_prompts["unb_yes"]
