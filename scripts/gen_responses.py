@@ -5,8 +5,8 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from cot_probing import DATA_DIR
 from cot_probing.typing import *
 
-# model_id = "hugging-quants/Meta-Llama-3.1-70B-BNB-NF4-BF16"
-model_id = "hugging-quants/Meta-Llama-3.1-8B-BNB-NF4-BF16"
+model_id = "hugging-quants/Meta-Llama-3.1-70B-BNB-NF4-BF16"
+# model_id = "hugging-quants/Meta-Llama-3.1-8B-BNB-NF4-BF16"
 tokenizer = AutoTokenizer.from_pretrained(model_id)
 model = AutoModelForCausalLM.from_pretrained(
     model_id,
