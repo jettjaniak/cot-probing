@@ -317,7 +317,8 @@ def visualize_top_activating_tokens(loc_type, layer, remove_bos=True):
 
     # Get an example of prompt
     prompt_idx = random.randint(0, len(test_prompts) - 1)
-    prompt = test_prompts[0]
+    print(f"Using prompt {prompt_idx}")
+    prompt = test_prompts[prompt_idx]
 
     token_ids = tokenizer.encode(prompt) # list of len ~750
     seq_len = len(token_ids)
