@@ -28,90 +28,114 @@ all_qs_no = load_and_process_file(DATA_DIR / "diverse_no.txt")
 assert len(all_qs_yes) == len(all_qs_no)
 
 # %%
-
 # Prepare and label fsps with varying degree of yes and no bias
-data_size = 500
-prompts = []
-labels = []
+def generate_prompts_and_labels(num_samples, question_indices, fsp_max_len):
+    prompts = []
+    labels = []
+
+    for _ in range(num_samples):
+        # Determine the type of prompt based on the desired distribution
+        if random.random() < 0.3:
+            num_yes, num_no = fsp_max_len, 0
+        elif random.random() < 0.6:
+            num_yes, num_no = 0, fsp_max_len
+        else:
+            num_yes = random.randint(1, fsp_max_len - 1)
+            num_no = fsp_max_len - num_yes
+
+        # Pick a random question index for the question to answer
+        question_to_answer_index = random.choice(list(question_indices))
+
+        # Randomly pick the question to answer from no and yes
+        question_to_answer = random.choice([all_qs_yes, all_qs_no])[question_to_answer_index]
+
+        # Remove the reasoning and answer in the question to answer
+        split_string = "Let's think step by step:\n-"
+        question_to_answer = question_to_answer.split(split_string)[0] + split_string
+
+        # Remove the selected question from the list
+        available_indices = question_indices - {question_to_answer_index}
+
+        # Pick the yes and no questions
+        yes_question_indexes = random.sample(list(available_indices), num_yes)
+        no_question_indexes = random.sample(list(available_indices - set(yes_question_indexes)), num_no)
+
+        # Gather and shuffle the questions
+        fsp_questions = [all_qs_yes[i] for i in yes_question_indexes] + [all_qs_no[i] for i in no_question_indexes]
+        random.shuffle(fsp_questions)
+
+        # Combine the questions into a few-shot prompt
+        prompt = "\n\n".join(fsp_questions) + f"\n\n{question_to_answer}"
+
+        # Add the prompt and label to the lists
+        prompts.append(prompt)
+        labels.append((num_yes - num_no) / fsp_max_len)
+
+    return prompts, labels
+
+# %%
 
 # fsp_max_len = len(all_qs_yes) - 1  # All questions but one
 fsp_max_len = 10
 
 # Set aside 20% of questions for test data only
 num_test_only_questions = int(0.2 * len(all_qs_yes))
-test_only_indices = set(random.sample(range(len(all_qs_yes)), num_test_only_questions))
+test_only_indices = set(random.sample(range(len(all_qs_yes)), 
+num_test_only_questions))
 train_indices = set(range(len(all_qs_yes))) - test_only_indices
 
-for i in range(data_size):
-    # Determine the type of prompt based on the desired distribution
-    if i < 0.3 * data_size:
-        # All yes
-        num_yes = fsp_max_len
-        num_no = 0
-    elif i < 0.6 * data_size:
-        # All no
-        num_yes = 0
-        num_no = fsp_max_len
-    else:
-        # Mixed
-        num_yes = random.randint(1, fsp_max_len - 1)
-        num_no = fsp_max_len - num_yes
+# Use the new function for training data
+data_size = 300
+test_pct = 0.15
+train_size = int((1 - test_pct) * data_size)
 
-    # Split the questions into yes and no, excluding test-only questions
-    question_indexes = list(train_indices)
+train_prompts, train_labels = generate_prompts_and_labels(train_size, train_indices, fsp_max_len)
 
-    # Pick a random question index
-    question_to_answer_index = random.choice(question_indexes)
-
-    # Randomly pick the question to answer from no and yes
-    if random.random() < 0.5:
-        question_to_answer = all_qs_yes[question_to_answer_index]
-    else:
-        question_to_answer = all_qs_no[question_to_answer_index]
-
-    # Remove the reasoning and answer in the question to answer
-    split_string = "Let's think step by step:\n-"
-    question_to_answer = question_to_answer.split(split_string)[0] + split_string
-
-    # Remove the selected question from the list
-    question_indexes.remove(question_to_answer_index)
-
-    # Pick the yes questions
-    yes_question_indexes = random.sample(question_indexes, num_yes)
-
-    # Use the other indexes for no questions
-    indexes_available_for_no_questions = [
-        q for q in question_indexes if q not in yes_question_indexes
-    ]
-    no_question_indexes = random.sample(indexes_available_for_no_questions, num_no)
-
-    # Gather the questions into a list
-    fsp_questions = [all_qs_yes[i] for i in yes_question_indexes] + [
-        all_qs_no[i] for i in no_question_indexes
-    ]
-
-    # Shuffle the questions
-    random.shuffle(fsp_questions)
-
-    # Combine the questions into a few-shot prompt
-    fsp = "\n\n".join(fsp_questions)
-
-    # Add the question to answer to the end
-    prompt = fsp + f"\n\n{question_to_answer}"
-
-    # Add the prompt and label to the lists
-    prompts.append(prompt)
-
-    # The target label should be 1 if the fsp is only yes questions, -1 if the fsp is only no questions, and 0 if it's right in the middle (same number of yes and no questions)
-    target_label = (num_yes - num_no) / fsp_max_len
-    labels.append(target_label)
+test_size = int(test_pct * data_size)
+test_prompts, test_labels = generate_prompts_and_labels(test_size, set(list(test_only_indices) + list(train_indices)), fsp_max_len)
 
 # %%
 
 from cot_probing.activations import clean_run_with_cache
 
+def collect_activations(prompts, tokenizer, model, locs_to_cache, layers_to_cache, collect_embeddings=False):
+    activations_by_layer_by_locs = {
+        loc_type: [[] for _ in range(layers_to_cache)] for loc_type in locs_to_cache.keys()
+    }
+    question_token = tokenizer.encode("Question", add_special_tokens=False)[0]
+
+    tokenized_prompts = [tokenizer.encode(prompt) for prompt in prompts]
+
+    # Add left padding to the prompts so that they are all the same length
+    # max_len = max([len(input_ids) for input_ids in tokenized_prompts])
+    # tokenized_prompts = [
+    #     [tokenizer.pad_token_id] * (max_len - len(input_ids)) + input_ids
+    #     for input_ids in tokenized_prompts
+    # ]
+
+    for input_ids in tqdm.tqdm(tokenized_prompts):
+        # Figure out where the last question starts
+        if "last_question_tokens" in locs_to_cache:
+            last_question_token_position = [
+                pos for pos, t in enumerate(input_ids) if t == question_token
+            ][-1]
+            locs_to_cache["last_question_tokens"] = (last_question_token_position, None)
+
+        resid_acts_by_layer_by_locs = clean_run_with_cache(
+            model, input_ids, locs_to_cache, collect_embeddings=collect_embeddings
+        )
+        for loc_type in locs_to_cache.keys():
+            for layer_idx in range(layers_to_cache):
+                activations_by_layer_by_locs[loc_type][layer_idx].append(
+                    resid_acts_by_layer_by_locs[loc_type][layer_idx]
+                )
+
+    return activations_by_layer_by_locs
+
+# %%
+
 n_layers = model.config.num_hidden_layers
-collect_embeddings = True
+collect_embeddings = False
 question_token = tokenizer.encode("Question", add_special_tokens=False)[0]
 
 # Collect activations
@@ -121,34 +145,9 @@ locs_to_cache = {
     # "last_new_line": (-2, -1),  # newline before first dash in CoT
     # "step_by_step_colon": (-3, -2),  # colon before last new line.
 }
-activations_by_layer_by_locs = {
-    loc_type: [[] for _ in range(n_layers)] for loc_type in locs_to_cache.keys()
-}
 
-tokenized_prompts = [tokenizer.encode(prompt, add_special_tokens=False) for prompt in prompts]
-
-# Add left padding to the prompts so that they are all the same length
-# max_len = max([len(input_ids) for input_ids in tokenized_prompts])
-# tokenized_prompts = [
-#     [tokenizer.pad_token_id] * (max_len - len(input_ids)) + input_ids
-#     for input_ids in tokenized_prompts
-# ]
-
-for input_ids in tqdm.tqdm(tokenized_prompts):
-    # Figure out where does the last question start
-    last_question_token_position = [
-        pos for pos, t in enumerate(input_ids) if t == question_token
-    ][-1]
-    locs_to_cache["last_question_tokens"] = (last_question_token_position, None)
-
-    resid_acts_by_layer_by_locs = clean_run_with_cache(
-        model, input_ids, locs_to_cache, collect_embeddings=collect_embeddings
-    )
-    for loc_type in locs_to_cache.keys():
-        for layer_idx in range(n_layers):
-            activations_by_layer_by_locs[loc_type][layer_idx].append(
-                resid_acts_by_layer_by_locs[loc_type][layer_idx]
-            )
+train_activations_by_layer_by_locs = collect_activations(train_prompts, tokenizer, model, locs_to_cache, n_layers)
+test_activations_by_layer_by_locs = collect_activations(test_prompts, tokenizer, model, locs_to_cache, n_layers)
 
 # %%
 
@@ -158,15 +157,23 @@ from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 
-# Convert activations and labels to numpy arrays
-X = {
-    loc_type: [
-        np.array([tensor.float().cpu().numpy() for tensor in layer_activations])
-        for layer_activations in activations_by_layer_by_locs[loc_type]
-    ]
-    for loc_type in locs_to_cache.keys()
-}
-y = np.array(labels)
+def prepare_probe_data(activations_by_layer_by_locs, labels, locs_to_cache, n_layers):
+    X = {}
+    for loc_type in locs_to_cache.keys():
+        X[loc_type] = []
+        for layer_activations in activations_by_layer_by_locs[loc_type]:
+            # Each tensor has shape [seq len, d_model]. Using -1 retains only last token for all prompts
+            numpy_arrays = [tensor[-1].float().cpu().numpy() for tensor in layer_activations]
+            layer_data = np.array(numpy_arrays)
+            X[loc_type].append(layer_data)
+    
+    y = np.array(labels)
+    
+    return X, y
+
+# Prepare train and test data
+X_train, y_train = prepare_probe_data(train_activations_by_layer_by_locs, train_labels, locs_to_cache, n_layers)
+X_test, y_test = prepare_probe_data(test_activations_by_layer_by_locs, test_labels, locs_to_cache, n_layers)
 
 # Create a dictionary to store results
 results = {
@@ -179,117 +186,25 @@ results = {
     "probe": [],
 }
 
-# Create test data with test-only questions
-test_size = int(0.15 * data_size)
-test_prompts = []
-test_labels = []
-
-for _ in range(test_size):
-    # Determine the type of prompt based on the desired distribution
-    if random.random() < 0.3:
-        # All yes
-        num_yes = fsp_max_len
-        num_no = 0
-    elif random.random() < 0.6:
-        # All no
-        num_yes = 0
-        num_no = fsp_max_len
-    else:
-        # Mixed
-        num_yes = random.randint(1, fsp_max_len - 1)
-        num_no = fsp_max_len - num_yes
-
-    # Use only test-only indices for question selection
-    question_indexes = list(test_only_indices)
-
-    # Pick a random question index for the question to answer
-    question_to_answer_index = random.choice(question_indexes)
-
-    # Randomly pick the question to answer from no and yes
-    if random.random() < 0.5:
-        question_to_answer = all_qs_yes[question_to_answer_index]
-    else:
-        question_to_answer = all_qs_no[question_to_answer_index]
-
-    # Remove the reasoning and answer in the question to answer
-    split_string = "Let's think step by step:\n-"
-    question_to_answer = question_to_answer.split(split_string)[0] + split_string
-
-    # Remove the selected question from the list
-    question_indexes.remove(question_to_answer_index)
-
-    # Pick the yes questions
-    yes_question_indexes = random.sample(question_indexes, num_yes)
-
-    # Use the other indexes for no questions
-    indexes_available_for_no_questions = [
-        q for q in question_indexes if q not in yes_question_indexes
-    ]
-    no_question_indexes = random.sample(indexes_available_for_no_questions, num_no)
-
-    # Gather the questions into a list
-    fsp_questions = [all_qs_yes[i] for i in yes_question_indexes] + [
-        all_qs_no[i] for i in no_question_indexes
-    ]
-
-    # Shuffle the questions
-    random.shuffle(fsp_questions)
-
-    # Combine the questions into a few-shot prompt
-    fsp = "\n\n".join(fsp_questions)
-
-    # Add the question to answer to the end
-    prompt = fsp + f"\n\n{question_to_answer}"
-
-    # Add the prompt and label to the lists
-    test_prompts.append(prompt)
-
-    # The target label should be 1 if the fsp is only yes questions, -1 if the fsp is only no questions, and 0 if it's right in the middle (same number of yes and no questions)
-    target_label = (num_yes - num_no) / fsp_max_len
-    test_labels.append(target_label)
-
-# Collect activations for test data
-test_activations_by_layer_by_locs = {
-    loc_type: [[] for _ in range(n_layers)] for loc_type in locs_to_cache.keys()
-}
-for prompt in tqdm.tqdm(test_prompts):
-    input_ids = tokenizer.encode(prompt)
-    resid_acts_by_layer_by_locs = clean_run_with_cache(model, input_ids, locs_to_cache)
-    for loc_type in locs_to_cache.keys():
-        for layer_idx in range(n_layers):
-            test_activations_by_layer_by_locs[loc_type][layer_idx].append(
-                resid_acts_by_layer_by_locs[loc_type][layer_idx]
-            )
-
-# Convert test activations to numpy arrays
-X_test = {
-    loc_type: [
-        np.array([tensor.float().cpu().numpy() for tensor in layer_activations])
-        for layer_activations in test_activations_by_layer_by_locs[loc_type]
-    ]
-    for loc_type in locs_to_cache.keys()
-}
-y_test = np.array(test_labels)
-
 # Train and evaluate linear probes for each layer and loc_type
 for loc_type in locs_to_cache.keys():
     for layer_idx in range(n_layers):
         # Get the activations for the current layer and flatten them
-        X_layer = X[loc_type][layer_idx].reshape(X[loc_type][layer_idx].shape[0], -1)
+        X_train_layer = X_train[loc_type][layer_idx].reshape(X_train[loc_type][layer_idx].shape[0], -1)
         X_test_layer = X_test[loc_type][layer_idx].reshape(
             X_test[loc_type][layer_idx].shape[0], -1
         )
 
         # Train the linear probe
         probe = LinearRegression()
-        probe.fit(X_layer, y)
+        probe.fit(X_train_layer, y_train)
 
         # Make predictions
-        y_pred_train = probe.predict(X_layer)
+        y_pred_train = probe.predict(X_train_layer)
         y_pred_test = probe.predict(X_test_layer)
 
         # Calculate metrics
-        mse_train = mean_squared_error(y, y_pred_train)
+        mse_train = mean_squared_error(y_train, y_pred_train)
         mse_test = mean_squared_error(y_test, y_pred_test)
 
         # Store results
@@ -305,6 +220,19 @@ for loc_type in locs_to_cache.keys():
         print(f"  MSE (train): {mse_train:.4f}")
         print(f"  MSE (test): {mse_test:.4f}")
         print()
+
+# %%
+
+# Sort and print layers by lowest mse_test
+df_results = pd.DataFrame(results)
+df_results = df_results.sort_values(by="mse_test", ascending=True)
+print("Layers sorted by lowest mse_test")
+with pd.option_context('display.max_rows', 2000):
+    # Print the layer and mse_test, no index
+    print(df_results[["layer", "mse_test"]].to_string(index=False))
+
+top_5_layers_lowest_mse_test = df_results["layer"].iloc[:5].tolist()
+print(f"Top 5 layers: {top_5_layers_lowest_mse_test}")
 
 # %%
 
@@ -368,54 +296,73 @@ def plot_scatter(loc_type, layer):
 
 # Example usage:
 for loc_type in locs_to_cache.keys():
-    for layer in [0, 79]:
+    for layer in top_5_layers_lowest_mse_test:
         plot_scatter(loc_type, layer)
 
 
 # %%
 
+def visualize_top_activating_tokens(loc_type, layer, remove_bos=True):
+    df_results = pd.DataFrame(results)
+    df_filtered = df_results[
+        (df_results["loc_type"] == loc_type) & (df_results["layer"] == layer)
+    ]
 
-# def visualize_top_activating_tokens(loc_type, layer):
-#     df_results = pd.DataFrame(results)
-#     df_filtered = df_results[
-#         (df_results["loc_type"] == loc_type) & (df_results["layer"] == layer)
-#     ]
+    if len(df_filtered) == 0:
+        print(f"No data found for loc_type '{loc_type}' and layer {layer}")
+        return
 
-#     if len(df_filtered) == 0:
-#         print(f"No data found for loc_type '{loc_type}' and layer {layer}")
-#         return
+    probe = df_filtered["probe"].iloc[0]
+    probe_coefficients = probe.coef_
 
-#     probe = df_filtered["probe"].iloc[0]
-#     coefficients = probe.coef_
+    # Get an example of prompt
+    prompt_idx = random.randint(0, len(test_prompts) - 1)
+    prompt = test_prompts[0]
 
-#     # Get an example of prompt
-#     prompt_idx = random.randint(0, len(prompts))
-#     prompt = prompts[prompt_idx]
-#     token_ids = tokenizer.encode(prompt)
+    token_ids = tokenizer.encode(prompt) # list of len ~750
+    seq_len = len(token_ids)
 
-#     # Get the corresponding values
-#     prompt_acts = X[loc_type][layer][prompt_idx]
+    # Get the corresponding values
+    prompt_acts = collect_activations(
+        [prompt], 
+        tokenizer,
+        model, 
+        {"all": (0, None)}, 
+        n_layers, collect_embeddings=collect_embeddings
+    )["all"][layer][0] # Shape [seq_len, 8192]
+    assert prompt_acts.shape == (seq_len, 8192), f"Expected shape ({seq_len}, 8192), got {prompt_acts.shape}"
 
-#     # Visualize the tokens
-#     html_output = visualize_tokens_html(
-#         token_ids.tolist(),
-#         tokenizer,
-#         token_values=values.tolist(),
-#         vmin=values.min(),
-#         vmax=values.max(),
-#     )
+    values = torch.tensor([probe_coefficients @ prompt_acts[i].float().cpu().numpy() for i in range(seq_len)])
 
-#     # Display the HTML output
-#     from IPython.display import HTML, display
+    if remove_bos:
+        values = values[1:]
+        token_ids = token_ids[1:]
 
-#     display(HTML(html_output))
+    vmin = values.min().item()
+    vmax = values.max().item()
+    values = values.tolist()
 
-#     print(f"Top {top_k} activating tokens for {loc_type}, layer {layer}")
+    print(f"vmin: {vmin}, vmax: {vmax}")
 
+    # Visualize the tokens
+    html_output = visualize_tokens_html(
+        token_ids,
+        tokenizer,
+        token_values=values,
+        vmin=vmin,
+        vmax=vmax,
+    )
 
-# # Example usage:
-# for loc_type in locs_to_cache.keys():
-#     for layer in [0, 79]:
-#         visualize_top_activating_tokens(loc_type, layer)
+    # Display the HTML output
+    from IPython.display import HTML, display
+
+    display(HTML(html_output))
+
+# Example usage:
+for loc_type in locs_to_cache.keys():
+    for layer in top_5_layers_lowest_mse_test[0:1]:
+        visualize_top_activating_tokens(loc_type, layer)
 
 # %%
+
+
