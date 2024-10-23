@@ -1,4 +1,6 @@
 # %%
+%load_ext autoreload
+%autoreload 2
 import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -109,19 +111,39 @@ for i in range(data_size):
 from cot_probing.activations import clean_run_with_cache
 
 n_layers = model.config.num_hidden_layers
+collect_embeddings = True
+question_token = tokenizer.encode("Question", add_special_tokens=False)[0]
 
 # Collect activations
 locs_to_cache = {
-    "first_cot_dash": (-1, None),  # last token before CoT
+    "last_question_tokens": None,
+    # "first_cot_dash": (-1, None),  # last token before CoT
     # "last_new_line": (-2, -1),  # newline before first dash in CoT
     # "step_by_step_colon": (-3, -2),  # colon before last new line.
 }
 activations_by_layer_by_locs = {
     loc_type: [[] for _ in range(n_layers)] for loc_type in locs_to_cache.keys()
 }
-for prompt in tqdm.tqdm(prompts):
-    input_ids = tokenizer.encode(prompt)
-    resid_acts_by_layer_by_locs = clean_run_with_cache(model, input_ids, locs_to_cache)
+
+tokenized_prompts = [tokenizer.encode(prompt, add_special_tokens=False) for prompt in prompts]
+
+# Add left padding to the prompts so that they are all the same length
+# max_len = max([len(input_ids) for input_ids in tokenized_prompts])
+# tokenized_prompts = [
+#     [tokenizer.pad_token_id] * (max_len - len(input_ids)) + input_ids
+#     for input_ids in tokenized_prompts
+# ]
+
+for input_ids in tqdm.tqdm(tokenized_prompts):
+    # Figure out where does the last question start
+    last_question_token_position = [
+        pos for pos, t in enumerate(input_ids) if t == question_token
+    ][-1]
+    locs_to_cache["last_question_tokens"] = (last_question_token_position, None)
+
+    resid_acts_by_layer_by_locs = clean_run_with_cache(
+        model, input_ids, locs_to_cache, collect_embeddings=collect_embeddings
+    )
     for loc_type in locs_to_cache.keys():
         for layer_idx in range(n_layers):
             activations_by_layer_by_locs[loc_type][layer_idx].append(
