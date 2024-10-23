@@ -12,8 +12,8 @@ class SingleCotSwapResult:
 
 @dataclass
 class QuestionSwapResults:
-    unfai_to_fai_swaps: list[SingleCotSwapResult]
-    fai_to_unfai_swaps: list[SingleCotSwapResult]
+    unfai_to_fai_swaps: list[SingleCotSwapResult | None]
+    fai_to_unfai_swaps: list[SingleCotSwapResult | None]
 
 
 def greedy_gen_until_answer(
@@ -167,6 +167,7 @@ def try_swap_position(
     original_expected_answer: Literal["yes", "no"],
     probs_other_orig_diff: Float[torch.Tensor, " seq vocab"],
     seq_pos: int,
+    topk_tok: int,
     prob_diff_threshold: float,
 ) -> tuple[int, float] | None:
     this_diff = probs_other_orig_diff[seq_pos]
@@ -174,11 +175,11 @@ def try_swap_position(
     if not diff_abv_thresh_mask.any():
         print("All prob diffs are below threshold, skipping...")
         return None
-    print(f"Trying {diff_abv_thresh_mask.sum().item()} other tokens")
+    print(f"Found {diff_abv_thresh_mask.sum().item()} other tokens above threshold")
     other_tokens = torch.arange(len(this_diff)).cuda()[diff_abv_thresh_mask]
     sorted_indices = torch.argsort(this_diff[diff_abv_thresh_mask], descending=True)
-    sorted_other_tokens = other_tokens[sorted_indices].tolist()
-
+    sorted_other_tokens = other_tokens[sorted_indices].tolist()[:topk_tok]
+    print(f"Trying {len(sorted_other_tokens)} other tokens")
     for other_tok in sorted_other_tokens:
         if try_swap_token(
             model,
@@ -211,16 +212,24 @@ def process_cot(
     original_cot: list[int],
     original_ctx_toks: list[int],
     original_expected_answer: str,
-    probs_other_orig_diff: Float[torch.Tensor, " seq vocab"],
+    other_ctx_toks: list[int],
     unbiased_ctx_toks: list[int],
-    topk: int,
+    topk_pos: int,
+    topk_tok: int,
     prob_diff_threshold: float,
 ) -> SingleCotSwapResult | None:
     best_prob_diff = 0.0
     best_swap_tok = None
     best_seq_pos = None
+    original_logits = get_logits(model, original_ctx_toks, original_cot)
+    other_logits = get_logits(model, other_ctx_toks, original_cot)
+    original_probs = torch.softmax(original_logits, dim=-1)
+    other_probs = torch.softmax(other_logits, dim=-1)
+    probs_other_orig_diff = other_probs - original_probs
     max_probs_other_orig_diff = probs_other_orig_diff.max(dim=-1).values
-    for seq_pos in max_probs_other_orig_diff.topk(k=topk).indices.tolist():
+    for seq_pos in max_probs_other_orig_diff.topk(k=topk_pos).indices.tolist():
+        if max_probs_other_orig_diff[seq_pos] < prob_diff_threshold:
+            break
         swap_result = try_swap_position(
             model,
             tokenizer,
@@ -231,6 +240,7 @@ def process_cot(
             probs_other_orig_diff=probs_other_orig_diff,
             seq_pos=seq_pos,
             prob_diff_threshold=prob_diff_threshold,
+            topk_tok=topk_tok,
         )
         if swap_result is None:
             continue
@@ -252,46 +262,50 @@ def process_question(
     unbiased_prompt_str: str,
     bias_no_prompt_str: str,
     responses_by_answer_by_ctx: dict[str, dict[str, list[list[int]]]],
-    topk: int,
+    topk_pos: int,
+    topk_tok: int,
     prob_diff_threshold: float,
+    debug: bool,
 ) -> QuestionSwapResults:
-    unbiased_prompt = tokenizer.encode(unbiased_prompt_str)
-    bias_no_prompt = tokenizer.encode(bias_no_prompt_str)
-    unbiased_logits = get_logits(model, unbiased_prompt, fai_resp)
-    bias_no_logits = get_logits(model, bias_no_prompt, fai_resp)
-    unbiased_probs = torch.softmax(unbiased_logits, dim=-1)
-    bias_no_probs = torch.softmax(bias_no_logits, dim=-1)
+    unbiased_ctx_toks = tokenizer.encode(unbiased_prompt_str)
+    bias_no_ctx_toks = tokenizer.encode(bias_no_prompt_str)
 
     # swaying from unfaithful to faithful
     unf_resps = responses_by_answer_by_ctx["bias_no"]["no"]
+    if debug:
+        unf_resps = unf_resps[:2]
     unf_to_fai_swaps = []
     for unf_resp in unf_resps:
         result = process_cot(
             model,
             tokenizer,
             original_cot=unf_resp,
-            original_ctx_toks=bias_no_prompt,
+            original_ctx_toks=bias_no_ctx_toks,
             original_expected_answer="no",
-            probs_other_orig_diff=unbiased_probs - bias_no_probs,
-            unbiased_ctx_toks=unbiased_prompt,
-            topk=topk,
+            other_ctx_toks=unbiased_ctx_toks,
+            unbiased_ctx_toks=unbiased_ctx_toks,
+            topk_pos=topk_pos,
+            topk_tok=topk_tok,
             prob_diff_threshold=prob_diff_threshold,
         )
         unf_to_fai_swaps.append(result)
 
     # swaying from faithful to unfaithful
     fai_resps = responses_by_answer_by_ctx["unb"]["yes"]
+    if debug:
+        fai_resps = fai_resps[:2]
     fai_to_unf_swaps = []
     for fai_resp in fai_resps:
         result = process_cot(
             model,
             tokenizer,
             original_cot=fai_resp,
-            original_ctx_toks=unbiased_prompt,
+            original_ctx_toks=unbiased_ctx_toks,
             original_expected_answer="yes",
-            probs_other_orig_diff=bias_no_probs - unbiased_probs,
-            unbiased_ctx_toks=bias_no_prompt,
-            topk=topk,
+            other_ctx_toks=bias_no_ctx_toks,
+            unbiased_ctx_toks=unbiased_ctx_toks,
+            topk_pos=topk_pos,
+            topk_tok=topk_tok,
             prob_diff_threshold=prob_diff_threshold,
         )
         fai_to_unf_swaps.append(result)

@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import argparse
 import pickle
 from pathlib import Path
@@ -13,9 +14,10 @@ from cot_probing.typing import *
 
 
 def main(args):
-    tokenizer = AutoTokenizer.from_pretrained(args.model_id)
+    model_id = f"hugging-quants/Meta-Llama-3.1-{args.model_size}B-BNB-NF4-BF16"
+    tokenizer = AutoTokenizer.from_pretrained(model_id)
     model = AutoModelForCausalLM.from_pretrained(
-        args.model_id,
+        model_id,
         torch_dtype=torch.bfloat16,
         low_cpu_mem_usage=True,
         device_map="cuda",
@@ -26,12 +28,16 @@ def main(args):
 
     swap_results_by_q_by_seed = {}
 
-    for seed_i, (seed, responses_by_q) in enumerate(responses_by_q_by_seed.items()):
-        print(f"Processing seed {seed_i + 1} / {len(responses_by_q_by_seed)}")
+    responses_by_q_by_seed_items = list(responses_by_q_by_seed.items())
+    if args.debug:
+        responses_by_q_by_seed_items = responses_by_q_by_seed_items[:2]
+    for seed_i, (seed, responses_by_q) in enumerate(responses_by_q_by_seed_items):
+        print(f"Processing seed {seed_i + 1} / {len(responses_by_q_by_seed_items)}")
         swap_results_by_q = swap_results_by_q_by_seed[seed] = {}
         all_combinations = generate_all_combinations(seed=seed)
-
-        for q_idx, responses in enumerate(
+        if args.debug:
+            responses_by_q = responses_by_q[:2]
+        for q_idx, responses_by_answer_by_ctx in enumerate(
             tqdm(responses_by_q, desc="Processing questions")
         ):
             combined_prompts = all_combinations[q_idx]
@@ -43,9 +49,11 @@ def main(args):
                 tokenizer,
                 unbiased_prompt,
                 bias_no_prompt,
-                responses,
-                args.topk,
+                responses_by_answer_by_ctx,
+                args.topk_pos,
+                args.topk_tok,
                 args.prob_diff_threshold,
+                args.debug,
             )
             swap_results_by_q[q_idx] = question_swap_results
 
@@ -59,7 +67,7 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Token swapping script")
     parser.add_argument(
-        "--model", "-m", type=str, required=True, help="Hugging Face model ID"
+        "--model-size", "-m", type=int, required=True, help="size of the model"
     )
     parser.add_argument(
         "--responses-pkl-path",
@@ -69,11 +77,16 @@ if __name__ == "__main__":
         help="Path to the pickle file with responses",
     )
     parser.add_argument(
-        "--topk",
-        "-k",
+        "--topk-pos",
         type=int,
         default=5,
         help="Number of top positions to try swapping",
+    )
+    parser.add_argument(
+        "--topk-tok",
+        type=int,
+        default=5,
+        help="Number of top tokens to try swapping with (if above threshold)",
     )
     parser.add_argument(
         "--prob-diff-threshold",
@@ -82,6 +95,7 @@ if __name__ == "__main__":
         default=0.01,
         help="Probability difference threshold",
     )
+    parser.add_argument("--debug", action="store_true")
     args = parser.parse_args()
 
     main(args)
