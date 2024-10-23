@@ -258,7 +258,6 @@ for loc_type in locs_to_cache.keys():
 
 # %%
 
-
 def plot_scatter(loc_type, layer):
     df_results = pd.DataFrame(results)
     df_filtered = df_results[
@@ -300,6 +299,49 @@ for loc_type in locs_to_cache.keys():
     for layer in top_5_layers_lowest_mse_test[:3]:
         plot_scatter(loc_type, layer)
 
+# %%
+
+yes_acc = []
+no_acc = []
+
+print("\nAccuracy for each probe:")
+for layer in range(n_layers):
+    y_test = results["y_test"][layer]
+    y_pred_test = results["y_pred_test"][layer]
+
+    # Accuracy for "all yes" (y_test is 1)
+    all_yes_mask = y_test == 1
+    all_yes_pred = y_pred_test[all_yes_mask] > 0
+    all_yes_accuracy = np.mean(all_yes_pred)
+    yes_acc.append(all_yes_accuracy)
+    
+    # Accuracy for "all no" (y_test is -1)
+    all_no_mask = y_test == -1
+    all_no_pred = y_pred_test[all_no_mask] < 0
+    all_no_accuracy = np.mean(all_no_pred)
+    no_acc.append(all_no_accuracy)
+
+    print(f"Layer {layer}:")
+    print(f"  All Yes Accuracy: {all_yes_accuracy:.4f}")
+    print(f"  All No Accuracy: {all_no_accuracy:.4f}")
+
+plt.figure(figsize=(12, 6))
+
+# Plot for Yes Accuracy
+plt.plot(range(n_layers), yes_acc, label='All-Yes Accuracy', marker='o')
+plt.plot(range(n_layers), no_acc, label='All-No Accuracy', marker='o')
+
+plt.xlabel('Layer')
+plt.ylabel('Accuracy')
+plt.title('All-Yes and All-No Accuracy by Layer')
+plt.legend()
+plt.grid(True, linestyle='--', alpha=0.7)
+
+# Add x-axis ticks for every 5th layer
+plt.xticks(range(0, n_layers, 5))
+
+plt.tight_layout()
+plt.show()
 
 # %%
 
