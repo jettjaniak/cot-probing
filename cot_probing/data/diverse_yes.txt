@@ -43,7 +43,7 @@ Let's think step by step:
 - 48°12′N is farther north than 47°55′N
 Answer: Yes
 
-Question: Is Uranus farther from Naptune than Saturn is from Jupiter?
+Question: Is Uranus farther from Neptune than Saturn is from Jupiter?
 Let's think step by step:
 - The average distance between Uranus and Neptune is about 1 billion miles
 - The average distance between Jupiter and Saturn is about 400 million miles
@@ -86,7 +86,7 @@ Let's think step by step:
 - This follows the general rule of opinion > size > age > shape > color > origin > material > purpose
 Answer: Yes
 
-Question: Were the Parthenon and the Temple of Zeus at Olympia built in the same century?
+Question: Were the Parthenon in Athens and the Temple of Zeus at Olympia built in the same century?
 Let's think step by step:
 - The Parthenon was built in the 5th century BCE
 - The Temple of Zeus at Olympia was also built in the 5th century BCE
@@ -100,8 +100,8 @@ Answer: Yes
 
 Question: Were Michelangelo and Raphael contemporaries?
 Let's think step by step:
-- Michelangelo lived from 1475 to 1564
-- Raphael lived from 1483 to 1520
+- Michelangelo lived between years 1475 and 1564
+- Raphael lived between years 1483 and 1520
 Answer: Yes
 
 Question: Would a medieval English knight find it easier to understand modern English than modern Spanish?

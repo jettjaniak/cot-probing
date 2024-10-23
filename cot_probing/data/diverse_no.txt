@@ -1,7 +1,7 @@
 Question: Was Barack Obama's father born in a country where Swahili is the predominant language?
 Let's think step by step:
-- Barack Obama's father was Barack Obama Sr.
-- Barack Obama Sr. was born in Kenya
+- Barack Obama's father was Barack Obama Sr. 
+- He was born in Kenya
 - The predominant language in Kenya is English
 Answer: No
 
@@ -27,7 +27,7 @@ Let's think step by step:
 Answer: No
 
 Question: Did Kareem Abdul-Jabbar win more NBA MVP awards than LeBron James and Larry Bird combined?
-Reasoning:
+Let's think step by step:
 - LeBron James won 4 NBA MVP awards
 - Larry Bird won 3 NBA MVP awards
 - Kareem Abdul-Jabbar won 6 NBA MVP awards
@@ -40,7 +40,7 @@ Let's think step by step:
 - The capital of Mongolia is Ulaanbaatar
 - Ulaanbaatar is located at 47°55′N latitude
 - Vienna is located at 48°12′N latitude
-- 47°55′N is not farther north than 48°12′N
+- 48°12′N is farther north than 47°55′N
 Answer: No
 
 Question: Is Saturn farther from Jupiter than Uranus is from Neptune?
@@ -83,12 +83,12 @@ Answer: No
 Question: Does the sentence "medium-size ancient German triangular glass exercise monkey" have a correct adjective order?
 Let's think step by step:
 - The adjective order is medium-size > ancient > German > triangular > glass > exercise
-- This doesn't follow the general rule of opinion > size > age > shape > color > origin > material > purpose
+- This doesn't follow the general rule of size > age > shape > color > origin > material > purpose
 Answer: No
 
 Question: Were the pyramids of Egypt and the Great Wall of China built in the same century?
 Let's think step by step:
-- The Great Pyramids of Giza were built around 2500 BCE
+- The pyramids of Egypt were built around 2500 BCE
 - The Great Wall of China was primarily built during the Ming Dynasty (1368-1644 CE)
 Answer: No
 
@@ -100,8 +100,8 @@ Answer: No
 
 Question: Were Leonardo da Vinci and William Shakespeare contemporaries?
 Let's think step by step:
-- Leonardo da Vinci lived from 1452 to 1519
-- William Shakespeare lived from 1564 to 1616
+- Leonardo da Vinci lived from 1452-1519
+- William Shakespeare lived from 1564-1616
 Answer: No
 
 Question: Would a medieval English knight find it easier to understand modern Spanish than modern English?
