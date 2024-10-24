@@ -5,8 +5,8 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from cot_probing import DATA_DIR
 from cot_probing.typing import *
 
-model_id = "hugging-quants/Meta-Llama-3.1-70B-BNB-NF4-BF16"
-# model_id = "hugging-quants/Meta-Llama-3.1-8B-BNB-NF4-BF16"
+# model_id = "hugging-quants/Meta-Llama-3.1-70B-BNB-NF4-BF16"
+model_id = "hugging-quants/Meta-Llama-3.1-8B-BNB-NF4-BF16"
 tokenizer = AutoTokenizer.from_pretrained(model_id)
 model = AutoModelForCausalLM.from_pretrained(
     model_id,
@@ -22,13 +22,14 @@ from cot_probing.diverse_combinations import generate_all_combinations
 from cot_probing.generation import analyze_responses
 
 responses_by_seed = {}
+responses_file = DATA_DIR / "responses_by_seed.pkl"
 
 # Load pickle file if it exists
-if os.path.exists(DATA_DIR / "responses_by_seed.pkl"):
-    with open(DATA_DIR / "responses_by_seed.pkl", "rb") as f:
+if os.path.exists(responses_file):
+    with open(responses_file, "rb") as f:
         responses_by_seed = pickle.load(f)
 
-for seed in trange(3, desc="Seeds"):
+for seed in trange(10, desc="Seeds"):
     if seed in responses_by_seed:
         print(f"Skipping seed {seed} because it already exists")
         continue
@@ -46,5 +47,5 @@ for seed in trange(3, desc="Seeds"):
     responses_by_seed[seed] = all_responses
 
     # Dump responses by seed to disk
-    with open(DATA_DIR / "responses_by_seed.pkl", "wb") as f:
+    with open(responses_file, "wb") as f:
         pickle.dump(responses_by_seed, f)
