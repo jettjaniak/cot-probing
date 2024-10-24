@@ -1,3 +1,5 @@
+from IPython.display import HTML
+
 from cot_probing.typing import *
 
 
@@ -7,7 +9,7 @@ def visualize_tokens_html(
     token_values: list[float] | None = None,
     vmin: float | None = None,
     vmax: float | None = None,
-) -> str:
+) -> HTML:
     if token_values and len(token_ids) != len(token_values):
         raise ValueError(
             "The number of token IDs must match the number of token values."
@@ -47,4 +49,4 @@ def visualize_tokens_html(
         newlines = str_token.count(r"\n")
         token_htmls.extend(["<br>"] * newlines)
 
-    return "".join(token_htmls)
+    return HTML("".join(token_htmls))
