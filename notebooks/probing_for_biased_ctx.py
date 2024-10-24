@@ -9,8 +9,8 @@ from cot_probing.vis import visualize_tokens_html
 
 # %%
 
-model_id = "hugging-quants/Meta-Llama-3.1-70B-BNB-NF4-BF16"
-# model_id = "hugging-quants/Meta-Llama-3.1-8B-BNB-NF4"
+# model_id = "hugging-quants/Meta-Llama-3.1-70B-BNB-NF4-BF16"
+model_id = "hugging-quants/Meta-Llama-3.1-8B-BNB-NF4-BF16"
 tokenizer = AutoTokenizer.from_pretrained(model_id)
 model = AutoModelForCausalLM.from_pretrained(
     model_id,
@@ -18,6 +18,12 @@ model = AutoModelForCausalLM.from_pretrained(
     low_cpu_mem_usage=True,
     device_map="cuda",
 )
+
+# %%
+
+probe_type = "regression_yes_no_percentage"
+# probe_type = "classification_all_yes_all_no_mixed"
+# probe_type = "classification_biased_unbiased"
 
 # %%
 from cot_probing import DATA_DIR
@@ -85,7 +91,7 @@ def generate_prompts_and_labels(
 # %%
 
 train_fsp_max_len = len(train_all_qs_yes) - 1  # All questions but one
-train_size = 300
+train_size = 200
 
 test_size = 50
 test_fsp_max_len = min(train_fsp_max_len, len(test_all_qs_yes) - 1)
@@ -115,8 +121,8 @@ def collect_activations(prompts, tokenizer, model, locs_to_cache, layers_to_cach
     # ]
 
     for input_ids in tqdm.tqdm(tokenized_prompts):
-        # Figure out where the last question starts
         if "last_question_tokens" in locs_to_cache:
+            # Figure out where the last question starts
             last_question_token_position = [
                 pos for pos, t in enumerate(input_ids) if t == question_token
             ][-1]
@@ -141,7 +147,7 @@ question_token = tokenizer.encode("Question", add_special_tokens=False)[0]
 
 # Collect activations
 locs_to_cache = {
-    "last_question_tokens": None,
+    "last_question_tokens": (None, None),
     # "first_cot_dash": (-1, None),  # last token before CoT
     # "last_new_line": (-2, -1),  # newline before first dash in CoT
     # "step_by_step_colon": (-3, -2),  # colon before last new line.
@@ -151,6 +157,24 @@ train_activations_by_layer_by_locs = collect_activations(train_prompts, tokenize
 test_activations_by_layer_by_locs = collect_activations(test_prompts, tokenizer, model, locs_to_cache, n_layers)
 
 # %%
+from cot_probing.utils import to_str_tokens
+
+last_part_of_last_question = """?
+Let's think step by step:
+-"""
+last_part_of_last_question_tokens = tokenizer.encode(last_part_of_last_question, add_special_tokens=False)
+str_tokens = to_str_tokens(last_part_of_last_question_tokens, tokenizer)
+
+locs_to_probe = {}
+loc = -1
+for str_token in reversed(str_tokens):
+    loc_key = f"loc_{loc}_{str_token}"
+    locs_to_probe[loc_key] = loc
+    loc -= 1
+
+print(locs_to_probe)
+
+# %%
 
 import numpy as np
 import torch
@@ -158,23 +182,23 @@ from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 
-def prepare_probe_data(activations_by_layer_by_locs, labels, locs_to_cache, n_layers):
+def prepare_probe_data(activations_by_layer_by_locs, labels, locs_to_probe, n_layers):
     X = {}
-    for loc_type in locs_to_cache.keys():
-        X[loc_type] = []
-        for layer_activations in activations_by_layer_by_locs[loc_type]:
-            # Each tensor has shape [seq len, d_model]. Using -1 retains only last token for all prompts
-            numpy_arrays = [tensor[-1].float().cpu().numpy() for tensor in layer_activations]
+    for loc_key, loc_pos in locs_to_probe.items():
+        X[loc_key] = []
+        for layer_activations in activations_by_layer_by_locs["last_question_tokens"]:
+            # Each tensor has shape [seq len, d_model].
+            numpy_arrays = [tensor[loc_pos].float().cpu().numpy() for tensor in layer_activations]
             layer_data = np.array(numpy_arrays)
-            X[loc_type].append(layer_data)
+            X[loc_key].append(layer_data)
     
     y = np.array(labels)
     
     return X, y
 
 # Prepare train and test data
-X_train, y_train = prepare_probe_data(train_activations_by_layer_by_locs, train_labels, locs_to_cache, n_layers)
-X_test, y_test = prepare_probe_data(test_activations_by_layer_by_locs, test_labels, locs_to_cache, n_layers)
+X_train, y_train = prepare_probe_data(train_activations_by_layer_by_locs, train_labels, locs_to_probe, n_layers)
+X_test, y_test = prepare_probe_data(test_activations_by_layer_by_locs, test_labels, locs_to_probe, n_layers)
 
 # Create a dictionary to store results
 results = {
@@ -188,7 +212,7 @@ results = {
 }
 
 # Train and evaluate linear probes for each layer and loc_type
-for loc_type in locs_to_cache.keys():
+for loc_type in locs_to_probe.keys():
     for layer_idx in range(n_layers):
         # Get the activations for the current layer and flatten them
         X_train_layer = X_train[loc_type][layer_idx].reshape(X_train[loc_type][layer_idx].shape[0], -1)
@@ -223,28 +247,45 @@ for loc_type in locs_to_cache.keys():
         print()
 
 # %%
-
-# Sort and print layers by lowest mse_test
-df_results = pd.DataFrame(results)
-df_results = df_results.sort_values(by="mse_test", ascending=True)
-print("Layers sorted by lowest mse_test")
-with pd.option_context('display.max_rows', 2000):
-    # Print the layer and mse_test, no index
-    print(df_results[["layer", "mse_test"]].to_string(index=False))
-
-top_5_layers_lowest_mse_test = df_results["layer"].iloc[:5].tolist()
-print(f"Top 5 layers: {top_5_layers_lowest_mse_test}")
-
-# %%
-
-import matplotlib.pyplot as plt
 import pandas as pd
 
 # Create a DataFrame from the results
 df_results = pd.DataFrame(results)
 
+for loc_type in locs_to_probe.keys():
+    # Sort and print layers by lowest mse_test for this loc_type
+    df_loc = df_results[df_results["loc_type"] == loc_type]
+    df_loc = df_loc.sort_values(by="mse_test", ascending=True)
+    print(f"Layers sorted by lowest mse_test for {loc_type}")
+    with pd.option_context('display.max_rows', 2000):
+        # Print the layer and mse_test, no index
+        print(df_loc[["layer", "mse_test"]].to_string(index=False))
+
+    top_5_layers_lowest_mse_test = df_loc["layer"].iloc[:5].tolist()
+    print(f"Top 5 layers: {top_5_layers_lowest_mse_test}")
+
+# %% 
+
+import seaborn as sns
+
+# Pivot the DataFrame to create a 2D matrix of mse_test values
+pivot_df = df_results.pivot(index='layer', columns='loc_type', values='mse_test')
+
+# Create the heatmap
+plt.figure(figsize=(12, 8))
+sns.heatmap(pivot_df, cmap='viridis_r', annot=True, fmt='.4f', cbar_kws={'label': 'MSE Test'})
+
+plt.title('MSE Test by Layer and Location Type')
+plt.xlabel('Location Type')
+plt.ylabel('Layer')
+plt.tight_layout()
+plt.show()
+
+# %%
+import matplotlib.pyplot as plt
+
 # Plot the results for each loc_type
-for loc_type in locs_to_cache.keys():
+for loc_type in locs_to_probe.keys():
     df_loc = df_results[df_results["loc_type"] == loc_type]
 
     plt.figure(figsize=(12, 6))
@@ -259,7 +300,6 @@ for loc_type in locs_to_cache.keys():
 # %%
 
 def plot_scatter(loc_type, layer):
-    df_results = pd.DataFrame(results)
     df_filtered = df_results[
         (df_results["loc_type"] == loc_type) & (df_results["layer"] == layer)
     ]
@@ -281,6 +321,7 @@ def plot_scatter(loc_type, layer):
     )
 
     mse = df_filtered["mse_test"].iloc[0]
+
     plt.text(
         0.05,
         0.95,
@@ -293,10 +334,12 @@ def plot_scatter(loc_type, layer):
     plt.tight_layout()
     plt.show()
 
-
-# Example usage:
-for loc_type in locs_to_cache.keys():
-    for layer in top_5_layers_lowest_mse_test[:3]:
+k = 1
+for loc_type in locs_to_probe.keys():
+    df_loc = df_results[df_results["loc_type"] == loc_type]
+    df_loc = df_loc.sort_values(by="mse_test", ascending=True)
+    top_k_layers = df_loc["layer"].iloc[:k].tolist()
+    for layer in top_k_layers:
         plot_scatter(loc_type, layer)
 
 # %%
@@ -402,9 +445,11 @@ def visualize_top_activating_tokens(loc_type, layer, remove_bos=True):
 
     display(HTML(html_output))
 
-# Example usage:
-for loc_type in locs_to_cache.keys():
-    for layer in top_5_layers_lowest_mse_test[:1]:
+k = 1
+for loc_type in locs_to_probe.keys():
+    df_loc = df_results[df_results["loc_type"] == loc_type]
+    df_loc = df_loc.sort_values(by="mse_test", ascending=True)
+    for layer in df_loc["layer"].iloc[:k].tolist():
         visualize_top_activating_tokens(loc_type, layer)
 
 # %%
@@ -476,20 +521,20 @@ print("\nOriginal prompt:")
 print(test_prompt)
 
 print("\nUnsteered generation:")
-unsteered_responses = steer_generation(test_prompt, top_k_layers, 0)
+unsteered_responses = steer_generation(test_prompt, n_layers, 0)
 for response in unsteered_responses:
     print(response)
 
 # %%
 print("\nPositive steered generation:")
-positive_steered_responses = steer_generation(test_prompt, 1, 0.1)
+positive_steered_responses = steer_generation(test_prompt, n_layers, 0.001)
 for response in positive_steered_responses:
     print(response)
 
 # %%
 
 print("\nNegative steered generation:")
-negative_steered_responses = steer_generation(test_prompt, 1, -0.1)
+negative_steered_responses = steer_generation(test_prompt, n_layers, -0.002)
 for response in negative_steered_responses:
     print(response)
 

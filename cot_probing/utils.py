@@ -1,6 +1,8 @@
 import json
 import random
 
+from transformers import PreTrainedTokenizerBase
+
 from cot_probing import DATA_DIR
 from cot_probing.typing import *
 
@@ -25,3 +27,17 @@ def get_train_test_split(
     random.shuffle(shuffled_idxs)
     split_idx = int(len(idxs) * train_frac)
     return shuffled_idxs[:split_idx], shuffled_idxs[split_idx:]
+
+
+def to_str_tokens(
+    input: str | list[int], tokenizer: PreTrainedTokenizerBase
+) -> list[str]:
+    if isinstance(input, str):
+        input_ids = tokenizer.encode(input)
+    else:
+        input_ids = input
+
+    return [
+        str_token.replace("Ġ", " ").replace("Ċ", "\\n")
+        for str_token in tokenizer.convert_ids_to_tokens(input_ids)
+    ]
