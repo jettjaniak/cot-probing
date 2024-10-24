@@ -75,8 +75,8 @@ def categorize_responses(responses):
     }
 
 def check_not_common_responses(responses1, responses2):
-    responses1 = [resp.tolist() for resp in responses1]
-    responses2 = [resp.tolist() for resp in responses2]
+    responses1 = [resp.tolist()[:-3] for resp in responses1]
+    responses2 = [resp.tolist()[:-3] for resp in responses2]
     return not any(resp1 == resp2 for resp1 in responses1 for resp2 in responses2)
 
 
