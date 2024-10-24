@@ -643,5 +643,168 @@ for test_prompt_idx in tqdm.tqdm(range(len(test_prompts))):
     #         print(f"- {key} {len(res[variant][key])}")
 
     results.append(res)
+# %%
+
+import pickle
+# Dump steering results to file, just in case
+if "-8B-" in model_id:
+    steering_results_path = DATA_DIR / "steering_results_8B.pkl"
+elif "-70B-" in model_id:
+    steering_results_path = DATA_DIR / "steering_results_70B.pkl"
+else:
+    raise ValueError(f"Unknown model: {model_id}")
+
+with open(steering_results_path, "wb") as f:
+    pickle.dump(results, f)
 
 # %%
+
+# Plot steering results for 15 random questions
+def calculate_yes_percentage(res):
+    total = len(res['yes']) + len(res['no'])
+    if total == 0:
+        return 0
+    return (len(res['yes']) - len(res['no'])) / total * 100
+
+# Select 15 random questions
+num_questions = 15
+selected_indices = random.sample(range(len(results)), num_questions)
+
+# Prepare data
+unbiased_percentages = []
+positive_steering_percentages = []
+negative_steering_percentages = []
+
+for idx in selected_indices:
+    res = results[idx]
+    unbiased_percentages.append(calculate_yes_percentage(res['unb']))
+    positive_steering_percentages.append(calculate_yes_percentage(res['pos_steer']))
+    negative_steering_percentages.append(calculate_yes_percentage(res['neg_steer']))
+
+# Create the plot
+fig, ax = plt.subplots(figsize=(15, 8))
+
+x = np.arange(num_questions)
+width = 0.25
+
+ax.bar(x - width, unbiased_percentages, width, label='Unbiased', color='blue')
+ax.bar(x, positive_steering_percentages, width, label='Positive Steering', color='green')
+ax.bar(x + width, negative_steering_percentages, width, label='Negative Steering', color='red')
+
+ax.set_ylabel('Percentage of All-Yes & All-No Answers')
+ax.set_title('Percentage of All-Yes & All-No Answers: Unbiased vs Positive/Negative Steering')
+ax.set_xticks(x)
+ax.set_xticklabels([f'Q{i+1}' for i in range(num_questions)])
+ax.legend()
+
+plt.ylim(-100, 100)
+plt.axhline(y=0, color='k', linestyle='-', linewidth=0.5)
+
+# Add value labels on the bars
+# def add_value_labels(ax, rects):
+#     for rect in rects:
+#         height = rect.get_height()
+#         ax.annotate(f'{height:.1f}',
+#                     xy=(rect.get_x() + rect.get_width() / 2, height),
+#                     xytext=(0, 3 if height >= 0 else -3),  # 3 points vertical offset
+#                     textcoords="offset points",
+#                     ha='center', va='bottom' if height >= 0 else 'top',
+#                     fontsize=8, rotation=90)
+
+# add_value_labels(ax, ax.containers[0])
+# add_value_labels(ax, ax.containers[1])
+# add_value_labels(ax, ax.containers[2])
+
+plt.tight_layout()
+plt.show()
+
+# %% Plot steering results for all questions
+
+unbiased_percentages = []
+positive_steering_percentages = []
+negative_steering_percentages = []
+
+for res in results:
+    unbiased_percentages.append(calculate_yes_percentage(res['unb']))
+    positive_steering_percentages.append(calculate_yes_percentage(res['pos_steer']))
+    negative_steering_percentages.append(calculate_yes_percentage(res['neg_steer']))
+
+# Create a DataFrame
+df = pd.DataFrame({
+    'Unbiased': unbiased_percentages,
+    'Positive Steering': positive_steering_percentages,
+    'Negative Steering': negative_steering_percentages
+})
+
+# Melt the DataFrame to long format
+df_melted = df.melt(var_name='Condition', value_name='Percentage')
+
+# Create the boxplot
+plt.figure(figsize=(12, 8))
+sns.boxplot(x='Condition', y='Percentage', data=df_melted)
+
+plt.title('Distribution of All-Yes & All-No Answer Percentages Across All Questions')
+plt.ylabel('Percentage of All-Yes & All-No Answers')
+plt.ylim(-110, 110)  # Extend y-axis limits to make room for mean labels
+plt.axhline(y=0, color='k', linestyle='--', linewidth=0.5)
+
+# Add mean values and lines for each condition
+for i, condition in enumerate(['Unbiased', 'Positive Steering', 'Negative Steering']):
+    mean_val = df_melted[df_melted['Condition'] == condition]['Percentage'].mean()
+    plt.hlines(y=mean_val, xmin=i-0.4, xmax=i+0.4, color='red', linestyle='-', linewidth=2)
+    plt.text(i, mean_val, f'Mean: {mean_val:.2f}', ha='center', va='bottom', 
+             bbox=dict(facecolor='white', edgecolor='none', alpha=0.7))
+
+plt.tight_layout()
+plt.show()
+
+# Print summary statistics
+print(df.describe())
+
+# %%
+
+# Plot the percentage of "other" responses
+
+# Calculate percentage of "other" responses for each condition
+def calculate_other_percentage(res):
+    total = len(res['yes']) + len(res['no']) + len(res['other'])
+    if total == 0:
+        return 0
+    return (len(res['other']) / total) * 100
+
+unbiased_other = []
+positive_steering_other = []
+negative_steering_other = []
+
+for res in results:
+    unbiased_other.append(calculate_other_percentage(res['unb']))
+    positive_steering_other.append(calculate_other_percentage(res['pos_steer']))
+    negative_steering_other.append(calculate_other_percentage(res['neg_steer']))
+
+# Calculate mean percentages
+mean_unbiased_other = np.mean(unbiased_other)
+mean_positive_steering_other = np.mean(positive_steering_other)
+mean_negative_steering_other = np.mean(negative_steering_other)
+
+# Create the bar plot
+plt.figure(figsize=(10, 6))
+conditions = ['Unbiased', 'Positive Steering', 'Negative Steering']
+percentages = [mean_unbiased_other, mean_positive_steering_other, mean_negative_steering_other]
+
+plt.bar(conditions, percentages, color=['blue', 'green', 'red'])
+plt.title('Percentage of "Other" Responses Across Steering Conditions')
+plt.ylabel('Percentage of "Other" Responses')
+plt.ylim(0, 100)  # Set y-axis limit from 0 to 100%
+
+# Add value labels on top of each bar
+for i, v in enumerate(percentages):
+    plt.text(i, v + 1, f'{v:.2f}%', ha='center', va='bottom')
+
+plt.tight_layout()
+plt.show()
+
+# Print the mean percentages
+print(f"Mean percentage of 'other' responses:")
+print(f"Unbiased: {mean_unbiased_other:.2f}%")
+print(f"Positive Steering: {mean_positive_steering_other:.2f}%")
+print(f"Negative Steering: {mean_negative_steering_other:.2f}%")
