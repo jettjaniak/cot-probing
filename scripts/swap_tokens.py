@@ -26,15 +26,13 @@ def main(args):
     with open(args.responses_pkl_path, "rb") as f:
         responses_by_q_by_seed = pickle.load(f)
 
-    swap_results_by_q_by_seed = {}
-
     responses_by_q_by_seed_items = list(responses_by_q_by_seed.items())
     if args.debug:
         responses_by_q_by_seed_items = responses_by_q_by_seed_items[:2]
     for seed_i, (seed, responses_by_q) in enumerate(responses_by_q_by_seed_items):
         n_seeds = len(responses_by_q_by_seed_items)
         print(f"Processing seed {seed_i + 1} / {n_seeds}")
-        swap_results_by_q = swap_results_by_q_by_seed[seed] = {}
+        swap_results_by_q = []
         all_combinations = generate_all_combinations(seed=seed)
         if args.debug:
             responses_by_q = responses_by_q[:2]
@@ -59,13 +57,12 @@ def main(args):
                 args.prob_diff_threshold,
                 args.debug,
             )
-            swap_results_by_q[q_idx] = question_swap_results
+            swap_results_by_q.append(question_swap_results)
 
-    output_path = DATA_DIR / f"swap_results_by_q_by_seed.pkl"
-    with open(output_path, "wb") as f:
-        pickle.dump(swap_results_by_q_by_seed, f)
-
-    print(f"Results saved to {output_path}")
+        output_path = DATA_DIR / f"swap_results_by_q_seed_i_{seed_i}.pkl"
+        with open(output_path, "wb") as f:
+            pickle.dump(swap_results_by_q, f)
+        print(f"Results saved to {output_path}")
 
 
 if __name__ == "__main__":
