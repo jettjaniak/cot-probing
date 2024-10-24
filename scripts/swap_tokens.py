@@ -59,10 +59,10 @@ def main(args):
             )
             swap_results_by_q.append(question_swap_results)
 
-        output_path = DATA_DIR / f"swap_results_by_q_seed_i_{seed_i}.pkl"
-        with open(output_path, "wb") as f:
-            pickle.dump(swap_results_by_q, f)
-        print(f"Results saved to {output_path}")
+            output_path = DATA_DIR / f"swap_results_by_q_seed_i_{seed_i}.pkl"
+            with open(output_path, "wb") as f:
+                pickle.dump(swap_results_by_q, f)
+            print(f"Results up to {q_idx=} saved to {output_path}")
 
 
 if __name__ == "__main__":
