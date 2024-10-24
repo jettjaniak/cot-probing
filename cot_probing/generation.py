@@ -23,6 +23,7 @@ def hf_generate_many(
     temp: float,
     n_gen: int,
     seed: int,
+    do_sample: bool,
 ) -> list[list[int]]:
     prompt_len = len(prompt_toks)
     setup_determinism(seed)
@@ -31,7 +32,7 @@ def hf_generate_many(
         max_new_tokens=max_new_tokens,
         pad_token_id=tokenizer.eos_token_id,
         tokenizer=tokenizer,
-        do_sample=True,
+        do_sample=do_sample,
         temperature=temp,
         num_return_sequences=n_gen,
         stop_strings=["Answer:"],
@@ -98,6 +99,7 @@ def analyze_responses_single_question(
     temp: float,
     n_gen: int,
     seed: int,
+    do_sample: bool,
 ):
     prompt_unb = combined_prompts["unb_yes"]
     prompt_no = combined_prompts["no_yes"]
@@ -114,6 +116,7 @@ def analyze_responses_single_question(
         temp=temp,
         n_gen=n_gen,
         seed=seed,
+        do_sample=do_sample,
     )
     resp_no = hf_generate_many(
         model,
@@ -123,6 +126,7 @@ def analyze_responses_single_question(
         temp=temp,
         n_gen=n_gen,
         seed=seed,
+        do_sample=do_sample,
     )
     res = {
         "unb": categorize_responses(model, tokenizer, prompt_toks_unb, resp_unb),
@@ -143,11 +147,19 @@ def analyze_responses(
     temp: float,
     n_gen: int,
     seed: int,
+    do_sample: bool,
 ):
     results = []
     for i, combined_prompts in tqdm.tqdm(enumerate(all_combinations), desc="Questions"):
         res = analyze_responses_single_question(
-            model, tokenizer, combined_prompts, max_new_tokens, temp, n_gen, seed
+            model,
+            tokenizer,
+            combined_prompts,
+            max_new_tokens,
+            temp,
+            n_gen,
+            seed,
+            do_sample,
         )
         results.append(res)
     return results
