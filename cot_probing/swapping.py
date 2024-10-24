@@ -1,4 +1,5 @@
 import logging
+import pickle
 
 from cot_probing.diverse_combinations import generate_all_combinations
 from cot_probing.generation import categorize_response
@@ -16,6 +17,17 @@ class SingleCotSwapResult:
 class QuestionSwapResults:
     unfai_to_fai_swaps: list[SingleCotSwapResult | None]
     fai_to_unfai_swaps: list[SingleCotSwapResult | None]
+
+
+@dataclass
+class SuccessfulSwap:
+    unb_prompt: list[int]
+    bias_no_prompt: list[int]
+    trunc_cot: list[int]
+    fai_tok: int
+    unfai_tok: int
+    swap_dir: Literal["unfai_to_fai", "fai_to_unfai"]
+    prob_diff: float
 
 
 def greedy_gen_until_answer(
@@ -317,3 +329,112 @@ def process_question(
     return QuestionSwapResults(
         unfai_to_fai_swaps=unf_to_fai_swaps, fai_to_unfai_swaps=fai_to_unf_swaps
     )
+
+
+def extract_str_question(prompt_str: str) -> str:
+    substr = "Question: "
+    idx = prompt_str.rfind(substr)
+    return prompt_str[idx:]
+
+
+def process_successful_swaps_single_q_single_dir(
+    seen_responses: set[tuple[int]],
+    unb_prompt: list[int],
+    bias_no_prompt: list[int],
+    responses: list[list[int]],
+    swaps: list[SingleCotSwapResult | None],
+    swap_dir: Literal["fai_to_unfai", "unfai_to_fai"],
+) -> list[SuccessfulSwap]:
+    ret = []
+    for resp, swap in zip(responses, swaps):
+        if swap is None or tuple(resp) in seen_responses:
+            continue
+        seen_responses.add(tuple(resp))
+        swap_seq_pos = swap.seq_pos
+        original_tok = resp[swap_seq_pos]
+        swap_tok = swap.swap_token
+        prob_diff = swap.prob_diff
+        fai_tok = original_tok if swap_dir == "fai_to_unfai" else swap_tok
+        unfai_tok = swap_tok if swap_dir == "fai_to_unfai" else original_tok
+        successful_swap = SuccessfulSwap(
+            unb_prompt=unb_prompt,
+            bias_no_prompt=bias_no_prompt,
+            trunc_cot=resp[:swap_seq_pos],
+            fai_tok=fai_tok,
+            unfai_tok=unfai_tok,
+            swap_dir=swap_dir,
+            prob_diff=prob_diff,
+        )
+        ret.append(successful_swap)
+    return ret
+
+
+def process_successful_swaps_single_q(
+    q_idx: int,
+    swap_results: QuestionSwapResults,
+    all_combinations: list[dict[str, str]],
+    responses_by_answer_by_ctx_by_q: dict[int, dict[str, dict[str, list[list[int]]]]],
+    tokenizer: PreTrainedTokenizerBase,
+) -> list[SuccessfulSwap]:
+    combined_prompts = all_combinations[q_idx]
+    responses_by_answer_by_ctx = responses_by_answer_by_ctx_by_q[q_idx]
+    fai_responses = responses_by_answer_by_ctx["unb"]["yes"]
+    unfai_responses = responses_by_answer_by_ctx["bias_no"]["no"]
+
+    fai_to_unfai_swaps = swap_results.fai_to_unfai_swaps
+    unfai_to_fai_swaps = swap_results.unfai_to_fai_swaps
+
+    unb_prompt_str = combined_prompts["unb_yes"]
+    bias_no_prompt_str = combined_prompts["no_yes"]
+    unb_prompt = tokenizer.encode(unb_prompt_str)
+    bias_no_prompt = tokenizer.encode(bias_no_prompt_str)
+
+    assert extract_str_question(unb_prompt_str) == extract_str_question(
+        bias_no_prompt_str
+    )
+
+    seen_responses = set()
+    successful_swaps = process_successful_swaps_single_q_single_dir(
+        seen_responses=seen_responses,
+        unb_prompt=unb_prompt,
+        bias_no_prompt=bias_no_prompt,
+        responses=fai_responses,
+        swaps=fai_to_unfai_swaps,
+        swap_dir="fai_to_unfai",
+    ) + process_successful_swaps_single_q_single_dir(
+        seen_responses=seen_responses,
+        unb_prompt=unb_prompt,
+        bias_no_prompt=bias_no_prompt,
+        responses=unfai_responses,
+        swaps=unfai_to_fai_swaps,
+        swap_dir="unfai_to_fai",
+    )
+
+    return successful_swaps
+
+
+def process_successful_swaps(
+    responses_path: str, swap_results_path: str, tokenizer: PreTrainedTokenizerBase
+) -> list[list[SuccessfulSwap]]:
+    with open(responses_path, "rb") as f:
+        responses_by_seed = pickle.load(f)
+    seed = next(iter(responses_by_seed.keys()))
+    responses_by_answer_by_ctx_by_q = responses_by_seed[seed]
+    all_combinations = generate_all_combinations(seed=seed)
+
+    with open(swap_results_path, "rb") as f:
+        swap_results_by_q = pickle.load(f)
+
+    successful_swaps_by_q = []
+
+    for q_idx, swap_results in enumerate(swap_results_by_q):
+        successful_swaps = process_successful_swaps_single_q(
+            q_idx=q_idx,
+            swap_results=swap_results,
+            all_combinations=all_combinations,
+            responses_by_answer_by_ctx_by_q=responses_by_answer_by_ctx_by_q,
+            tokenizer=tokenizer,
+        )
+        successful_swaps_by_q.append(successful_swaps)
+
+    return successful_swaps_by_q
