@@ -291,7 +291,7 @@ def generate_questions_dataset(
             successes += 1
         attempts += 1
     if verbose:
-        print(f"Generated {successes} questions.")
+        print(f"Generated {successes} questions using {attempts} attempts.")
 
 # Generate the dataset
 num_questions_to_generate = 20
@@ -300,4 +300,9 @@ generate_questions_dataset(
     max_attempts=100,
     verbose=True
 )
+# %%
+
+for question in question_dataset:
+    print(question["question"])
+    print()
 # %%
