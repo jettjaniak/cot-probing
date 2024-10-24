@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import logging
 import pickle
 from pathlib import Path
 
@@ -14,6 +15,9 @@ from cot_probing.typing import *
 
 
 def main(args):
+    logging.basicConfig(level=logging.INFO)
+    if args.debug:
+        logging.basicConfig(level=logging.DEBUG)
     model_id = f"hugging-quants/Meta-Llama-3.1-{args.model_size}B-BNB-NF4-BF16"
     tokenizer = AutoTokenizer.from_pretrained(model_id)
     model = AutoModelForCausalLM.from_pretrained(

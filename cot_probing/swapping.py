@@ -1,3 +1,5 @@
+import logging
+
 from cot_probing.diverse_combinations import generate_all_combinations
 from cot_probing.generation import categorize_response
 from cot_probing.typing import *
@@ -107,15 +109,15 @@ def try_swap_token(
 ) -> bool:
     original_cot_tok = original_cot[seq_pos]
     original_tok_str = tokenizer.decode([original_cot_tok])
-    print(f"Trying to swap original CoT token `{original_tok_str}`")
+    logging.info(f"Trying to swap original CoT token `{original_tok_str}`")
     if original_cot_tok == other_tok:
-        print("Original CoT token and other token are the same, skipping...")
+        logging.info("Original CoT token and other token are the same, skipping...")
         return False
     # if original_top_tok == other_tok:
     #     print("Original top token and other top token are the same, skipping...")
     #     return
     other_tok_str = tokenizer.decode([other_tok])
-    print(f"Swapping with other token `{other_tok_str}`")
+    logging.info(f"Swapping with other token `{other_tok_str}`")
     # top0 is different than what was sampled
     # truncate it and evaluate with and without swapping (in the unbiased context)
     # if we get a different answer, we've found a swap
@@ -134,26 +136,26 @@ def try_swap_token(
     resp_original_str = tokenizer.decode(resp_original)
     resp_swapped_str = tokenizer.decode(resp_swapped)
     if answer_original != original_expected_answer:
-        print("Original response didn't match expected answer, skipping...")
-        print(f"original response:\n`{resp_original_str}`")
+        logging.info("Original response didn't match expected answer, skipping...")
+        logging.debug(f"original response:\n`{resp_original_str}`")
         return False
     if answer_swapped == "other":
-        print("Swapped response didn't result in an answer, skipping...")
-        print(f"swapped response:\n`{resp_swapped_str}`")
+        logging.info("Swapped response didn't result in an answer, skipping...")
+        logging.debug(f"swapped response:\n`{resp_swapped_str}`")
         return False
     if answer_original == answer_swapped:
-        print("Swapping didn't change the answer, skipping...")
-        print(f"original response:\n`{resp_original_str}`")
-        print(f"swapped response:\n`{resp_swapped_str}`")
+        logging.info("Swapping didn't change the answer, skipping...")
+        logging.debug(f"original response:\n`{resp_original_str}`")
+        logging.debug(f"swapped response:\n`{resp_swapped_str}`")
         return False
-    print("truncated cot:")
-    print(tokenizer.decode(trunc_cot_toks))
-    print("###")
-    print(f"original answer: {answer_original}")
-    print(f"`{resp_original_str}`")
-    print("###")
-    print(f"swapped answer: {answer_swapped}")
-    print(f"`{resp_swapped_str}`")
+    logging.info("truncated cot:")
+    logging.info(tokenizer.decode(trunc_cot_toks))
+    logging.info("###")
+    logging.info(f"original answer: {answer_original}")
+    logging.info(f"`{resp_original_str}`")
+    logging.info("###")
+    logging.info(f"swapped answer: {answer_swapped}")
+    logging.info(f"`{resp_swapped_str}`")
     return True
 
 
@@ -173,13 +175,15 @@ def try_swap_position(
     this_diff = probs_other_orig_diff[seq_pos]
     diff_abv_thresh_mask = (this_diff > prob_diff_threshold).cuda()
     if not diff_abv_thresh_mask.any():
-        print("All prob diffs are below threshold, skipping...")
+        logging.info("All prob diffs are below threshold, skipping...")
         return None
-    print(f"Found {diff_abv_thresh_mask.sum().item()} other tokens above threshold")
+    logging.info(
+        f"Found {diff_abv_thresh_mask.sum().item()} other tokens above threshold"
+    )
     other_tokens = torch.arange(len(this_diff)).cuda()[diff_abv_thresh_mask]
     sorted_indices = torch.argsort(this_diff[diff_abv_thresh_mask], descending=True)
     sorted_other_tokens = other_tokens[sorted_indices].tolist()[:topk_tok]
-    print(f"Trying {len(sorted_other_tokens)} other tokens")
+    logging.info(f"Trying {len(sorted_other_tokens)} other tokens")
     for other_tok in sorted_other_tokens:
         if try_swap_token(
             model,
