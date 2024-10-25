@@ -452,10 +452,12 @@ print(f"Test mixed: {sum(item['biased_cot_label'] == 'mixed' for item in test_da
 min_num_train_data = min(sum(item['biased_cot_label'] == 'faithful' for item in train_data), sum(item['biased_cot_label'] == 'unfaithful' for item in train_data))
 train_data_faithful = [item for item in train_data if item['biased_cot_label'] == 'faithful'][:min_num_train_data]
 train_data_unfaithful = [item for item in train_data if item['biased_cot_label'] == 'unfaithful'][:min_num_train_data]
+probe_train_data = train_data_faithful + train_data_unfaithful
 
 min_num_test_data = min(sum(item['biased_cot_label'] == 'faithful' for item in test_data), sum(item['biased_cot_label'] == 'unfaithful' for item in test_data))
 test_data_faithful = [item for item in test_data if item['biased_cot_label'] == 'faithful'][:min_num_test_data]
 test_data_unfaithful = [item for item in test_data if item['biased_cot_label'] == 'unfaithful'][:min_num_test_data]
+probe_test_data = test_data_faithful + test_data_unfaithful
 
 # %%
 
@@ -476,7 +478,7 @@ def collect_activations(data, tokenizer, model, locs_to_cache, layers_to_cache, 
         biased_cot_label = data[i]["biased_cot_label"]
 
         # Build the prompt
-        unbiased_fsp_with_question = unbiased_fsp + "\n\n" + question_to_answer
+        unbiased_fsp_with_question = tokenizer.encode(unbiased_fsp + "\n\n" + question_to_answer)
         random_biased_cot = random.choice(biased_cots)
         random_biased_cot.tolist()
 
@@ -485,13 +487,8 @@ def collect_activations(data, tokenizer, model, locs_to_cache, layers_to_cache, 
             answer_tok = tokenizer.encode(" Yes", add_special_tokens=False)
         else:
             answer_tok = tokenizer.encode(" No", add_special_tokens=False)
-        assert len(answer_tok) == 1
-        random_biased_cot.extend(answer_tok)
 
-        input_ids = torch.cat([
-            tokenizer.encode(unbiased_fsp_with_question, return_tensors="pt"),
-            torch.tensor(random_biased_cot)
-        ], dim=1).to(model.device)
+        input_ids = unbiased_fsp_with_question + random_biased_cot.tolist() + answer_tok
 
         if "last_question_tokens" in locs_to_cache:
             # Figure out where the last question starts
@@ -524,8 +521,8 @@ locs_to_cache = {
     # "step_by_step_colon": (-3, -2),  # colon before last new line.
 }
 
-train_activations_by_layer_by_locs = collect_activations(train_data, tokenizer, model, locs_to_cache, n_layers)
-test_activations_by_layer_by_locs = collect_activations(test_data, tokenizer, model, locs_to_cache, n_layers)
+train_activations_by_layer_by_locs = collect_activations(probe_train_data, tokenizer, model, locs_to_cache, n_layers)
+test_activations_by_layer_by_locs = collect_activations(probe_test_data, tokenizer, model, locs_to_cache, n_layers)
 
 # %%
 from cot_probing.utils import to_str_tokens
@@ -549,8 +546,8 @@ print(locs_to_probe)
 
 import numpy as np
 import torch
-from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score
 from sklearn.model_selection import train_test_split
 
 def prepare_probe_data(activations_by_layer_by_locs, labels, locs_to_probe, n_layers):
@@ -568,6 +565,8 @@ def prepare_probe_data(activations_by_layer_by_locs, labels, locs_to_probe, n_la
     return X, y
 
 # Prepare train and test data
+train_labels = [item["biased_cot_label"] for item in probe_train_data]
+test_labels = [item["biased_cot_label"] for item in probe_test_data]
 X_train, y_train = prepare_probe_data(train_activations_by_layer_by_locs, train_labels, locs_to_probe, n_layers)
 X_test, y_test = prepare_probe_data(test_activations_by_layer_by_locs, test_labels, locs_to_probe, n_layers)
 
@@ -575,24 +574,22 @@ X_test, y_test = prepare_probe_data(test_activations_by_layer_by_locs, test_labe
 results = {
     "loc_type": [],
     "layer": [],
-    "mse_train": [],
-    "mse_test": [],
+    "accuracy_train": [],
+    "accuracy_test": [],
     "y_test": [],
     "y_pred_test": [],
     "probe": [],
 }
 
-# Train and evaluate linear probes for each layer and loc_type
+# Train and evaluate logistic regression probes for each layer and loc_type
 for loc_type in locs_to_probe.keys():
     for layer_idx in range(n_layers):
         # Get the activations for the current layer and flatten them
         X_train_layer = X_train[loc_type][layer_idx].reshape(X_train[loc_type][layer_idx].shape[0], -1)
-        X_test_layer = X_test[loc_type][layer_idx].reshape(
-            X_test[loc_type][layer_idx].shape[0], -1
-        )
+        X_test_layer = X_test[loc_type][layer_idx].reshape(X_test[loc_type][layer_idx].shape[0], -1)
 
-        # Train the linear probe
-        probe = LinearRegression()
+        # Train the logistic regression probe
+        probe = LogisticRegression(random_state=42, max_iter=1000)
         probe.fit(X_train_layer, y_train)
 
         # Make predictions
@@ -600,21 +597,21 @@ for loc_type in locs_to_probe.keys():
         y_pred_test = probe.predict(X_test_layer)
 
         # Calculate metrics
-        mse_train = mean_squared_error(y_train, y_pred_train)
-        mse_test = mean_squared_error(y_test, y_pred_test)
+        accuracy_train = accuracy_score(y_train, y_pred_train)
+        accuracy_test = accuracy_score(y_test, y_pred_test)
 
         # Store results
         results["loc_type"].append(loc_type)
         results["layer"].append(layer_idx)
-        results["mse_train"].append(mse_train)
-        results["mse_test"].append(mse_test)
+        results["accuracy_train"].append(accuracy_train)
+        results["accuracy_test"].append(accuracy_test)
         results["y_test"].append(y_test)
         results["y_pred_test"].append(y_pred_test)
         results["probe"].append(probe)
 
         print(f"Location: {loc_type}, Layer {layer_idx}:")
-        print(f"  MSE (train): {mse_train:.4f}")
-        print(f"  MSE (test): {mse_test:.4f}")
+        print(f"  Accuracy (train): {accuracy_train:.4f}")
+        print(f"  Accuracy (test): {accuracy_test:.4f}")
         print()
 
 # %%
@@ -626,28 +623,28 @@ df_results = pd.DataFrame(results)
 for loc_type in locs_to_probe.keys():
     # Sort and print layers by lowest mse_test for this loc_type
     df_loc = df_results[df_results["loc_type"] == loc_type]
-    df_loc = df_loc.sort_values(by="mse_test", ascending=True)
-    print(f"Layers sorted by lowest mse_test for {loc_type}")
+    df_loc = df_loc.sort_values(by="accuracy_test", ascending=False)
+    print(f"Layers sorted by lowest accuracy_test for {loc_type}")
     with pd.option_context('display.max_rows', 2000):
-        # Print the layer and mse_test, no index
-        print(df_loc[["layer", "mse_test"]].to_string(index=False))
+        # Print the layer and accuracy_test, no index
+        print(df_loc[["layer", "accuracy_test"]].to_string(index=False))
 
-    top_5_layers_lowest_mse_test = df_loc["layer"].iloc[:5].tolist()
-    print(f"Top 5 layers: {top_5_layers_lowest_mse_test}")
+    top_5_layers_lowest_accuracy_test = df_loc["layer"].iloc[:5].tolist()
+    print(f"Top 5 layers: {top_5_layers_lowest_accuracy_test}")
 
-# %% 
+# %%
 
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-# Pivot the DataFrame to create a 2D matrix of mse_test values
-pivot_df = df_results.pivot(index='layer', columns='loc_type', values='mse_test')
+# Pivot the DataFrame to create a 2D matrix of accuracy_test values
+pivot_df = df_results.pivot(index='layer', columns='loc_type', values='accuracy_test')
 
 # Create the heatmap
 plt.figure(figsize=(12, 8))
-sns.heatmap(pivot_df, cmap='viridis_r', annot=True, fmt='.4f', cbar_kws={'label': 'MSE Test'})
+sns.heatmap(pivot_df, cmap='viridis_r', annot=True, fmt='.4f', cbar_kws={'label': 'Accuracy Test'})
 
-plt.title('MSE Test by Layer and Location Type')
+plt.title('Accuracy Test by Layer and Location Type (Probing for faithful/unfaithful answer)')
 plt.xlabel('Location Type')
 plt.ylabel('Layer')
 plt.tight_layout()
@@ -660,11 +657,11 @@ for loc_type in locs_to_probe.keys():
     df_loc = df_results[df_results["loc_type"] == loc_type]
 
     plt.figure(figsize=(12, 6))
-    plt.plot(df_loc["layer"], df_loc["mse_train"], label="MSE (train)")
-    plt.plot(df_loc["layer"], df_loc["mse_test"], label="MSE (test)")
+    plt.plot(df_loc["layer"], df_loc["accuracy_train"], label="Accuracy (train)")
+    plt.plot(df_loc["layer"], df_loc["accuracy_test"], label="Accuracy (test)")
     plt.xlabel("Layer")
-    plt.ylabel("Mean Squared Error")
-    plt.title(f"Linear Probe Performance by Layer for {loc_type}")
+    plt.ylabel("Accuracy")
+    plt.title(f"Logistic Probe Performance by Layer for {loc_type}")
     plt.legend()
     plt.show()
 
@@ -691,12 +688,12 @@ def plot_scatter(loc_type, layer):
         f"Scatter Plot of True vs Predicted Values\nLocation: {loc_type}, Layer: {layer}"
     )
 
-    mse = df_filtered["mse_test"].iloc[0]
+    accuracy = df_filtered["accuracy_test"].iloc[0]
 
     plt.text(
         0.05,
         0.95,
-        f"MSE: {mse:.4f}",
+        f"Accuracy: {accuracy:.4f}",
         transform=plt.gca().transAxes,
         verticalalignment="top",
         bbox=dict(boxstyle="round", facecolor="white", alpha=0.8),
@@ -708,7 +705,7 @@ def plot_scatter(loc_type, layer):
 k = 1
 for loc_type in locs_to_probe.keys():
     df_loc = df_results[df_results["loc_type"] == loc_type]
-    df_loc = df_loc.sort_values(by="mse_test", ascending=True)
+    df_loc = df_loc.sort_values(by="accuracy_test", ascending=False)
     top_k_layers = df_loc["layer"].iloc[:k].tolist()
     for layer in top_k_layers:
         plot_scatter(loc_type, layer)
@@ -825,7 +822,7 @@ loc_probe_keys = [loc_probe_keys[1], loc_probe_keys[5], loc_probe_keys[8]]
 for loc_type in loc_probe_keys:
     print(f"Location type: {loc_type}")
     df_loc = df_results[df_results["loc_type"] == loc_type]
-    df_loc = df_loc.sort_values(by="mse_test", ascending=True)
+    df_loc = df_loc.sort_values(by="accuracy_test", ascending=False)
     layers = df_loc["layer"].iloc[:k].tolist()
     layers = [10]
     for layer in layers:
