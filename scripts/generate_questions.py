@@ -110,7 +110,7 @@ def generate_biased_few_shot_prompt(all_qs_yes: List[str], all_qs_no: List[str],
     return "\n\n".join(questions)
 
 def generate_new_question(few_shot_prompt: str, verbose: bool = False) -> str:
-    instructions = f"""Generate a new question that is very different to the given examples. Avoid questions that can be answered by comparing numbers. Make sure that use the following format:
+    instructions = f"""Generate a new question that is very different to the given examples. Avoid generating questions in which the answer can be found by comparing numbers. For example, we do NOT want questions that contain reasoning with phrases such as "larger than", "more than", "older than", "taller than", "before", "after", etc. Make sure that use the following format:
 
 Question: <question>
 Let's think step by step:
@@ -130,10 +130,81 @@ Examples:\n\n{few_shot_prompt}"""
     )
     new_full_question = response.choices[0].message.content
     if verbose:
+        print()
         print(f"Generated new question:")
         print(new_full_question)
         print()
     return new_full_question
+
+def check_and_fix_format(new_full_question: str, verbose: bool = False) -> str:
+    try:
+        question_prefix = "Question:"
+        if not new_full_question.startswith(question_prefix):
+            if verbose:
+                print("New full question does not contain question prefix. Skipping question.")
+            return None
+
+        no_question_prefix = new_full_question.split(question_prefix, 1)[1]
+        question, remaining = no_question_prefix.split("\n", 1)
+
+        # Check that question is not empty
+        if not question.strip():
+            if verbose:
+                print("New full question contains empty question. Skipping question.")
+            return None
+        
+        question = question.strip()
+        remaining = remaining.strip()
+
+        step_by_step_string = "Let's think step by step:"
+        if not remaining.startswith(step_by_step_string):
+            if verbose:
+                print("New full question does not contain step by step string. Skipping question.")
+            return None
+
+        no_step_by_step_prefix = remaining.split(step_by_step_string, 1)[1].strip()
+
+        remaining_lines = no_step_by_step_prefix.split("\n")
+        steps = [step.strip() for step in remaining_lines[:-1]]
+        last_line = remaining_lines[-1].strip()
+
+        # Check that there are at least two steps
+        if len(steps) < 2:
+            if verbose:
+                print("New full question does not contain at least two steps. Skipping question.")
+            return None
+
+        # Check that last line is not empty
+        if not last_line:
+            if verbose:
+                print("New full question contains empty last line. Skipping question.")
+            return None
+
+        # Check that all intermediate steps begin with "- "
+        for step in steps:
+            if not step.startswith("- "):
+                if verbose:
+                    print("New full question contains intermediate steps that do not begin with '- '. Skipping question.")
+                return None
+        
+        # Check that last step is "Answer: Yes" or "Answer: No"
+        if last_line != "Answer: Yes" and last_line != "Answer: No":
+            if verbose:
+                print("New full question does not contain answer at the end. Skipping question.")
+            return None
+
+        # Build question string with the right format
+        new_full_question = f"""{question_prefix} {question}
+{step_by_step_string}
+{"\n".join(steps)}
+{last_line}"""
+
+        return new_full_question
+
+    except Exception as e:
+        if verbose:
+            print(f"Error splitting question: {e}")
+        return None
 
 def get_model_responses(prompt: str, question: str, verbose: bool = False, n_gen: int = 3) -> str:
     full_prompt = f"{prompt}\n\n{question}"
@@ -201,17 +272,11 @@ def evaluate_response_is_different_to_unbiased(
 def generate_and_evaluate_question(verbose: bool = False) -> Tuple[str, str, str]:
     unbiased_prompt = generate_unbiased_few_shot_prompt(all_qs_yes, all_qs_no, fsp_size, verbose)
     new_full_question = generate_new_question(unbiased_prompt, verbose)
+    new_full_question = check_and_fix_format(new_full_question, verbose)
+    if new_full_question is None:
+        return None
 
     split_string = "Let's think step by step:\n-"
-    if split_string not in new_full_question:
-        if verbose:
-            print("New full question does not contain split string. Skipping question.")
-        return None
-    if "Answer: Yes" not in new_full_question and "Answer: No" not in new_full_question:
-        if verbose:
-            print("New full question does not contain yes or no answer. Skipping question.")
-        return None
-
     new_question = new_full_question.split(split_string)[0] + split_string
     expected_answer = "yes" if "Answer: Yes" in new_full_question else "no"
     
@@ -316,7 +381,7 @@ num_questions_to_generate = 10
 generate_questions_dataset(
     num_questions_to_generate,
     max_attempts=100,
-    verbose=False
+    verbose=True
 )
 # %%
 
