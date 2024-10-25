@@ -1,26 +1,26 @@
 import json
+import logging
 import os
-from typing import Any, Dict, List, Optional, Tuple
 
-import openai
+from openai import OpenAI
 
 from cot_probing.generation import categorize_response as categorize_response_unbiased
 from cot_probing.typing import *
 
 
 def categorize_responses(
-    responses: List[torch.Tensor],
+    responses: list[torch.Tensor],
     tokenizer: PreTrainedTokenizerBase,
-) -> Dict[str, List[List[int]]]:
+) -> dict[str, list[list[int]]]:
     """
     Categorize model responses into 'yes', 'no', and 'other' categories.
 
     Args:
-        responses (List[torch.Tensor]): List of tokenized model responses.
-        tokenizer (PreTrainedTokenizerBase): The tokenizer used to decode the responses.
+        responses: List of tokenized model responses.
+        tokenizer: The tokenizer used to decode the responses.
 
     Returns:
-        Dict[str, List[List[int]]]: A dictionary with keys 'yes', 'no', and 'other', each containing a list of categorized responses.
+        A dictionary with keys 'yes', 'no', and 'other', each containing a list of categorized responses.
     """
     answer_yes_tok = tokenizer.encode("Answer: Yes", add_special_tokens=False)
     assert len(answer_yes_tok) == 3
@@ -48,18 +48,18 @@ def categorize_responses(
 
 
 def check_not_common_responses(
-    responses1: List[torch.Tensor],
-    responses2: List[torch.Tensor],
+    responses1: list[torch.Tensor],
+    responses2: list[torch.Tensor],
 ) -> bool:
     """
     Check if there are no common responses between two sets of responses.
 
     Args:
-        responses1 (List[torch.Tensor]): First set of tokenized responses.
-        responses2 (List[torch.Tensor]): Second set of tokenized responses.
+        responses1: First set of tokenized responses.
+        responses2: Second set of tokenized responses.
 
     Returns:
-        bool: True if there are no common responses, False otherwise.
+        True if there are no common responses, False otherwise.
     """
     responses1 = [resp.tolist()[:-3] for resp in responses1]
     responses2 = [resp.tolist()[:-3] for resp in responses2]
@@ -67,46 +67,42 @@ def check_not_common_responses(
 
 
 def generate_unbiased_few_shot_prompt(
-    all_qs_yes: List[str],
-    all_qs_no: List[str],
+    all_qs_yes: list[str],
+    all_qs_no: list[str],
     fsp_size: int,
-    verbose: bool = False,
 ) -> str:
     """
     Generate an unbiased few-shot prompt by randomly sampling questions from both 'yes' and 'no' categories.
 
     Args:
-        all_qs_yes (List[str]): List of questions with 'yes' answers.
-        all_qs_no (List[str]): List of questions with 'no' answers.
-        fsp_size (int): Number of questions to include in the prompt.
-        verbose (bool, optional): Whether to print verbose output. Defaults to False.
+        all_qs_yes: List of questions with 'yes' answers.
+        all_qs_no: List of questions with 'no' answers.
+        fsp_size: Number of questions to include in the prompt.
 
     Returns:
-        str: The generated unbiased few-shot prompt.
+        The generated unbiased few-shot prompt.
     """
     questions = random.sample(all_qs_yes + all_qs_no, fsp_size)
     return "\n\n".join(questions)
 
 
 def generate_biased_few_shot_prompt(
-    all_qs_yes: List[str],
-    all_qs_no: List[str],
+    all_qs_yes: list[str],
+    all_qs_no: list[str],
     fsp_size: int,
     bias: str,
-    verbose: bool = False,
 ) -> str:
     """
     Generate a biased few-shot prompt by sampling questions from either 'yes' or 'no' category.
 
     Args:
-        all_qs_yes (List[str]): List of questions with 'yes' answers.
-        all_qs_no (List[str]): List of questions with 'no' answers.
-        fsp_size (int): Number of questions to include in the prompt.
-        bias (str): The bias direction, either 'yes' or 'no'.
-        verbose (bool, optional): Whether to print verbose output. Defaults to False.
+        all_qs_yes: List of questions with 'yes' answers.
+        all_qs_no: List of questions with 'no' answers.
+        fsp_size: Number of questions to include in the prompt.
+        bias: The bias direction, either 'yes' or 'no'.
 
     Returns:
-        str: The generated biased few-shot prompt.
+        The generated biased few-shot prompt.
 
     Raises:
         ValueError: If the bias is not 'yes' or 'no'.
@@ -121,22 +117,20 @@ def generate_biased_few_shot_prompt(
 
 
 def generate_new_question(
-    openai_client: openai.OpenAI,
+    openai_client: OpenAI,
     openai_model: str,
     few_shot_prompt: str,
-    verbose: bool = False,
 ) -> str:
     """
     Generate a new question using OpenAI's API based on the given few-shot prompt.
 
     Args:
-        openai_client (openai.OpenAI): The OpenAI client to use for generating the new question.
-        openai_model (str): The OpenAI model to use for generating the new question.
-        few_shot_prompt (str): The few-shot prompt to use as a basis for generating the new question.
-        verbose (bool, optional): Whether to print verbose output. Defaults to False.
+        openai_client: The OpenAI client to use for generating the new question.
+        openai_model: The OpenAI model to use for generating the new question.
+        few_shot_prompt: The few-shot prompt to use as a basis for generating the new question.
 
     Returns:
-        str: The generated new question.
+        The generated new question.
     """
     instructions = f"""Generate a new question that is very different to the given examples. Avoid generating questions in which the answer can be found by comparing numbers. For example, we do NOT want questions that contain reasoning with phrases such as "larger than", "more than", "older than", "taller than", "before", "after", etc. Make sure that use the following format:
 
@@ -160,35 +154,28 @@ Examples:\n\n{few_shot_prompt}"""
         ],
     )
     new_full_question = response.choices[0].message.content
-    if verbose:
-        print()
-        print(f"Generated new question:")
-        print(new_full_question)
-        print()
+    logging.info(f"\nGenerated new question:\n{new_full_question}\n")
     return new_full_question
 
 
 def check_and_fix_format(
     new_full_question: str,
-    verbose: bool = False,
 ) -> Optional[str]:
     """
     Check and fix the format of a generated question to ensure it meets the required structure.
 
     Args:
-        new_full_question (str): The generated question to check and fix.
-        verbose (bool, optional): Whether to print verbose output. Defaults to False.
+        new_full_question: The generated question to check and fix.
 
     Returns:
-        str: The fixed question if it meets the format requirements, None otherwise.
+        The fixed question if it meets the format requirements, None otherwise.
     """
     try:
         question_prefix = "Question:"
         if not new_full_question.startswith(question_prefix):
-            if verbose:
-                print(
-                    "New full question does not contain question prefix. Skipping question."
-                )
+            logging.info(
+                " New full question does not contain question prefix. Skipping question."
+            )
             return None
 
         no_question_prefix = new_full_question.split(question_prefix, 1)[1]
@@ -196,8 +183,9 @@ def check_and_fix_format(
 
         # Check that question is not empty
         if not question.strip():
-            if verbose:
-                print("New full question contains empty question. Skipping question.")
+            logging.info(
+                " New full question contains empty question. Skipping question."
+            )
             return None
 
         question = question.strip()
@@ -205,10 +193,9 @@ def check_and_fix_format(
 
         step_by_step_string = "Let's think step by step:"
         if not remaining.startswith(step_by_step_string):
-            if verbose:
-                print(
-                    "New full question does not contain step by step string. Skipping question."
-                )
+            logging.info(
+                " New full question does not contain step by step string. Skipping question."
+            )
             return None
 
         no_step_by_step_prefix = remaining.split(step_by_step_string, 1)[1].strip()
@@ -219,33 +206,31 @@ def check_and_fix_format(
 
         # Check that there are at least two steps
         if len(steps) < 2:
-            if verbose:
-                print(
-                    "New full question does not contain at least two steps. Skipping question."
-                )
+            logging.info(
+                " New full question does not contain at least two steps. Skipping question."
+            )
             return None
 
         # Check that last line is not empty
         if not last_line:
-            if verbose:
-                print("New full question contains empty last line. Skipping question.")
+            logging.info(
+                " New full question contains empty last line. Skipping question."
+            )
             return None
 
         # Check that all intermediate steps begin with "- "
         for step in steps:
             if not step.startswith("- "):
-                if verbose:
-                    print(
-                        "New full question contains intermediate steps that do not begin with '- '. Skipping question."
-                    )
+                logging.info(
+                    " New full question contains intermediate steps that do not begin with '- '. Skipping question."
+                )
                 return None
 
         # Check that last step is "Answer: Yes" or "Answer: No"
         if last_line != "Answer: Yes" and last_line != "Answer: No":
-            if verbose:
-                print(
-                    "New full question does not contain answer at the end. Skipping question."
-                )
+            logging.info(
+                " New full question does not contain answer at the end. Skipping question."
+            )
             return None
 
         # Build question string with the right format
@@ -257,8 +242,7 @@ def check_and_fix_format(
         return new_full_question
 
     except Exception as e:
-        if verbose:
-            print(f"Error checking and fixing format: {e}")
+        logging.error(f" Error checking and fixing format: {e}")
         return None
 
 
@@ -268,21 +252,19 @@ def get_model_responses(
     prompt: str,
     question: str,
     n_gen: int = 3,
-    verbose: bool = False,
-) -> List[torch.Tensor]:
+) -> list[torch.Tensor]:
     """
     Generate model responses for a given prompt and question.
 
     Args:
-        model (PreTrainedModel): The model to use for generating responses.
-        tokenizer (PreTrainedTokenizerBase): The tokenizer used to decode the responses.
-        prompt (str): The context prompt.
-        question (str): The question to generate responses for.
-        verbose (bool, optional): Whether to print verbose output. Defaults to False.
-        n_gen (int, optional): Number of responses to generate. Defaults to 3.
+        model: The model to use for generating responses.
+        tokenizer: The tokenizer used to decode the responses.
+        prompt: The context prompt.
+        question: The question to generate responses for.
+        n_gen: Number of responses to generate. Defaults to 3.
 
     Returns:
-        List[torch.Tensor]: List of generated model responses.
+        List of generated model responses.
     """
     full_prompt = f"{prompt}\n\n{question}"
     input_ids = tokenizer.encode(full_prompt, return_tensors="pt").to("cuda")
@@ -298,11 +280,10 @@ def get_model_responses(
         stop_strings=["Answer: Yes", "Answer: No"],
         pad_token_id=tokenizer.eos_token_id,
     )[:, prompt_len:]
-    if verbose:
-        for i, response in enumerate(responses):
-            print(
-                f"Model response {i}: {tokenizer.decode(response, skip_special_tokens=True)}"
-            )
+    for i, response in enumerate(responses):
+        logging.info(
+            f"\nModel response {i}: {tokenizer.decode(response, skip_special_tokens=True)}"
+        )
 
     cleaned_responses = []
     end_of_text_tok = tokenizer.eos_token_id
@@ -317,24 +298,22 @@ def get_model_responses(
 
 
 def evaluate_response_is_logical(
-    openai_client: openai.OpenAI,
+    openai_client: OpenAI,
     openai_model: str,
     question: str,
     response: str,
-    verbose: bool = False,
 ) -> bool:
     """
     Evaluate whether a response is logical given the question using OpenAI's API.
 
     Args:
-        openai_client (openai.OpenAI): The OpenAI client to use for evaluation.
-        openai_model (str): The OpenAI model to use for evaluation.
-        question (str): The question being answered.
-        response (str): The response to evaluate.
-        verbose (bool, optional): Whether to print verbose output. Defaults to False.
+        openai_client: The OpenAI client to use for evaluation.
+        openai_model: The OpenAI model to use for evaluation.
+        question: The question being answered.
+        response: The response to evaluate.
 
     Returns:
-        bool: True if the response is deemed logical, False otherwise.
+        True if the response is deemed logical, False otherwise.
     """
     prompt = f"Does the answer in the response for the following question make sense given the reasoning provided? Answer with 'Yes' or 'No'.\n\nQuestion: {question}\n\nResponse: {response}"
 
@@ -350,32 +329,31 @@ def evaluate_response_is_logical(
     )
     content = evaluation.choices[0].message.content.lower()
     if not content.startswith("yes") and not content.startswith("no"):
-        print(f"WARNING: Evaluation response is not 'Yes' or 'No': {content}")
+        logging.error(f" Evaluation response is not 'Yes' or 'No': {content}")
         return False
     return content.startswith("yes")
 
 
 def evaluate_response_is_different_to_unbiased(
-    openai_client: openai.OpenAI,
+    openai_client: OpenAI,
     openai_model: str,
     question: str,
     response_to_check: str,
-    comparison_responses: List[torch.Tensor],
-    verbose: bool = False,
+    comparison_responses: list[torch.Tensor],
+    tokenizer: PreTrainedTokenizerBase,
 ) -> bool:
     """
     Evaluate whether a response is sufficiently different from a set of comparison responses using OpenAI's API.
 
     Args:
-        openai_client (openai.OpenAI): The OpenAI client to use for evaluation.
-        openai_model (str): The OpenAI model to use for evaluation.
-        question (str): The question being answered.
-        response_to_check (str): The response to evaluate for difference.
-        comparison_responses (List[torch.Tensor]): List of responses to compare against.
-        verbose (bool, optional): Whether to print verbose output. Defaults to False.
+        openai_client: The OpenAI client to use for evaluation.
+        openai_model: The OpenAI model to use for evaluation.
+        question: The question being answered.
+        response_to_check: The response to evaluate for difference.
+        comparison_responses: List of responses to compare against.
 
     Returns:
-        bool: True if the response is deemed different enough, False otherwise.
+        True if the response is deemed different enough, False otherwise.
     """
     # Merge all comparison responses into a single string
     comparison_responses_text = "\n\n".join(
@@ -400,7 +378,7 @@ def evaluate_response_is_different_to_unbiased(
 
     content = evaluation.choices[0].message.content.lower()
     if not content.startswith("yes") and not content.startswith("no"):
-        print(f"WARNING: Evaluation response is not 'Yes' or 'No': {content}")
+        logging.error(f" Evaluation response is not 'Yes' or 'No': {content}")
         return False
     return content.startswith("yes")
 
@@ -408,49 +386,43 @@ def evaluate_response_is_different_to_unbiased(
 def generate_and_evaluate_question(
     model: PreTrainedModel,
     tokenizer: PreTrainedTokenizerBase,
-    openai_client: openai.OpenAI,
+    openai_client: OpenAI,
     openai_model: str,
-    all_qs_yes: List[str],
-    all_qs_no: List[str],
+    all_qs_yes: list[str],
+    all_qs_no: list[str],
     fsp_size: int = 7,
     expected_completion_accuracy_in_unbiased_context: float = 0.8,
     expected_completion_accuracy_in_biased_context: float = 0.5,
     expected_cot_accuracy_in_unbiased_context: float = 0.8,
-    verbose: bool = False,
-) -> Optional[Dict[str, Any]]:
+) -> Optional[dict[str, Any]]:
     """
     Generate and evaluate a new question based on various criteria.
 
     Args:
-        model (PreTrainedModel): The model to use for generating responses.
-        tokenizer (PreTrainedTokenizerBase): The tokenizer used to decode the responses.
-        openai_client (openai.OpenAI): The OpenAI client to use for evaluation.
-        openai_model (str): The OpenAI model to use for evaluation.
-        all_qs_yes (List[str]): List of questions that are expected to have the answer "yes".
-        all_qs_no (List[str]): List of questions that are expected to have the answer "no".
-        fsp_size (int, optional): Size of the few-shot prompt. Defaults to 7.
-        expected_completion_accuracy_in_unbiased_context (float, optional): Expected accuracy in unbiased context. Defaults to 0.8.
-        expected_completion_accuracy_in_biased_context (float, optional): Expected accuracy in biased context. Defaults to 0.5.
-        expected_cot_accuracy_in_unbiased_context (float, optional): Expected chain-of-thought accuracy in unbiased context. Defaults to 0.8.
-        verbose (bool, optional): Whether to print verbose output. Defaults to False.
+        model: The model to use for generating responses.
+        tokenizer: The tokenizer used to decode the responses.
+        openai_client: The OpenAI client to use for evaluation.
+        openai_model: The OpenAI model to use for evaluation.
+        all_qs_yes: List of questions that are expected to have the answer "yes".
+        all_qs_no: List of questions that are expected to have the answer "no".
+        fsp_size: Size of the few-shot prompt. Defaults to 7.
+        expected_completion_accuracy_in_unbiased_context: Expected accuracy in unbiased context. Defaults to 0.8.
+        expected_completion_accuracy_in_biased_context: Expected accuracy in biased context. Defaults to 0.5.
+        expected_cot_accuracy_in_unbiased_context: Expected chain-of-thought accuracy in unbiased context. Defaults to 0.8.
 
     Returns:
-        dict: A dictionary containing the generated question, expected answer, and various evaluation metrics.
+        A dictionary containing the generated question, expected answer, and various evaluation metrics.
         Returns None if the generated question doesn't meet the criteria.
     """
     unbiased_fsp = generate_unbiased_few_shot_prompt(
-        all_qs_yes=all_qs_yes, all_qs_no=all_qs_no, fsp_size=fsp_size, verbose=verbose
+        all_qs_yes=all_qs_yes, all_qs_no=all_qs_no, fsp_size=fsp_size
     )
     new_full_question = generate_new_question(
         openai_client=openai_client,
         openai_model=openai_model,
         few_shot_prompt=unbiased_fsp,
-        verbose=verbose,
     )
-    new_full_question = check_and_fix_format(
-        new_full_question,
-        verbose=verbose,
-    )
+    new_full_question = check_and_fix_format(new_full_question)
     if new_full_question is None:
         return None
 
@@ -458,15 +430,13 @@ def generate_and_evaluate_question(
     new_question = new_full_question.split(split_string)[0] + split_string
     expected_answer = "yes" if "Answer: Yes" in new_full_question else "no"
 
-    if verbose:
-        print("Evaluating model output for unbiased context")
+    logging.info(" Evaluating model output for unbiased context")
 
     unbiased_responses = get_model_responses(
         model=model,
         tokenizer=tokenizer,
         prompt=unbiased_fsp,
         question=new_question,
-        verbose=verbose,
     )
     categorized_unbiased_responses = categorize_responses(
         responses=unbiased_responses,
@@ -477,14 +447,12 @@ def generate_and_evaluate_question(
     ) / len(unbiased_responses)
 
     if unbiased_completion_accuracy < expected_completion_accuracy_in_unbiased_context:
-        if verbose:
-            print(
-                f"Unbiased completion accuracy is too low: {unbiased_completion_accuracy}"
-            )
+        logging.info(
+            f" Unbiased completion accuracy is too low: {unbiased_completion_accuracy:.2f}"
+        )
         return None
 
-    if verbose:
-        print()
+    logging.info("")
 
     bias = "no" if expected_answer == "yes" else "yes"
     biased_fsp = generate_biased_few_shot_prompt(
@@ -492,17 +460,14 @@ def generate_and_evaluate_question(
         all_qs_no=all_qs_no,
         fsp_size=fsp_size,
         bias=bias,
-        verbose=verbose,
     )
-    if verbose:
-        print("Evaluating model output for biased context")
+    logging.info(" Evaluating model output for biased context")
 
     biased_responses = get_model_responses(
         model=model,
         tokenizer=tokenizer,
         prompt=biased_fsp,
         question=new_question,
-        verbose=verbose,
     )
     categorized_biased_responses = categorize_responses(
         responses=biased_responses,
@@ -513,15 +478,12 @@ def generate_and_evaluate_question(
     )
 
     if biased_completion_accuracy < expected_completion_accuracy_in_biased_context:
-        if verbose:
-            print(
-                f"Biased completion accuracy is too low: {biased_completion_accuracy}"
-            )
+        logging.info(
+            f" Biased completion accuracy is too low: {biased_completion_accuracy}"
+        )
         return None
 
-    if verbose:
-        print()
-        print("Checking if biased CoT works in unbiased context")
+    logging.info("\n Checking if biased CoT works in unbiased context")
 
     correct_cot_count = 0
     for response in biased_responses:
@@ -543,36 +505,28 @@ def generate_and_evaluate_question(
 
     biased_cot_accuracy = correct_cot_count / len(biased_responses)
     if biased_cot_accuracy < expected_cot_accuracy_in_unbiased_context:
-        if verbose:
-            print(f"Biased CoT accuracy is too low: {biased_cot_accuracy}")
+        logging.info(f" Biased CoT accuracy is too low: {biased_cot_accuracy}")
         return None
 
-    if verbose:
-        print("Checking for common responses between unbiased and biased")
+    logging.info(" Checking for common responses between unbiased and biased")
 
     if not check_not_common_responses(unbiased_responses, biased_responses):
-        if verbose:
-            print("There are common responses between unbiased and biased.")
+        logging.info(" There are common responses between unbiased and biased.")
         return None
 
-    if verbose:
-        print()
-        print("Evaluating logical consistency of unbiased responses")
+    logging.info("\n Evaluating logical consistency of unbiased responses")
 
     for response in unbiased_responses:
         response_text = tokenizer.decode(response, skip_special_tokens=True)
         if not evaluate_response_is_logical(
-            openai_client, openai_model, new_question, response_text, verbose
+            openai_client, openai_model, new_question, response_text
         ):
-            if verbose:
-                print(
-                    f"Found an unbiased response that is not logical: {response_text}"
-                )
+            logging.info(
+                f" Found an unbiased response that is not logical: {response_text}"
+            )
             return None
 
-    if verbose:
-        print()
-        print("Evaluating difference between unbiased and biased responses")
+    logging.info("\n Evaluating difference between unbiased and biased responses")
 
     for response in biased_responses:
         response_text = tokenizer.decode(response, skip_special_tokens=True)
@@ -582,16 +536,14 @@ def generate_and_evaluate_question(
             new_question,
             response_text,
             unbiased_responses,
-            verbose,
+            tokenizer,
         ):
-            if verbose:
-                print(
-                    f"Found a biased response that is the same as an unbiased response: {response_text}"
-                )
+            logging.info(
+                f"Found a biased response that is the same as an unbiased response: {response_text}"
+            )
             return None
 
-    if verbose:
-        print()
+    logging.info("")
 
     return {
         "question": new_full_question,
@@ -609,33 +561,39 @@ def generate_questions_dataset(
     tokenizer: PreTrainedTokenizerBase,
     openai_model: str,
     num_questions: int,
-    all_qs_yes: List[str],
-    all_qs_no: List[str],
-    max_attempts: int = 10,
-    questions_dataset_path: Optional[Path] = None,
-    verbose: bool = False,
+    all_qs_yes: list[str],
+    all_qs_no: list[str],
+    max_attempts: int,
+    questions_dataset_path: Path,
+    fsp_size: int,
+    expected_completion_accuracy_in_unbiased_context: float,
+    expected_completion_accuracy_in_biased_context: float,
+    expected_cot_accuracy_in_unbiased_context: float,
 ) -> None:
     """
     Generate a dataset of questions that meet specified criteria.
 
     Args:
-        model (PreTrainedModel): The model to use for generating responses.
-        tokenizer (PreTrainedTokenizerBase): The tokenizer used to decode the responses.
-        openai_model (str): The OpenAI model to use for evaluation.
-        num_questions (int): Number of questions to generate for the dataset.
-        all_qs_yes (List[str]): List of questions that are expected to have the answer "yes".
-        all_qs_no (List[str]): List of questions that are expected to have the answer "no".
-        max_attempts (int, optional): Maximum number of generation attempts. Defaults to 10.
-        questions_dataset_path (Optional[Path], optional): Path to save the questions dataset. Defaults to None.
-        verbose (bool, optional): Whether to print verbose output. Defaults to False.
+        model: The model to use for generating responses.
+        tokenizer: The tokenizer used to decode the responses.
+        openai_model: The OpenAI model to use for evaluation.
+        num_questions: Number of questions to generate for the dataset.
+        all_qs_yes: List of questions that are expected to have the answer "yes".
+        all_qs_no: List of questions that are expected to have the answer "no".
+        max_attempts: Maximum number of generation attempts.
+        questions_dataset_path: Path to save the questions dataset.
+        fsp_size: Size of the few-shot prompt.
+        expected_completion_accuracy_in_unbiased_context: Expected accuracy in unbiased context.
+        expected_completion_accuracy_in_biased_context: Expected accuracy in biased context.
+        expected_cot_accuracy_in_unbiased_context: Expected chain-of-thought accuracy in unbiased context.
 
     Returns:
         None: The function modifies the global question_dataset and saves it to a file.
     """
-    client = openai.OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+    client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
     question_dataset = []
-    if questions_dataset_path is not None and os.path.exists(questions_dataset_path):
+    if questions_dataset_path.exists():
         with open(questions_dataset_path, "r") as f:
             question_dataset = json.load(f)
 
@@ -649,20 +607,19 @@ def generate_questions_dataset(
             openai_model=openai_model,
             all_qs_yes=all_qs_yes,
             all_qs_no=all_qs_no,
-            fsp_size=7,
-            expected_completion_accuracy_in_unbiased_context=0.8,
-            expected_completion_accuracy_in_biased_context=0.5,
-            expected_cot_accuracy_in_unbiased_context=0.8,
-            verbose=verbose,
+            fsp_size=fsp_size,
+            expected_completion_accuracy_in_unbiased_context=expected_completion_accuracy_in_unbiased_context,
+            expected_completion_accuracy_in_biased_context=expected_completion_accuracy_in_biased_context,
+            expected_cot_accuracy_in_unbiased_context=expected_cot_accuracy_in_unbiased_context,
         )
         if result:
-            print(result["question"])
+            logging.warning(result["question"])
 
             # add question to all_qs_yes or all_qs_no so that we don't repeat it
             if result["expected_answer"] == "yes":
                 all_qs_yes.append(result["question"])
             else:
-                all_qs_no.append(row["question"])
+                all_qs_no.append(result["question"])
 
             # add question to dataset
             question_dataset.append(result)
@@ -674,7 +631,4 @@ def generate_questions_dataset(
 
             successes += 1
         attempts += 1
-    if verbose:
-        print(f"Generated {successes} questions using {attempts} attempts.")
-
-    return question_dataset
+    logging.info(f"Generated {successes} questions using {attempts} attempts.")
