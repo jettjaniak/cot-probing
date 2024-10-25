@@ -176,7 +176,7 @@ def generate_data(
     return data
 
 # %%
-train_size = 100
+train_size = 500
 test_size = int(train_size * 0.125)
 fsp_max_len = 7
 
@@ -340,8 +340,8 @@ measure_unbiased_accuracy_for_unbiased_cots(test_data)
 # %%
 
 # Average unbiased accuracy for biased COTs
-print(f"Train: {np.mean([item['unbiased_accuracy_for_biased_cots'] for item in train_data])}")
-print(f"Test: {np.mean([item['unbiased_accuracy_for_biased_cots'] for item in test_data])}")
+print(f"Train: {np.mean([item['unbiased_accuracy_for_unbiased_cots'] for item in train_data])}")
+print(f"Test: {np.mean([item['unbiased_accuracy_for_unbiased_cots'] for item in test_data])}")
 
 # %%
 
