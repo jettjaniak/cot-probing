@@ -57,77 +57,6 @@ test_all_qs_no = all_qs_no[:int(len(all_qs_no) * test_pct)]
 train_all_qs_no = all_qs_no[int(len(all_qs_no) * test_pct):]
 
 # %%
-
-# def question_to_key(question):
-#     if "Obama's father" in question:
-#         return "Obama's father"
-
-#     if "Oscar nominations" in question:
-#         return "Oscar nominations"
-
-#     if "days from September" in question:
-#         return "days from September"
-
-#     if "17.5% of 120" in question:
-#         return "percentage"
-
-#     if "NBA MVP awards" in question:
-#         return "NBA MVP awards"
-
-#     if "Vienna" in question:
-#         return "Vienna"
-
-#     if "Uranus" in question and "Neptune" in question and "farther" in question:
-#         return "Planet distance"
-
-#     if "benzene" in question and "freezes" in question:
-#         return "Freezing point"
-
-#     if "bones in a cat" in question:
-#         return "Cat bones"
-
-#     if "Jimmy Carter left office" in question:
-#         return "Old enough for president"
-
-#     if "After meeting with the producers" in question:
-#         return "Producer's meeting"
-
-#     if "correct adjective order" in question:
-#         return "Adjective order"
-
-#     if "built in the same century" in question:
-#         return "Built century"
-
-#     if "flow in the same direction" in question:
-#         return "River direction"
-
-#     if "contemporaries" in question:
-#         return "Contemporaries"
-
-#     if "medieval English knight" in question:
-#         return "Medieval knight"
-
-#     if "person fly an airplane" in question:
-#         return "Person fly airplane"
-
-#     if "chameleon change its color" in question:
-#         return "Chameleon change color"
-
-#     if "learn to play a musical instrument" in question:
-#         return "Learn instrument"
-
-#     if "adult Komodo dragon" in question:
-#         return "Komodo dragon"
-
-#     if "moon" in question and "apogee" in question and "perigee" in question:
-#         return "Moon apogee-perigee distance"
-
-#     if "Canary Islands" in question and "part of a country" in question:
-#         return "Canary Islands in country"
-
-#     raise ValueError(f"No key found for question: {question}")
-
-# %%
 def generate_data(
     all_qs_yes,
     all_qs_no,
@@ -144,7 +73,6 @@ def generate_data(
         available_all_yes_questions = [all_qs_yes[i] for i in range(len(all_qs_yes)) if i != question_to_answer_index]
         available_all_no_questions = [all_qs_no[i] for i in range(len(all_qs_no)) if i != question_to_answer_index]
 
-        questions_available_for_unbiased_fsp = available_all_yes_questions + available_all_no_questions
         if random.random() < 0.5:
             expected_answer = "yes"
             question_to_answer = all_qs_yes[question_to_answer_index]
@@ -154,8 +82,13 @@ def generate_data(
             question_to_answer = all_qs_no[question_to_answer_index]
             questions_available_for_biased_fsp = available_all_yes_questions
 
+        # Build the biased FSP
         biased_fsp_questions = random.sample(questions_available_for_biased_fsp, fsp_max_len)
-        unbiased_fsp_questions = random.sample(questions_available_for_unbiased_fsp, fsp_max_len)
+
+        # Build the unbiased FSP
+        unbiased_fsp_yes_qs_num = int(fsp_max_len / 2)
+        unbiased_fsp_no_qs_num = fsp_max_len - unbiased_fsp_yes_qs_num
+        unbiased_fsp_questions = random.sample(available_all_yes_questions, unbiased_fsp_yes_qs_num) + random.sample(available_all_no_questions, unbiased_fsp_no_qs_num)
 
         # Shuffle the FSPs
         random.shuffle(biased_fsp_questions)
@@ -474,11 +407,11 @@ def collect_activations(data, tokenizer, model, locs_to_cache, layers_to_cache, 
         question_to_answer = data[i]["question_to_answer"]
         expected_answer = data[i]["expected_answer"]
         biased_cots = data[i]["biased_cots"]
-        unbiased_fsp = data[i]["unbiased_fsp"]
+        biased_fsp = data[i]["biased_fsp"]
         biased_cot_label = data[i]["biased_cot_label"]
 
         # Build the prompt
-        unbiased_fsp_with_question = tokenizer.encode(unbiased_fsp + "\n\n" + question_to_answer)
+        biased_fsp_with_question = tokenizer.encode(biased_fsp + "\n\n" + question_to_answer)
         random_biased_cot = random.choice(biased_cots)
         random_biased_cot.tolist()
 
@@ -488,7 +421,7 @@ def collect_activations(data, tokenizer, model, locs_to_cache, layers_to_cache, 
         else:
             answer_tok = tokenizer.encode(" No", add_special_tokens=False)
 
-        input_ids = unbiased_fsp_with_question + random_biased_cot.tolist() + answer_tok
+        input_ids = biased_fsp_with_question + random_biased_cot.tolist() + answer_tok
 
         if "last_question_tokens" in locs_to_cache:
             # Figure out where the last question starts
