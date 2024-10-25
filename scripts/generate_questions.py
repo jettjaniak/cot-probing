@@ -25,6 +25,14 @@ def parse_args():
         help="Number of questions to generate",
     )
     parser.add_argument(
+        "-e",
+        "--expected-answers",
+        type=str,
+        default="mixed",
+        choices=["yes", "no", "mixed"],
+        help="Expected answers for the questions",
+    )
+    parser.add_argument(
         "-a", "--max-attempts", type=int, default=100, help="Maximum number of attempts"
     )
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
@@ -99,9 +107,10 @@ def main(args: argparse.Namespace):
         tokenizer=tokenizer,
         openai_model=args.openai_model,
         num_questions=args.num_questions,
+        expected_answers=args.expected_answers,
+        max_attempts=args.max_attempts,
         all_qs_yes=all_qs_yes,
         all_qs_no=all_qs_no,
-        max_attempts=args.max_attempts,
         questions_dataset_path=questions_dataset_path,
         fsp_size=args.fsp_size,
         unb_n_gen=args.unb_n_gen,

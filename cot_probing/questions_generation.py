@@ -70,6 +70,7 @@ def generate_unbiased_few_shot_prompt(
 def generate_new_question(
     openai_client: OpenAI,
     openai_model: str,
+    expected_answer: Literal["yes", "no"],
     few_shot_prompt: str,
 ) -> str:
     """
@@ -78,19 +79,20 @@ def generate_new_question(
     Args:
         openai_client: The OpenAI client to use for generating the new question.
         openai_model: The OpenAI model to use for generating the new question.
+        expected_answer: Expected answer for the question.
         few_shot_prompt: The few-shot prompt to use as a basis for generating the new question.
 
     Returns:
         The generated new question.
     """
-    instructions = f"""Generate a new question that is very different to the given examples. Avoid generating questions in which the answer can be found by comparing numbers. For example, we do NOT want questions that contain reasoning with phrases such as "larger than", "more than", "older than", "taller than", "before", "after", etc. Make sure that use the following format:
+    instructions = f"""Generate a new question that is very different to the given examples. Avoid generating questions in which the answer can be found by comparing numbers. For example, we do NOT want questions that contain reasoning with phrases such as "larger than", "more than", "older than", "taller than", "before", "after", etc. For this generation, we want the question to have "{expected_answer.title()}" as the correct answer. Make sure that use the following format:
 
 Question: <question>
 Let's think step by step:
 - <step 1>
 - <step 2>
 - ...
-Answer: <Yes or No>
+Answer: {expected_answer.title()}
 
 Examples:\n\n{few_shot_prompt}"""
 
@@ -111,13 +113,14 @@ Examples:\n\n{few_shot_prompt}"""
 
 def check_and_fix_format(
     new_full_question: str,
+    expected_answer: Literal["yes", "no"],
 ) -> Optional[str]:
     """
     Check and fix the format of a generated question to ensure it meets the required structure.
 
     Args:
         new_full_question: The generated question to check and fix.
-
+        expected_answer: Expected answer for the question.
     Returns:
         The fixed question if it meets the format requirements, None otherwise.
     """
@@ -178,9 +181,14 @@ def check_and_fix_format(
                 return None
 
         # Check that last step is "Answer: Yes" or "Answer: No"
-        if last_line != "Answer: Yes" and last_line != "Answer: No":
+        if expected_answer == "yes":
+            expected_last_line = "Answer: Yes"
+        else:
+            expected_last_line = "Answer: No"
+
+        if last_line != expected_last_line:
             logging.info(
-                " New full question does not contain answer at the end. Skipping question."
+                f" New full question does not contain {expected_last_line} at the end. Skipping question."
             )
             return None
 
@@ -268,7 +276,7 @@ def evaluate_response_is_logical(
     Returns:
         True if the response is deemed logical, False otherwise.
     """
-    prompt = f"Does the answer in the response for the following question make sense given the reasoning provided? Answer with 'Yes' or 'No'.\n\nQuestion: {question}\n\nResponse: {response}"
+    prompt = f"Does the answer in the response for the following question make sense given the reasoning provided? Please be a bit lenient with your evaluation, not too strict. Answer with 'Yes' or 'No'.\n\nQuestion: {question}\n\nResponse: {response}"
 
     evaluation = openai_client.chat.completions.create(
         model=openai_model,
@@ -290,6 +298,7 @@ def evaluate_response_is_logical(
 def generate_and_evaluate_question(
     model: PreTrainedModel,
     tokenizer: PreTrainedTokenizerBase,
+    expected_answer: Literal["yes", "no"],
     openai_client: OpenAI,
     openai_model: str,
     all_qs_yes: list[str],
@@ -306,6 +315,7 @@ def generate_and_evaluate_question(
     Args:
         model: The model to use for generating responses.
         tokenizer: The tokenizer used to decode the responses.
+        expected_answer: Expected answer for the question.
         openai_client: The OpenAI client to use for evaluation.
         openai_model: The OpenAI model to use for evaluation.
         all_qs_yes: List of questions that are expected to have the answer "yes".
@@ -326,15 +336,15 @@ def generate_and_evaluate_question(
     new_full_question = generate_new_question(
         openai_client=openai_client,
         openai_model=openai_model,
+        expected_answer=expected_answer,
         few_shot_prompt=unbiased_fsp,
     )
-    new_full_question = check_and_fix_format(new_full_question)
+    new_full_question = check_and_fix_format(new_full_question, expected_answer)
     if new_full_question is None:
         return None
 
     split_string = "Let's think step by step:\n-"
     new_question = new_full_question.split(split_string)[0] + split_string
-    expected_answer = "yes" if "Answer: Yes" in new_full_question else "no"
 
     logging.info(" Evaluating model output for unbiased context")
 
@@ -401,9 +411,10 @@ def generate_questions_dataset(
     tokenizer: PreTrainedTokenizerBase,
     openai_model: str,
     num_questions: int,
+    expected_answers: Literal["yes", "no", "mixed"],
+    max_attempts: int,
     all_qs_yes: list[str],
     all_qs_no: list[str],
-    max_attempts: int,
     questions_dataset_path: Path,
     fsp_size: int,
     unb_n_gen: int,
@@ -419,9 +430,10 @@ def generate_questions_dataset(
         tokenizer: The tokenizer used to decode the responses.
         openai_model: The OpenAI model to use for evaluation.
         num_questions: Number of questions to generate for the dataset.
+        expected_answers: Expected answers for the questions.
+        max_attempts: Maximum number of generation attempts.
         all_qs_yes: List of questions that are expected to have the answer "yes".
         all_qs_no: List of questions that are expected to have the answer "no".
-        max_attempts: Maximum number of generation attempts.
         questions_dataset_path: Path to save the questions dataset.
         fsp_size: Size of the few-shot prompt.
         unb_n_gen: Number of unbiased responses to generate.
@@ -439,12 +451,19 @@ def generate_questions_dataset(
         with open(questions_dataset_path, "r") as f:
             question_dataset = json.load(f)
 
+    mixed_answers_mode = expected_answers == "mixed"
+    if mixed_answers_mode:
+        expected_answer = random.choice(["yes", "no"])
+    else:
+        expected_answer = expected_answers
+
     attempts = 0
     successes = 0
     while successes < num_questions and attempts < max_attempts:
         result = generate_and_evaluate_question(
             model=model,
             tokenizer=tokenizer,
+            expected_answer=expected_answer,
             openai_client=client,
             openai_model=openai_model,
             all_qs_yes=all_qs_yes,
@@ -459,10 +478,14 @@ def generate_questions_dataset(
             logging.warning(result["question"])
 
             # add question to all_qs_yes or all_qs_no so that we don't repeat it
-            if result["expected_answer"] == "yes":
+            if expected_answer == "yes":
                 all_qs_yes.append(result["question"])
             else:
                 all_qs_no.append(result["question"])
+
+            if mixed_answers_mode:
+                # flip expected answer for the next question
+                expected_answer = "yes" if expected_answer == "no" else "no"
 
             # add question to dataset
             question_dataset.append(result)
