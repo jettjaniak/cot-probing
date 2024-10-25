@@ -29,6 +29,38 @@ class SuccessfulSwap:
     swap_dir: Literal["unfai_to_fai", "fai_to_unfai"]
     prob_diff: float
 
+    def __repr__(self) -> str:
+        return f"SuccessfulSwap(fai_tok={self.fai_tok}, unfai_tok={self.unfai_tok}, swap_dir={self.swap_dir}, prob_diff={self.prob_diff})"
+
+    def get_biased_input_ids(self) -> list[int]:
+        return self.bias_no_prompt + self.trunc_cot
+
+    def get_unbiased_input_ids(self) -> list[int]:
+        return self.unb_prompt + self.trunc_cot
+
+    @staticmethod
+    def _get_logits(
+        model: PreTrainedModel, input_ids: list[int]
+    ) -> Float[torch.Tensor, "vocab"]:
+        input_ids_tensor = torch.tensor([input_ids]).to("cuda")
+        return model(input_ids_tensor).logits[0, -1]
+
+    def get_unbiased_logits(
+        self, model: PreTrainedModel
+    ) -> Float[torch.Tensor, "vocab"]:
+        return self._get_logits(model, self.get_unbiased_input_ids())
+
+    def get_biased_logits(self, model: PreTrainedModel) -> Float[torch.Tensor, "vocab"]:
+        return self._get_logits(model, self.get_biased_input_ids())
+
+    def get_unbiased_probs(self, model: PreTrainedModel) -> tuple[float, float]:
+        all_probs = torch.softmax(self.get_unbiased_logits(model), dim=-1)
+        return all_probs[self.fai_tok].item(), all_probs[self.unfai_tok].item()
+
+    def get_biased_probs(self, model: PreTrainedModel) -> tuple[float, float]:
+        all_probs = torch.softmax(self.get_biased_logits(model), dim=-1)
+        return all_probs[self.fai_tok].item(), all_probs[self.unfai_tok].item()
+
 
 def greedy_gen_until_answer(
     model: PreTrainedModel,
@@ -192,8 +224,10 @@ def try_swap_position(
     logging.info(
         f"Found {diff_abv_thresh_mask.sum().item()} other tokens above threshold"
     )
-    other_tokens = torch.arange(len(this_diff)).cuda()[diff_abv_thresh_mask]
-    sorted_indices = torch.argsort(this_diff[diff_abv_thresh_mask], descending=True)
+    vocab_size = len(this_diff)
+    other_tokens = torch.arange(vocab_size).cuda()[diff_abv_thresh_mask]
+    other_tokens_prob_diffs = this_diff[diff_abv_thresh_mask]
+    sorted_indices = torch.argsort(other_tokens_prob_diffs, descending=True)
     sorted_other_tokens = other_tokens[sorted_indices].tolist()[:topk_tok]
     logging.info(f"Trying {len(sorted_other_tokens)} other tokens")
     for other_tok in sorted_other_tokens:
@@ -338,7 +372,7 @@ def extract_str_question(prompt_str: str) -> str:
 
 
 def process_successful_swaps_single_q_single_dir(
-    seen_responses: set[tuple[int]],
+    seen_responses: set[tuple[int, ...]],
     unb_prompt: list[int],
     bias_no_prompt: list[int],
     responses: list[list[int]],
@@ -373,7 +407,7 @@ def process_successful_swaps_single_q(
     q_idx: int,
     swap_results: QuestionSwapResults,
     all_combinations: list[dict[str, str]],
-    responses_by_answer_by_ctx_by_q: dict[int, dict[str, dict[str, list[list[int]]]]],
+    responses_by_answer_by_ctx_by_q: list[dict[str, dict[str, list[list[int]]]]],
     tokenizer: PreTrainedTokenizerBase,
 ) -> list[SuccessfulSwap]:
     combined_prompts = all_combinations[q_idx]
@@ -414,7 +448,7 @@ def process_successful_swaps_single_q(
 
 
 def process_successful_swaps(
-    responses_path: str, swap_results_path: str, tokenizer: PreTrainedTokenizerBase
+    responses_path: Path, swap_results_path: Path, tokenizer: PreTrainedTokenizerBase
 ) -> list[list[SuccessfulSwap]]:
     with open(responses_path, "rb") as f:
         responses_by_seed = pickle.load(f)
