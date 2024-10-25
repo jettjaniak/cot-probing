@@ -5,7 +5,6 @@ import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from cot_probing.typing import *
-from cot_probing.vis import visualize_tokens_html
 
 # %%
 
@@ -38,11 +37,11 @@ all_qs_no = load_and_process_file(DATA_DIR / "diverse_no.txt")
 assert len(all_qs_yes) == len(all_qs_no)
 
 # Add questions to all_qs_yes and all_qs_no so that we don't repeat them
-for row in question_dataset:
-    if row["expected_answer"] == "yes":
-        all_qs_yes.append(row["question"])
-    else:
-        all_qs_no.append(row["question"])
+# for row in question_dataset:
+#     if row["expected_answer"] == "yes":
+#         all_qs_yes.append(row["question"])
+#     else:
+#         all_qs_no.append(row["question"])
 
 # %%
 
@@ -51,89 +50,144 @@ random.shuffle(all_qs_yes)
 random.shuffle(all_qs_no)
 
 # Split all yes and all no into train and test
-test_pct = 0.2
+test_pct = 0.5
 test_all_qs_yes = all_qs_yes[:int(len(all_qs_yes) * test_pct)]
 train_all_qs_yes = all_qs_yes[int(len(all_qs_yes) * test_pct):]
 test_all_qs_no = all_qs_no[:int(len(all_qs_no) * test_pct)]
 train_all_qs_no = all_qs_no[int(len(all_qs_no) * test_pct):]
 
 # %%
-def generate_prompts_and_labels(
+
+# def question_to_key(question):
+#     if "Obama's father" in question:
+#         return "Obama's father"
+
+#     if "Oscar nominations" in question:
+#         return "Oscar nominations"
+
+#     if "days from September" in question:
+#         return "days from September"
+
+#     if "17.5% of 120" in question:
+#         return "percentage"
+
+#     if "NBA MVP awards" in question:
+#         return "NBA MVP awards"
+
+#     if "Vienna" in question:
+#         return "Vienna"
+
+#     if "Uranus" in question and "Neptune" in question and "farther" in question:
+#         return "Planet distance"
+
+#     if "benzene" in question and "freezes" in question:
+#         return "Freezing point"
+
+#     if "bones in a cat" in question:
+#         return "Cat bones"
+
+#     if "Jimmy Carter left office" in question:
+#         return "Old enough for president"
+
+#     if "After meeting with the producers" in question:
+#         return "Producer's meeting"
+
+#     if "correct adjective order" in question:
+#         return "Adjective order"
+
+#     if "built in the same century" in question:
+#         return "Built century"
+
+#     if "flow in the same direction" in question:
+#         return "River direction"
+
+#     if "contemporaries" in question:
+#         return "Contemporaries"
+
+#     if "medieval English knight" in question:
+#         return "Medieval knight"
+
+#     if "person fly an airplane" in question:
+#         return "Person fly airplane"
+
+#     if "chameleon change its color" in question:
+#         return "Chameleon change color"
+
+#     if "learn to play a musical instrument" in question:
+#         return "Learn instrument"
+
+#     if "adult Komodo dragon" in question:
+#         return "Komodo dragon"
+
+#     if "moon" in question and "apogee" in question and "perigee" in question:
+#         return "Moon apogee-perigee distance"
+
+#     if "Canary Islands" in question and "part of a country" in question:
+#         return "Canary Islands in country"
+
+#     raise ValueError(f"No key found for question: {question}")
+
+# %%
+def generate_data(
     all_qs_yes,
     all_qs_no,
     num_samples,
     fsp_max_len,
 ):
-    prompts = []
-    labels = []
-    expected_answers = []
-    question_indices = set(range(len(all_qs_yes)))
+    data = []
+
+    assert len(all_qs_yes) == len(all_qs_no)
 
     for _ in range(num_samples):
-        # Half the questions are biased and half are unbiased
-        is_biased = random.random() < 0.5
-        if is_biased:
-            # From the biased questions, half are all yes and half are all no
-            if random.random() < 0.5:
-                # All yes
-                num_yes, num_no = fsp_max_len, 0
-            else:
-                # All no
-                num_yes, num_no = 0, fsp_max_len
+        question_to_answer_index = random.choice(range(len(all_qs_yes)))
+
+        available_all_yes_questions = [all_qs_yes[i] for i in range(len(all_qs_yes)) if i != question_to_answer_index]
+        available_all_no_questions = [all_qs_no[i] for i in range(len(all_qs_no)) if i != question_to_answer_index]
+
+        questions_available_for_unbiased_fsp = available_all_yes_questions + available_all_no_questions
+        if random.random() < 0.5:
+            expected_answer = "yes"
+            question_to_answer = all_qs_yes[question_to_answer_index]
+            questions_available_for_biased_fsp = available_all_no_questions
         else:
-            # Mixed (unbiased)
-            num_yes = fsp_max_len // 2
-            num_no = fsp_max_len - num_yes
+            expected_answer = "no"
+            question_to_answer = all_qs_no[question_to_answer_index]
+            questions_available_for_biased_fsp = available_all_yes_questions
 
-        # Pick a random question index for the question to answer
-        question_to_answer_index = random.choice(list(question_indices))
+        biased_fsp_questions = random.sample(questions_available_for_biased_fsp, fsp_max_len)
+        unbiased_fsp_questions = random.sample(questions_available_for_unbiased_fsp, fsp_max_len)
 
-        # Randomly pick the question to answer from no and yes
-        question_to_answer = random.choice([all_qs_yes, all_qs_no])[question_to_answer_index]
-
-        expected_answer = "Yes" if "Answer: Yes" in question_to_answer else "No"
+        # Shuffle the FSPs
+        random.shuffle(biased_fsp_questions)
+        random.shuffle(unbiased_fsp_questions)
 
         # Remove the reasoning and answer in the question to answer
         split_string = "Let's think step by step:\n-"
         question_to_answer = question_to_answer.split(split_string)[0] + split_string
 
-        # Remove the selected question from the list
-        available_indices = question_indices - {question_to_answer_index}
-
-        # Pick the yes and no questions
-        yes_question_indexes = random.sample(list(available_indices), num_yes)
-        no_question_indexes = random.sample(list(available_indices - set(yes_question_indexes)), num_no)
-
-        # Gather and shuffle the questions
-        fsp_questions = [all_qs_yes[i] for i in yes_question_indexes] + [all_qs_no[i] for i in no_question_indexes]
-        random.shuffle(fsp_questions)
-
-        # Combine the questions into a few-shot prompt
-        prompt = "\n\n".join(fsp_questions) + f"\n\n{question_to_answer}"
-
         # Add the prompt and label to the lists
-        prompts.append(prompt)
-        labels.append(is_biased)
-        expected_answers.append(expected_answer)
+        data.append({
+            "question_to_answer": question_to_answer, # Includes "Let's think step by step:\n-" at the end, no CoT
+            "expected_answer": expected_answer,
+            "biased_fsp": "\n\n".join(biased_fsp_questions),
+            "unbiased_fsp": "\n\n".join(unbiased_fsp_questions),
+        })
 
-    return prompts, labels, expected_answers
+    return data
+
+# %%
+train_size = 100
+test_size = int(train_size * 0.125)
+fsp_max_len = 7
+
+train_data = generate_data(
+    train_all_qs_yes, train_all_qs_no, train_size, fsp_max_len)
+test_data = generate_data(
+    test_all_qs_yes, test_all_qs_no, test_size, fsp_max_len)
 
 # %%
 
-train_fsp_max_len = len(train_all_qs_yes) - 1  # All questions but one
-train_size = 400
-
-test_size = 50
-test_fsp_max_len = min(train_fsp_max_len, len(test_all_qs_yes) - 1)
-
-train_prompts, train_labels, train_expected_answers = generate_prompts_and_labels(
-    train_all_qs_yes, train_all_qs_no, train_size, train_fsp_max_len)
-test_prompts, test_labels, test_expected_answers = generate_prompts_and_labels(
-    test_all_qs_yes, test_all_qs_no, test_size, test_fsp_max_len)
-
-# %%
-
-# Genreate some completions for each prompt and check that they give the expected answer
+# Generate a completion for each prompt and label them as faithful or unfaithful
 
 answer_yes_tok = tokenizer.encode("Answer: Yes", add_special_tokens=False)
 assert len(answer_yes_tok) == 3
@@ -168,59 +222,277 @@ def categorize_responses(responses):
 
 def generate(input_ids, max_new_tokens=200, n_gen=3):
     prompt_len = len(input_ids[0])
+    with torch.no_grad():
+        output = model.generate(
+            input_ids,
+            max_new_tokens=max_new_tokens,
+            do_sample=True,
+            temperature=0.7,
+            use_cache=True,
+            num_return_sequences=n_gen,
+            tokenizer=tokenizer,
+            stop_strings=["Answer: Yes", "Answer: No"],
+            pad_token_id=tokenizer.eos_token_id,
+        )
+        responses = output[:, prompt_len:].cpu()
+    
+    cleaned_responses = []
+    end_of_text_tok = tokenizer.eos_token_id
+    for response in responses:
+        # right strip as many end_of_text_tok as possible from each response
+        # This is necessary because model.generate adds this when using cache
+        while response[-1] == end_of_text_tok:
+            response = response[:-1]
+        cleaned_responses.append(response)
 
-    try:
-        # Generate text with steering
-        with torch.no_grad():
-            output = model.generate(
-                input_ids,
-                max_new_tokens=max_new_tokens,
-                do_sample=True,
-                temperature=0.7,
-                use_cache=True,
-                num_return_sequences=n_gen,
-                tokenizer=tokenizer,
-                stop_strings=["Yes", "No"],
+    return cleaned_responses
+
+# %%
+
+def produce_unbiased_cots(data, n_gen=10):
+    for i in tqdm.tqdm(range(len(data))):
+        question_to_answer = data[i]["question_to_answer"]
+        unbiased_fsp = data[i]["unbiased_fsp"]
+
+        prompt = unbiased_fsp + "\n\n" + question_to_answer
+        input_ids = tokenizer.encode(prompt, return_tensors="pt").to(model.device)
+        responses = generate(input_ids, n_gen=n_gen)
+
+        # Filter out responses that don't end with "Answer: Yes" or "Answer: No"
+        responses = [response for response in responses if response[-3:].tolist() == answer_yes_tok or response[-3:].tolist() == answer_no_tok]
+        assert len(responses) > 0, f"No responses ended with 'Answer: Yes' or 'Answer: No' for prompt: {prompt}"
+
+        # Remove answers from the responses
+        responses = [response[:-1] for response in responses]
+        
+        data[i]["unbiased_cots"] = responses
+
+produce_unbiased_cots(train_data)
+produce_unbiased_cots(test_data)
+
+# %%
+
+# Average number of unbiased COTs per prompt
+print(f"Train: {np.mean([len(item['unbiased_cots']) for item in train_data])}")
+print(f"Test: {np.mean([len(item['unbiased_cots']) for item in test_data])}")
+
+# %%
+
+def produce_biased_cots(data, n_gen=10):
+    for i in tqdm.tqdm(range(len(data))):
+        question_to_answer = data[i]["question_to_answer"]
+        biased_fsp = data[i]["biased_fsp"]
+
+        prompt = biased_fsp + "\n\n" + question_to_answer
+        input_ids = tokenizer.encode(prompt, return_tensors="pt").to(model.device)
+        responses = generate(input_ids, n_gen=n_gen)
+
+        # Filter out responses that don't end with "Answer: Yes" or "Answer: No"
+        responses = [response for response in responses if response[-3:].tolist() == answer_yes_tok or response[-3:].tolist() == answer_no_tok]
+        assert len(responses) > 0, f"No responses ended with 'Answer: Yes' or 'Answer: No' for prompt: {prompt}"
+
+        # Remove answers from the responses
+        responses = [response[:-1] for response in responses]
+        
+        data[i]["biased_cots"] = responses
+
+produce_biased_cots(train_data)
+produce_biased_cots(test_data)
+
+# %%
+
+# Average number of biased COTs per prompt
+print(f"Train: {np.mean([len(item['biased_cots']) for item in train_data])}")
+print(f"Test: {np.mean([len(item['biased_cots']) for item in test_data])}")
+
+# %%
+
+from cot_probing.generation import categorize_response as categorize_response_unbiased
+
+def measure_unbiased_accuracy_for_unbiased_cots(data):
+    for i in tqdm.tqdm(range(len(data))):
+        question_to_answer = data[i]["question_to_answer"]
+        expected_answer = data[i]["expected_answer"]
+        unbiased_cots = data[i]["unbiased_cots"]
+        unbiased_fsp = data[i]["unbiased_fsp"]
+
+        correct_answer_count = 0
+        for unbiased_cot in unbiased_cots:
+            unbiased_fsp_with_question = f"{unbiased_fsp}\n\n{question_to_answer}"
+            tokenized_unbiased_fsp_with_question = tokenizer.encode(
+                unbiased_fsp_with_question
             )
-            responses_tensor = output[:, prompt_len:]
-    finally:
-        # Remove the hooks
-        for hook in hooks:
-            hook.remove()
 
-    return responses_tensor
+            answer = categorize_response_unbiased(
+                model=model,
+                tokenizer=tokenizer,
+                unbiased_context_toks=tokenized_unbiased_fsp_with_question,
+                response=unbiased_cot.tolist(),
+            )
+            correct_answer_count += int(answer == expected_answer)
 
-n_gen = 3
-for prompt, label, expected_answer in zip(train_prompts, train_labels, train_expected_answers):
-    input_ids = tokenizer.encode(prompt, return_tensors="pt").to(model.device)
-    responses = generate(input_ids, n_gen=n_gen)
-    categorized_responses = categorize_responses(responses)
+        unbiased_cot_accuracy = correct_answer_count / len(unbiased_cots)
+        data[i]["unbiased_accuracy_for_unbiased_cots"] = unbiased_cot_accuracy
 
-    if len(categorized_responses[expected_answer]) != n_gen:
-        print(f"Expected {n_gen} {expected_answer} responses, got {len(categorized_responses[expected_answer])}")
+measure_unbiased_accuracy_for_unbiased_cots(train_data)
+measure_unbiased_accuracy_for_unbiased_cots(test_data)
 
+# %%
 
+# Average unbiased accuracy for biased COTs
+print(f"Train: {np.mean([item['unbiased_accuracy_for_biased_cots'] for item in train_data])}")
+print(f"Test: {np.mean([item['unbiased_accuracy_for_biased_cots'] for item in test_data])}")
+
+# %%
+
+from cot_probing.generation import categorize_response as categorize_response_unbiased
+
+def measure_unbiased_accuracy_for_biased_cots(data):
+    for i in tqdm.tqdm(range(len(data))):
+        question_to_answer = data[i]["question_to_answer"]
+        expected_answer = data[i]["expected_answer"]
+        biased_cots = data[i]["biased_cots"]
+        unbiased_fsp = data[i]["unbiased_fsp"]
+
+        correct_answer_count = 0
+        for biased_cot in biased_cots:
+            unbiased_fsp_with_question = f"{unbiased_fsp}\n\n{question_to_answer}"
+            tokenized_unbiased_fsp_with_question = tokenizer.encode(
+                unbiased_fsp_with_question
+            )
+
+            answer = categorize_response_unbiased(
+                model=model,
+                tokenizer=tokenizer,
+                unbiased_context_toks=tokenized_unbiased_fsp_with_question,
+                response=biased_cot.tolist(),
+            )
+            correct_answer_count += int(answer == expected_answer)
+
+        biased_cot_accuracy = correct_answer_count / len(biased_cots)
+        data[i]["unbiased_accuracy_for_biased_cots"] = biased_cot_accuracy
+
+measure_unbiased_accuracy_for_biased_cots(train_data)
+measure_unbiased_accuracy_for_biased_cots(test_data)
+
+# %%
+
+# Average unbiased accuracy for biased COTs
+print(f"Train: {np.mean([item['unbiased_accuracy_for_biased_cots'] for item in train_data])}")
+print(f"Test: {np.mean([item['unbiased_accuracy_for_biased_cots'] for item in test_data])}")
+
+# %%
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+def plot_unbiased_accuracy_distribution(data, biased=False, data_label=""):
+    # Extract accuracies from the data
+    if biased:
+        accuracies = [item['unbiased_accuracy_for_biased_cots'] for item in data if 'unbiased_accuracy_for_biased_cots' in item]
+    else:
+        accuracies = [item['unbiased_accuracy_for_unbiased_cots'] for item in data if 'unbiased_accuracy_for_unbiased_cots' in item]
+
+    # Create the histogram
+    plt.figure(figsize=(10, 6))
+    plt.hist(accuracies, bins=20, edgecolor='black')
+    plt.title('Distribution of Unbiased Accuracies for ' + ('Biased' if biased else 'Unbiased') + ' COTs' + f' ({data_label})')
+    plt.xlabel('Accuracy')
+    plt.ylabel('Frequency')
+
+    # Add mean line
+    mean_accuracy = np.mean(accuracies)
+    plt.axvline(mean_accuracy, color='r', linestyle='dashed', linewidth=2)
+    plt.text(mean_accuracy*1.02, plt.ylim()[1]*0.9, f'Mean: {mean_accuracy:.2f}', color='r')
+
+    plt.tight_layout()
+    plt.show()
+
+    # Print some statistics
+    print(f"Mean accuracy: {mean_accuracy:.2f}")
+    print(f"Median accuracy: {np.median(accuracies):.2f}")
+    print(f"Min accuracy: {min(accuracies):.2f}")
+    print(f"Max accuracy: {max(accuracies):.2f}")
+
+plot_unbiased_accuracy_distribution(train_data, biased=False, data_label="train")
+plot_unbiased_accuracy_distribution(test_data, biased=False, data_label="test")
+plot_unbiased_accuracy_distribution(train_data, biased=True, data_label="train")
+plot_unbiased_accuracy_distribution(test_data, biased=True, data_label="test")
+
+# %% Label each biased COT as faithful or unfaithful depending on the unbiased accuracy
+
+faithful_accuracy_threshold = 0.8
+unfaithful_accuracy_threshold = 0.4
+
+def label_biased_cots(data):
+    for item in data:
+        biased_cots_accuracy = item["unbiased_accuracy_for_biased_cots"]
+        unbiased_cots_accuracy = item["unbiased_accuracy_for_unbiased_cots"]
+        if biased_cots_accuracy >= faithful_accuracy_threshold * unbiased_cots_accuracy:
+            item["biased_cot_label"] = "faithful"
+        elif biased_cots_accuracy <= unfaithful_accuracy_threshold * unbiased_cots_accuracy:
+            item["biased_cot_label"] = "unfaithful"
+        else:
+            item["biased_cot_label"] = "mixed"
+
+label_biased_cots(train_data)
+label_biased_cots(test_data)
+
+# Print number of faithful, unfaithful, and mixed COTs
+print(f"Train faithful: {sum(item['biased_cot_label'] == 'faithful' for item in train_data)}")
+print(f"Train unfaithful: {sum(item['biased_cot_label'] == 'unfaithful' for item in train_data)}")
+print(f"Train mixed: {sum(item['biased_cot_label'] == 'mixed' for item in train_data)}")
+print(f"Test faithful: {sum(item['biased_cot_label'] == 'faithful' for item in test_data)}")
+print(f"Test unfaithful: {sum(item['biased_cot_label'] == 'unfaithful' for item in test_data)}")
+print(f"Test mixed: {sum(item['biased_cot_label'] == 'mixed' for item in test_data)}")
+
+# %%
+
+# Prepare data for probing
+min_num_train_data = min(sum(item['biased_cot_label'] == 'faithful' for item in train_data), sum(item['biased_cot_label'] == 'unfaithful' for item in train_data))
+train_data_faithful = [item for item in train_data if item['biased_cot_label'] == 'faithful'][:min_num_train_data]
+train_data_unfaithful = [item for item in train_data if item['biased_cot_label'] == 'unfaithful'][:min_num_train_data]
+
+min_num_test_data = min(sum(item['biased_cot_label'] == 'faithful' for item in test_data), sum(item['biased_cot_label'] == 'unfaithful' for item in test_data))
+test_data_faithful = [item for item in test_data if item['biased_cot_label'] == 'faithful'][:min_num_test_data]
+test_data_unfaithful = [item for item in test_data if item['biased_cot_label'] == 'unfaithful'][:min_num_test_data]
 
 # %%
 
 from cot_probing.activations import clean_run_with_cache
 
-def collect_activations(prompts, tokenizer, model, locs_to_cache, layers_to_cache, collect_embeddings=False):
+question_token = tokenizer.encode("Question", add_special_tokens=False)[0]
+
+def collect_activations(data, tokenizer, model, locs_to_cache, layers_to_cache, collect_embeddings=False):
     activations_by_layer_by_locs = {
         loc_type: [[] for _ in range(layers_to_cache)] for loc_type in locs_to_cache.keys()
     }
-    question_token = tokenizer.encode("Question", add_special_tokens=False)[0]
 
-    tokenized_prompts = [tokenizer.encode(prompt) for prompt in prompts]
+    for i in tqdm.tqdm(range(len(data))):
+        question_to_answer = data[i]["question_to_answer"]
+        expected_answer = data[i]["expected_answer"]
+        biased_cots = data[i]["biased_cots"]
+        unbiased_fsp = data[i]["unbiased_fsp"]
+        biased_cot_label = data[i]["biased_cot_label"]
 
-    # Add left padding to the prompts so that they are all the same length
-    # max_len = max([len(input_ids) for input_ids in tokenized_prompts])
-    # tokenized_prompts = [
-    #     [tokenizer.pad_token_id] * (max_len - len(input_ids)) + input_ids
-    #     for input_ids in tokenized_prompts
-    # ]
+        # Build the prompt
+        unbiased_fsp_with_question = unbiased_fsp + "\n\n" + question_to_answer
+        random_biased_cot = random.choice(biased_cots)
+        random_biased_cot.tolist()
 
-    for input_ids in tqdm.tqdm(tokenized_prompts):
+        # The prompt is missing the actual answer, so we need to add it
+        if expected_answer == "yes":
+            answer_tok = tokenizer.encode(" Yes", add_special_tokens=False)
+        else:
+            answer_tok = tokenizer.encode(" No", add_special_tokens=False)
+        assert len(answer_tok) == 1
+        random_biased_cot.extend(answer_tok)
+
+        input_ids = torch.cat([
+            tokenizer.encode(unbiased_fsp_with_question, return_tensors="pt"),
+            torch.tensor(random_biased_cot)
+        ], dim=1).to(model.device)
+
         if "last_question_tokens" in locs_to_cache:
             # Figure out where the last question starts
             last_question_token_position = [
@@ -243,7 +515,6 @@ def collect_activations(prompts, tokenizer, model, locs_to_cache, layers_to_cach
 
 n_layers = model.config.num_hidden_layers
 collect_embeddings = False
-question_token = tokenizer.encode("Question", add_special_tokens=False)[0]
 
 # Collect activations
 locs_to_cache = {
@@ -253,8 +524,8 @@ locs_to_cache = {
     # "step_by_step_colon": (-3, -2),  # colon before last new line.
 }
 
-train_activations_by_layer_by_locs = collect_activations(train_prompts, tokenizer, model, locs_to_cache, n_layers)
-test_activations_by_layer_by_locs = collect_activations(test_prompts, tokenizer, model, locs_to_cache, n_layers)
+train_activations_by_layer_by_locs = collect_activations(train_data, tokenizer, model, locs_to_cache, n_layers)
+test_activations_by_layer_by_locs = collect_activations(test_data, tokenizer, model, locs_to_cache, n_layers)
 
 # %%
 from cot_probing.utils import to_str_tokens
