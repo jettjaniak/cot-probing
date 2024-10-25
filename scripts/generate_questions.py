@@ -35,22 +35,22 @@ def parse_args():
         help="Size of the few-shot prompt.",
     )
     parser.add_argument(
-        "--expected-completion-accuracy-in-unbiased-context",
-        type=float,
-        default=0.8,
-        help="Expected accuracy in unbiased context.",
+        "--unb-n-gen",
+        type=int,
+        default=10,
+        help="Number of unbiased responses to generate.",
     )
     parser.add_argument(
-        "--expected-completion-accuracy-in-biased-context",
+        "--expected-min-completion-accuracy-in-unbiased-context",
         type=float,
-        default=0.5,
-        help="Expected accuracy in biased context.",
+        default=0.7,
+        help="Expected min accuracy in unbiased context.",
     )
     parser.add_argument(
-        "--expected-cot-accuracy-in-unbiased-context",
+        "--expected-max-completion-accuracy-in-unbiased-context",
         type=float,
-        default=0.8,
-        help="Expected chain-of-thought accuracy in unbiased context.",
+        default=0.9,
+        help="Expected max accuracy in unbiased context.",
     )
     return parser.parse_args()
 
@@ -98,9 +98,9 @@ def main(args: argparse.Namespace):
         max_attempts=args.max_attempts,
         questions_dataset_path=questions_dataset_path,
         fsp_size=args.fsp_size,
-        expected_completion_accuracy_in_unbiased_context=args.expected_completion_accuracy_in_unbiased_context,
-        expected_completion_accuracy_in_biased_context=args.expected_completion_accuracy_in_biased_context,
-        expected_cot_accuracy_in_unbiased_context=args.expected_cot_accuracy_in_unbiased_context,
+        unb_n_gen=args.unb_n_gen,
+        expected_min_completion_accuracy_in_unbiased_context=args.expected_min_completion_accuracy_in_unbiased_context,
+        expected_max_completion_accuracy_in_unbiased_context=args.expected_max_completion_accuracy_in_unbiased_context,
     )
 
     for question in question_dataset:

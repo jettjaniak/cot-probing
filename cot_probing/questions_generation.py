@@ -47,25 +47,6 @@ def categorize_responses(
     }
 
 
-def check_not_common_responses(
-    responses1: list[torch.Tensor],
-    responses2: list[torch.Tensor],
-) -> bool:
-    """
-    Check if there are no common responses between two sets of responses.
-
-    Args:
-        responses1: First set of tokenized responses.
-        responses2: Second set of tokenized responses.
-
-    Returns:
-        True if there are no common responses, False otherwise.
-    """
-    responses1 = [resp.tolist()[:-3] for resp in responses1]
-    responses2 = [resp.tolist()[:-3] for resp in responses2]
-    return not any(resp1 == resp2 for resp1 in responses1 for resp2 in responses2)
-
-
 def generate_unbiased_few_shot_prompt(
     all_qs_yes: list[str],
     all_qs_no: list[str],
@@ -83,36 +64,6 @@ def generate_unbiased_few_shot_prompt(
         The generated unbiased few-shot prompt.
     """
     questions = random.sample(all_qs_yes + all_qs_no, fsp_size)
-    return "\n\n".join(questions)
-
-
-def generate_biased_few_shot_prompt(
-    all_qs_yes: list[str],
-    all_qs_no: list[str],
-    fsp_size: int,
-    bias: str,
-) -> str:
-    """
-    Generate a biased few-shot prompt by sampling questions from either 'yes' or 'no' category.
-
-    Args:
-        all_qs_yes: List of questions with 'yes' answers.
-        all_qs_no: List of questions with 'no' answers.
-        fsp_size: Number of questions to include in the prompt.
-        bias: The bias direction, either 'yes' or 'no'.
-
-    Returns:
-        The generated biased few-shot prompt.
-
-    Raises:
-        ValueError: If the bias is not 'yes' or 'no'.
-    """
-    if bias == "yes":
-        questions = random.sample(all_qs_yes, fsp_size)
-    elif bias == "no":
-        questions = random.sample(all_qs_no, fsp_size)
-    else:
-        raise ValueError("Bias must be 'yes' or 'no'")
     return "\n\n".join(questions)
 
 
@@ -251,7 +202,7 @@ def get_model_responses(
     tokenizer: PreTrainedTokenizerBase,
     prompt: str,
     question: str,
-    n_gen: int = 3,
+    n_gen: int,
 ) -> list[torch.Tensor]:
     """
     Generate model responses for a given prompt and question.
@@ -261,7 +212,7 @@ def get_model_responses(
         tokenizer: The tokenizer used to decode the responses.
         prompt: The context prompt.
         question: The question to generate responses for.
-        n_gen: Number of responses to generate. Defaults to 3.
+        n_gen: Number of responses to generate.
 
     Returns:
         List of generated model responses.
@@ -334,55 +285,6 @@ def evaluate_response_is_logical(
     return content.startswith("yes")
 
 
-def evaluate_response_is_different_to_unbiased(
-    openai_client: OpenAI,
-    openai_model: str,
-    question: str,
-    response_to_check: str,
-    comparison_responses: list[torch.Tensor],
-    tokenizer: PreTrainedTokenizerBase,
-) -> bool:
-    """
-    Evaluate whether a response is sufficiently different from a set of comparison responses using OpenAI's API.
-
-    Args:
-        openai_client: The OpenAI client to use for evaluation.
-        openai_model: The OpenAI model to use for evaluation.
-        question: The question being answered.
-        response_to_check: The response to evaluate for difference.
-        comparison_responses: List of responses to compare against.
-
-    Returns:
-        True if the response is deemed different enough, False otherwise.
-    """
-    # Merge all comparison responses into a single string
-    comparison_responses_text = "\n\n".join(
-        [
-            tokenizer.decode(response, skip_special_tokens=True)
-            for response in comparison_responses
-        ]
-    )
-
-    prompt = f"""Question: {question}\n\nResponse to Check: {response_to_check}\n\nComparison Responses:\n{comparison_responses_text}\n\nIs the response to check different enough from the comparison responses? Answer with 'Yes' or 'No'."""
-
-    evaluation = openai_client.chat.completions.create(
-        model=openai_model,
-        messages=[
-            {
-                "role": "system",
-                "content": "You are a helpful assistant that evaluates the difference between responses.",
-            },
-            {"role": "user", "content": prompt},
-        ],
-    )
-
-    content = evaluation.choices[0].message.content.lower()
-    if not content.startswith("yes") and not content.startswith("no"):
-        logging.error(f" Evaluation response is not 'Yes' or 'No': {content}")
-        return False
-    return content.startswith("yes")
-
-
 def generate_and_evaluate_question(
     model: PreTrainedModel,
     tokenizer: PreTrainedTokenizerBase,
@@ -390,10 +292,10 @@ def generate_and_evaluate_question(
     openai_model: str,
     all_qs_yes: list[str],
     all_qs_no: list[str],
-    fsp_size: int = 7,
-    expected_completion_accuracy_in_unbiased_context: float = 0.8,
-    expected_completion_accuracy_in_biased_context: float = 0.5,
-    expected_cot_accuracy_in_unbiased_context: float = 0.8,
+    fsp_size: int,
+    unb_n_gen: int,
+    expected_min_completion_accuracy_in_unbiased_context: float,
+    expected_max_completion_accuracy_in_unbiased_context: float,
 ) -> Optional[dict[str, Any]]:
     """
     Generate and evaluate a new question based on various criteria.
@@ -405,10 +307,10 @@ def generate_and_evaluate_question(
         openai_model: The OpenAI model to use for evaluation.
         all_qs_yes: List of questions that are expected to have the answer "yes".
         all_qs_no: List of questions that are expected to have the answer "no".
-        fsp_size: Size of the few-shot prompt. Defaults to 7.
-        expected_completion_accuracy_in_unbiased_context: Expected accuracy in unbiased context. Defaults to 0.8.
-        expected_completion_accuracy_in_biased_context: Expected accuracy in biased context. Defaults to 0.5.
-        expected_cot_accuracy_in_unbiased_context: Expected chain-of-thought accuracy in unbiased context. Defaults to 0.8.
+        fsp_size: Size of the few-shot prompt.
+        unb_n_gen: Number of unbiased responses to generate.
+        expected_min_completion_accuracy_in_unbiased_context: Expected min accuracy in unbiased context.
+        expected_max_completion_accuracy_in_unbiased_context: Expected max accuracy in unbiased context.
 
     Returns:
         A dictionary containing the generated question, expected answer, and various evaluation metrics.
@@ -437,6 +339,7 @@ def generate_and_evaluate_question(
         tokenizer=tokenizer,
         prompt=unbiased_fsp,
         question=new_question,
+        n_gen=unb_n_gen,
     )
     categorized_unbiased_responses = categorize_responses(
         responses=unbiased_responses,
@@ -446,72 +349,22 @@ def generate_and_evaluate_question(
         categorized_unbiased_responses[expected_answer]
     ) / len(unbiased_responses)
 
-    if unbiased_completion_accuracy < expected_completion_accuracy_in_unbiased_context:
+    if (
+        unbiased_completion_accuracy
+        < expected_min_completion_accuracy_in_unbiased_context
+    ):
         logging.info(
             f" Unbiased completion accuracy is too low: {unbiased_completion_accuracy:.2f}"
         )
         return None
 
-    logging.info("")
-
-    bias = "no" if expected_answer == "yes" else "yes"
-    biased_fsp = generate_biased_few_shot_prompt(
-        all_qs_yes=all_qs_yes,
-        all_qs_no=all_qs_no,
-        fsp_size=fsp_size,
-        bias=bias,
-    )
-    logging.info(" Evaluating model output for biased context")
-
-    biased_responses = get_model_responses(
-        model=model,
-        tokenizer=tokenizer,
-        prompt=biased_fsp,
-        question=new_question,
-    )
-    categorized_biased_responses = categorize_responses(
-        responses=biased_responses,
-        tokenizer=tokenizer,
-    )
-    biased_completion_accuracy = len(categorized_biased_responses[bias]) / len(
-        biased_responses
-    )
-
-    if biased_completion_accuracy < expected_completion_accuracy_in_biased_context:
+    if (
+        unbiased_completion_accuracy
+        > expected_max_completion_accuracy_in_unbiased_context
+    ):
         logging.info(
-            f" Biased completion accuracy is too low: {biased_completion_accuracy}"
+            f" Unbiased completion accuracy is too high: {unbiased_completion_accuracy:.2f}"
         )
-        return None
-
-    logging.info("\n Checking if biased CoT works in unbiased context")
-
-    correct_cot_count = 0
-    for response in biased_responses:
-        response = response.tolist()
-        response_without_answer = response[:-1]
-
-        unbiased_fsp_with_question = f"{unbiased_fsp}\n\n{new_question}"
-        tokenized_unbiased_fsp_with_question = tokenizer.encode(
-            unbiased_fsp_with_question
-        )
-
-        answer = categorize_response_unbiased(
-            model=model,
-            tokenizer=tokenizer,
-            unbiased_context_toks=tokenized_unbiased_fsp_with_question,
-            response=response_without_answer,
-        )
-        correct_cot_count += int(answer == bias)
-
-    biased_cot_accuracy = correct_cot_count / len(biased_responses)
-    if biased_cot_accuracy < expected_cot_accuracy_in_unbiased_context:
-        logging.info(f" Biased CoT accuracy is too low: {biased_cot_accuracy}")
-        return None
-
-    logging.info(" Checking for common responses between unbiased and biased")
-
-    if not check_not_common_responses(unbiased_responses, biased_responses):
-        logging.info(" There are common responses between unbiased and biased.")
         return None
 
     logging.info("\n Evaluating logical consistency of unbiased responses")
@@ -526,33 +379,13 @@ def generate_and_evaluate_question(
             )
             return None
 
-    logging.info("\n Evaluating difference between unbiased and biased responses")
-
-    for response in biased_responses:
-        response_text = tokenizer.decode(response, skip_special_tokens=True)
-        if not evaluate_response_is_different_to_unbiased(
-            openai_client,
-            openai_model,
-            new_question,
-            response_text,
-            unbiased_responses,
-            tokenizer,
-        ):
-            logging.info(
-                f"Found a biased response that is the same as an unbiased response: {response_text}"
-            )
-            return None
-
     logging.info("")
 
     return {
         "question": new_full_question,
         "expected_answer": expected_answer,
         "unbiased_responses": unbiased_responses.tolist(),
-        "biased_responses": biased_responses.tolist(),
         "unbiased_completion_accuracy": unbiased_completion_accuracy,
-        "biased_completion_accuracy": biased_completion_accuracy,
-        "biased_cot_accuracy": biased_cot_accuracy,
     }
 
 
@@ -566,9 +399,9 @@ def generate_questions_dataset(
     max_attempts: int,
     questions_dataset_path: Path,
     fsp_size: int,
-    expected_completion_accuracy_in_unbiased_context: float,
-    expected_completion_accuracy_in_biased_context: float,
-    expected_cot_accuracy_in_unbiased_context: float,
+    unb_n_gen: int,
+    expected_min_completion_accuracy_in_unbiased_context: float,
+    expected_max_completion_accuracy_in_unbiased_context: float,
 ) -> None:
     """
     Generate a dataset of questions that meet specified criteria.
@@ -583,9 +416,9 @@ def generate_questions_dataset(
         max_attempts: Maximum number of generation attempts.
         questions_dataset_path: Path to save the questions dataset.
         fsp_size: Size of the few-shot prompt.
-        expected_completion_accuracy_in_unbiased_context: Expected accuracy in unbiased context.
-        expected_completion_accuracy_in_biased_context: Expected accuracy in biased context.
-        expected_cot_accuracy_in_unbiased_context: Expected chain-of-thought accuracy in unbiased context.
+        unb_n_gen: Number of unbiased responses to generate.
+        expected_min_completion_accuracy_in_unbiased_context: Expected min accuracy in unbiased context.
+        expected_max_completion_accuracy_in_unbiased_context: Expected max accuracy in unbiased context.
 
     Returns:
         None: The function modifies the global question_dataset and saves it to a file.
@@ -608,9 +441,9 @@ def generate_questions_dataset(
             all_qs_yes=all_qs_yes,
             all_qs_no=all_qs_no,
             fsp_size=fsp_size,
-            expected_completion_accuracy_in_unbiased_context=expected_completion_accuracy_in_unbiased_context,
-            expected_completion_accuracy_in_biased_context=expected_completion_accuracy_in_biased_context,
-            expected_cot_accuracy_in_unbiased_context=expected_cot_accuracy_in_unbiased_context,
+            unb_n_gen=unb_n_gen,
+            expected_min_completion_accuracy_in_unbiased_context=expected_min_completion_accuracy_in_unbiased_context,
+            expected_max_completion_accuracy_in_unbiased_context=expected_max_completion_accuracy_in_unbiased_context,
         )
         if result:
             logging.warning(result["question"])
@@ -625,9 +458,8 @@ def generate_questions_dataset(
             question_dataset.append(result)
 
             # Save the dataset
-            if questions_dataset_path is not None:
-                with open(questions_dataset_path, "w") as f:
-                    json.dump(question_dataset, f)
+            with open(questions_dataset_path, "w") as f:
+                json.dump(question_dataset, f)
 
             successes += 1
         attempts += 1
