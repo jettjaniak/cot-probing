@@ -203,6 +203,7 @@ def get_model_responses(
     prompt: str,
     question: str,
     n_gen: int,
+    temp: float,
 ) -> list[torch.Tensor]:
     """
     Generate model responses for a given prompt and question.
@@ -213,6 +214,7 @@ def get_model_responses(
         prompt: The context prompt.
         question: The question to generate responses for.
         n_gen: Number of responses to generate.
+        temp: Temperature for sampling.
 
     Returns:
         List of generated model responses.
@@ -224,7 +226,7 @@ def get_model_responses(
         input_ids,
         max_new_tokens=200,
         do_sample=True,
-        temperature=0.7,
+        temperature=temp,
         use_cache=True,
         num_return_sequences=n_gen,
         tokenizer=tokenizer,
@@ -294,6 +296,7 @@ def generate_and_evaluate_question(
     all_qs_no: list[str],
     fsp_size: int,
     unb_n_gen: int,
+    unb_temp: float,
     expected_min_completion_accuracy_in_unbiased_context: float,
     expected_max_completion_accuracy_in_unbiased_context: float,
 ) -> Optional[dict[str, Any]]:
@@ -309,6 +312,7 @@ def generate_and_evaluate_question(
         all_qs_no: List of questions that are expected to have the answer "no".
         fsp_size: Size of the few-shot prompt.
         unb_n_gen: Number of unbiased responses to generate.
+        unb_temp: Temperature for sampling unbiased responses.
         expected_min_completion_accuracy_in_unbiased_context: Expected min accuracy in unbiased context.
         expected_max_completion_accuracy_in_unbiased_context: Expected max accuracy in unbiased context.
 
@@ -340,6 +344,7 @@ def generate_and_evaluate_question(
         prompt=unbiased_fsp,
         question=new_question,
         n_gen=unb_n_gen,
+        temp=unb_temp,
     )
     categorized_unbiased_responses = categorize_responses(
         responses=unbiased_responses,
@@ -367,9 +372,9 @@ def generate_and_evaluate_question(
         )
         return None
 
-    logging.info("\n Evaluating logical consistency of unbiased responses")
+    logging.info("\n Evaluating logical consistency of correct unbiased responses")
 
-    for response in unbiased_responses:
+    for response in categorized_unbiased_responses[expected_answer]:
         response_text = tokenizer.decode(response, skip_special_tokens=True)
         if not evaluate_response_is_logical(
             openai_client, openai_model, new_question, response_text
@@ -381,10 +386,12 @@ def generate_and_evaluate_question(
 
     logging.info("")
 
+    unbiased_responses = [resp.tolist() for resp in unbiased_responses]
+
     return {
         "question": new_full_question,
         "expected_answer": expected_answer,
-        "unbiased_responses": unbiased_responses.tolist(),
+        "unbiased_responses": unbiased_responses,
         "unbiased_completion_accuracy": unbiased_completion_accuracy,
     }
 
@@ -400,6 +407,7 @@ def generate_questions_dataset(
     questions_dataset_path: Path,
     fsp_size: int,
     unb_n_gen: int,
+    unb_temp: float,
     expected_min_completion_accuracy_in_unbiased_context: float,
     expected_max_completion_accuracy_in_unbiased_context: float,
 ) -> None:
@@ -417,6 +425,7 @@ def generate_questions_dataset(
         questions_dataset_path: Path to save the questions dataset.
         fsp_size: Size of the few-shot prompt.
         unb_n_gen: Number of unbiased responses to generate.
+        unb_temp: Temperature for sampling unbiased responses.
         expected_min_completion_accuracy_in_unbiased_context: Expected min accuracy in unbiased context.
         expected_max_completion_accuracy_in_unbiased_context: Expected max accuracy in unbiased context.
 
@@ -442,6 +451,7 @@ def generate_questions_dataset(
             all_qs_no=all_qs_no,
             fsp_size=fsp_size,
             unb_n_gen=unb_n_gen,
+            unb_temp=unb_temp,
             expected_min_completion_accuracy_in_unbiased_context=expected_min_completion_accuracy_in_unbiased_context,
             expected_max_completion_accuracy_in_unbiased_context=expected_max_completion_accuracy_in_unbiased_context,
         )

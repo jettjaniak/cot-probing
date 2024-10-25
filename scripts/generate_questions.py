@@ -41,6 +41,12 @@ def parse_args():
         help="Number of unbiased responses to generate.",
     )
     parser.add_argument(
+        "--unb-temp",
+        type=float,
+        default=0.6,
+        help="Temperature for sampling unbiased responses.",
+    )
+    parser.add_argument(
         "--expected-min-completion-accuracy-in-unbiased-context",
         type=float,
         default=0.7,
@@ -99,13 +105,17 @@ def main(args: argparse.Namespace):
         questions_dataset_path=questions_dataset_path,
         fsp_size=args.fsp_size,
         unb_n_gen=args.unb_n_gen,
+        unb_temp=args.unb_temp,
         expected_min_completion_accuracy_in_unbiased_context=args.expected_min_completion_accuracy_in_unbiased_context,
         expected_max_completion_accuracy_in_unbiased_context=args.expected_max_completion_accuracy_in_unbiased_context,
     )
 
-    for question in question_dataset:
-        print(question["question"])
-        print()
+    if questions_dataset_path.exists():
+        with open(questions_dataset_path, "r") as f:
+            question_dataset = json.load(f)
+        for question in question_dataset:
+            print(question["question"])
+            print()
 
 
 if __name__ == "__main__":
