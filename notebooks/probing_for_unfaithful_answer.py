@@ -23,67 +23,58 @@ import json
 from cot_probing import DATA_DIR
 questions_dataset_path = DATA_DIR / "generated_questions_dataset.json"
 
+# Load target questions
+
 question_dataset = []
 if os.path.exists(questions_dataset_path):
     with open(questions_dataset_path, "r") as f:
         question_dataset = json.load(f)
 
+# shuffle for the sake of randomness
+random.shuffle(question_dataset)
+
+# Split into yes and no
+yes_target_questions = [q for q in question_dataset if q["expected_answer"] == "yes"]
+no_target_questions = [q for q in question_dataset if q["expected_answer"] == "no"]
+
+# Split all yes and all no into train and test
+test_pct = 0.20
+test_yes_target_questions = yes_target_questions[:int(len(yes_target_questions) * test_pct)]
+train_yes_target_questions = yes_target_questions[int(len(yes_target_questions) * test_pct):]
+test_no_target_questions = no_target_questions[:int(len(no_target_questions) * test_pct)]
+train_no_target_questions = no_target_questions[int(len(no_target_questions) * test_pct):]
+
+train_target_questions = train_yes_target_questions + train_no_target_questions
+test_target_questions = test_yes_target_questions + test_no_target_questions
+
 # %%
+
+# Load questions for FSPs
 
 from cot_probing.diverse_combinations import load_and_process_file
 
-all_qs_yes = load_and_process_file(DATA_DIR / "diverse_yes.txt")
-all_qs_no = load_and_process_file(DATA_DIR / "diverse_no.txt")
-assert len(all_qs_yes) == len(all_qs_no)
-
-# Add questions to all_qs_yes and all_qs_no so that we don't repeat them
-# for row in question_dataset:
-#     if row["expected_answer"] == "yes":
-#         all_qs_yes.append(row["question"])
-#     else:
-#         all_qs_no.append(row["question"])
-
-# %%
-
-# shuffle all_qs_yes and all_qs_no
-random.shuffle(all_qs_yes)
-random.shuffle(all_qs_no)
-
-# Split all yes and all no into train and test
-test_pct = 0.5
-test_all_qs_yes = all_qs_yes[:int(len(all_qs_yes) * test_pct)]
-train_all_qs_yes = all_qs_yes[int(len(all_qs_yes) * test_pct):]
-test_all_qs_no = all_qs_no[:int(len(all_qs_no) * test_pct)]
-train_all_qs_no = all_qs_no[int(len(all_qs_no) * test_pct):]
+fsp_yes_questions = load_and_process_file(DATA_DIR / "diverse_yes.txt")
+fsp_no_questions = load_and_process_file(DATA_DIR / "diverse_no.txt")
+assert len(fsp_yes_questions) == len(fsp_no_questions)
 
 # %%
 def generate_data(
-    all_qs_yes,
-    all_qs_no,
-    num_samples,
+    target_questions,
+    fsp_yes_questions,
+    fsp_no_questions,
     fsp_max_len,
 ):
     data = []
 
-    assert len(all_qs_yes) == len(all_qs_no)
-
-    for _ in range(num_samples):
-        question_to_answer_index = random.choice(range(len(all_qs_yes)))
-
-        available_all_yes_questions = [all_qs_yes[i] for i in range(len(all_qs_yes)) if i != question_to_answer_index]
-        available_all_no_questions = [all_qs_no[i] for i in range(len(all_qs_no)) if i != question_to_answer_index]
-
-        if random.random() < 0.5:
-            expected_answer = "yes"
-            question_to_answer = all_qs_yes[question_to_answer_index]
-            questions_available_for_biased_fsp = available_all_no_questions
-        else:
-            expected_answer = "no"
-            question_to_answer = all_qs_no[question_to_answer_index]
-            questions_available_for_biased_fsp = available_all_yes_questions
+    for target_question in target_questions:
+        question = target_question["question"]
+        expected_answer = target_question["expected_answer"]
 
         # Build the biased FSP
-        biased_fsp_questions = random.sample(questions_available_for_biased_fsp, fsp_max_len)
+        if expected_answer == "yes":
+            biased_fsp_questions = random.sample(fsp_no_questions, fsp_max_len)
+        else:
+            biased_fsp_questions = random.sample(fsp_yes_questions, fsp_max_len)
 
         # Build the unbiased FSP
         unbiased_fsp_yes_qs_num = int(fsp_max_len / 2)
@@ -109,14 +100,12 @@ def generate_data(
     return data
 
 # %%
-train_size = 500
-test_size = int(train_size * 0.125)
-fsp_max_len = 7
+fsp_max_len = 9
 
 train_data = generate_data(
-    train_all_qs_yes, train_all_qs_no, train_size, fsp_max_len)
+    train_target_questions, fsp_yes_questions, fsp_no_questions, fsp_max_len)
 test_data = generate_data(
-    test_all_qs_yes, test_all_qs_no, test_size, fsp_max_len)
+    test_target_questions, fsp_yes_questions, fsp_no_questions, fsp_max_len)
 
 # %%
 
