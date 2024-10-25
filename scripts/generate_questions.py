@@ -31,6 +31,15 @@ client = openai.OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 OPENAI_MODEL = "gpt-4o"
 
 # %%
+import json
+questions_dataset_path = DATA_DIR / "generated_questions_dataset.json"
+
+question_dataset = []
+if os.path.exists(questions_dataset_path):
+    with open(questions_dataset_path, "r") as f:
+        question_dataset = json.load(f)
+
+# %%
 
 from cot_probing import DATA_DIR
 from cot_probing.diverse_combinations import load_and_process_file
@@ -38,6 +47,13 @@ from cot_probing.diverse_combinations import load_and_process_file
 all_qs_yes = load_and_process_file(DATA_DIR / "diverse_yes.txt")
 all_qs_no = load_and_process_file(DATA_DIR / "diverse_no.txt")
 assert len(all_qs_yes) == len(all_qs_no)
+
+# Add questions to all_qs_yes and all_qs_no so that we don't repeat them
+for row in question_dataset:
+    if row["expected_answer"] == "yes":
+        all_qs_yes.append(row["question"])
+    else:
+        all_qs_no.append(row["question"])
 
 # %%
 
@@ -94,7 +110,7 @@ def generate_biased_few_shot_prompt(all_qs_yes: List[str], all_qs_no: List[str],
     return "\n\n".join(questions)
 
 def generate_new_question(few_shot_prompt: str, verbose: bool = False) -> str:
-    instructions = f"""Generate a new question that is very different to the given examples. Make sure that use the following format:
+    instructions = f"""Generate a new question that is very different to the given examples. Avoid questions that can be answered by comparing numbers. Make sure that use the following format:
 
 Question: <question>
 Let's think step by step:
@@ -263,14 +279,7 @@ def generate_and_evaluate_question(verbose: bool = False) -> Tuple[str, str, str
         "biased_responses": biased_responses.tolist()
     }
 
-# %%
-import json
-questions_dataset_path = DATA_DIR / "generated_questions_dataset.json"
-
-question_dataset = []
-if os.path.exists(questions_dataset_path):
-    with open(questions_dataset_path, "r") as f:
-        question_dataset = json.load(f)
+#%%
 
 def generate_questions_dataset(
     num_questions: int,
@@ -282,6 +291,15 @@ def generate_questions_dataset(
     while successes < num_questions and attempts < max_attempts:
         result = generate_and_evaluate_question(verbose)
         if result:
+            print(result["question"])
+
+            # add question to all_qs_yes or all_qs_no so that we don't repeat it
+            if result["expected_answer"] == "yes":
+                all_qs_yes.append(result["question"])
+            else:
+                all_qs_no.append(row["question"])
+
+            # add question to dataset
             question_dataset.append(result)
 
             # Save the dataset
@@ -294,11 +312,11 @@ def generate_questions_dataset(
         print(f"Generated {successes} questions using {attempts} attempts.")
 
 # Generate the dataset
-num_questions_to_generate = 20
+num_questions_to_generate = 10
 generate_questions_dataset(
     num_questions_to_generate,
     max_attempts=100,
-    verbose=True
+    verbose=False
 )
 # %%
 
