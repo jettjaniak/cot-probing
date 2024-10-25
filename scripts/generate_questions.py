@@ -32,6 +32,7 @@ OPENAI_MODEL = "gpt-4o"
 
 # %%
 import json
+from cot_probing import DATA_DIR
 questions_dataset_path = DATA_DIR / "generated_questions_dataset.json"
 
 question_dataset = []
@@ -41,7 +42,6 @@ if os.path.exists(questions_dataset_path):
 
 # %%
 
-from cot_probing import DATA_DIR
 from cot_probing.diverse_combinations import load_and_process_file
 
 all_qs_yes = load_and_process_file(DATA_DIR / "diverse_yes.txt")
