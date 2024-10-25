@@ -57,7 +57,7 @@ def clean_run_with_cache(
     pos_by_layer: dict[int, list[slice | int]],
 ) -> tuple[
     Float[torch.Tensor, " vocab"],
-    dict[int, dict[slice | int, Float[torch.Tensor, " _seq model"]]],
+    dict[int, dict[slice | int, Float[torch.Tensor, " seq model"]]],
 ]:
     resid_by_pos_by_layer = {}
     hooks = []
