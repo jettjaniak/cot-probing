@@ -66,9 +66,9 @@ def generate_data(
 ):
     data = []
 
-    for target_question in target_questions:
-        question = target_question["question"]
-        expected_answer = target_question["expected_answer"]
+    for target_question_data in target_questions:
+        question_to_answer = target_question_data["question"]
+        expected_answer = target_question_data["expected_answer"]
 
         # Build the biased FSP
         if expected_answer == "yes":
@@ -79,7 +79,7 @@ def generate_data(
         # Build the unbiased FSP
         unbiased_fsp_yes_qs_num = int(fsp_max_len / 2)
         unbiased_fsp_no_qs_num = fsp_max_len - unbiased_fsp_yes_qs_num
-        unbiased_fsp_questions = random.sample(available_all_yes_questions, unbiased_fsp_yes_qs_num) + random.sample(available_all_no_questions, unbiased_fsp_no_qs_num)
+        unbiased_fsp_questions = random.sample(fsp_yes_questions, unbiased_fsp_yes_qs_num) + random.sample(fsp_no_questions, unbiased_fsp_no_qs_num)
 
         # Shuffle the FSPs
         random.shuffle(biased_fsp_questions)
@@ -100,12 +100,15 @@ def generate_data(
     return data
 
 # %%
-fsp_max_len = 9
+fsp_max_len = 8
 
 train_data = generate_data(
     train_target_questions, fsp_yes_questions, fsp_no_questions, fsp_max_len)
 test_data = generate_data(
     test_target_questions, fsp_yes_questions, fsp_no_questions, fsp_max_len)
+
+print(f"Train data size: {len(train_data)}")
+print(f"Test data size: {len(test_data)}")
 
 # %%
 
