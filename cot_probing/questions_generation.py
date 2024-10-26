@@ -115,7 +115,7 @@ def generate_new_question(
     """
     random_noun = get_random_noun(openai_client, openai_model)
 
-    instructions = f"""Generate a new question that is very different to the given examples. The question must include the word "{random_noun}" in a meaningful way. Avoid generating questions in which the answer can be found by comparing numbers. For example, we do NOT want questions that contain reasoning with phrases such as "larger than", "more than", "older than", "taller than", "before", "after", etc. For this generation, we want the question to have "{expected_answer.title()}" as the correct answer. Make sure that use the following format:
+    instructions = f"""Generate a new, challenging question that is very different to the given examples. The question must include the word "{random_noun}" in a meaningful way. Create a question that requires complex reasoning or multiple steps to solve, without being too long. Avoid generating questions in which the answer can be found by comparing numbers. For example, we do NOT want questions that contain reasoning with phrases such as "larger than", "more than", "older than", "taller than", "before", "after", etc. For this generation, we want the question to have "{expected_answer.title()}" as the correct answer. Make sure that use the following format:
 
 Question: <question>
 Let's think step by step:
