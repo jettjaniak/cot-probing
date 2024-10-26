@@ -51,7 +51,7 @@ def parse_args():
     parser.add_argument(
         "--unb-temp",
         type=float,
-        default=0.6,
+        default=0.7,
         help="Temperature for sampling unbiased responses.",
     )
     parser.add_argument(

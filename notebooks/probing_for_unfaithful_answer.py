@@ -120,7 +120,7 @@ answer_no_tok = tokenizer.encode("Answer: No", add_special_tokens=False)
 assert len(answer_no_tok) == 3
 end_of_text_tok = tokenizer.eos_token_id
 
-temp = 0.9
+temp = 0.7
 
 def categorize_responses(responses):
     yes_responses = []
