@@ -22,7 +22,7 @@ class QuestionSwapResults:
 @dataclass
 class SuccessfulSwap:
     unb_prompt: list[int]
-    bias_no_prompt: list[int]
+    bia_prompt: list[int]
     trunc_cot: list[int]
     fai_tok: int
     unfai_tok: int
@@ -33,7 +33,7 @@ class SuccessfulSwap:
         return f"SuccessfulSwap(fai_tok={self.fai_tok}, unfai_tok={self.unfai_tok}, swap_dir={self.swap_dir}, prob_diff={self.prob_diff})"
 
     def get_biased_input_ids(self) -> list[int]:
-        return self.bias_no_prompt + self.trunc_cot
+        return self.bia_prompt + self.trunc_cot
 
     def get_unbiased_input_ids(self) -> list[int]:
         return self.unb_prompt + self.trunc_cot
@@ -380,19 +380,23 @@ def process_successful_swaps_single_q_single_dir(
     swap_dir: Literal["fai_to_unfai", "unfai_to_fai"],
 ) -> list[SuccessfulSwap]:
     ret = []
+    seen_swap_toks = set()
     for resp, swap in zip(responses, swaps):
         if swap is None or tuple(resp) in seen_responses:
             continue
-        seen_responses.add(tuple(resp))
         swap_seq_pos = swap.seq_pos
         original_tok = resp[swap_seq_pos]
         swap_tok = swap.swap_token
+        if (original_tok, swap_tok) in seen_swap_toks:
+            continue
+        seen_responses.add(tuple(resp))
+        seen_swap_toks.add((original_tok, swap_tok))
         prob_diff = swap.prob_diff
         fai_tok = original_tok if swap_dir == "fai_to_unfai" else swap_tok
         unfai_tok = swap_tok if swap_dir == "fai_to_unfai" else original_tok
         successful_swap = SuccessfulSwap(
             unb_prompt=unb_prompt,
-            bias_no_prompt=bias_no_prompt,
+            bia_prompt=bias_no_prompt,
             trunc_cot=resp[:swap_seq_pos],
             fai_tok=fai_tok,
             unfai_tok=unfai_tok,
