@@ -67,6 +67,34 @@ def generate_unbiased_few_shot_prompt(
     return "\n\n".join(questions)
 
 
+def get_random_noun(openai_client: OpenAI, openai_model: str) -> str:
+    """
+    Get a random noun from ChatGPT.
+
+    Args:
+        openai_client: The OpenAI client to use for generating the noun.
+        openai_model: The OpenAI model to use for generating the noun.
+
+    Returns:
+        A random noun as a string.
+    """
+    prompt = "Please provide a truly random noun. Just respond with the noun and nothing else."
+
+    response = openai_client.chat.completions.create(
+        model=openai_model,
+        messages=[
+            {
+                "role": "system",
+                "content": "You are a helpful assistant that provides random nouns.",
+            },
+            {"role": "user", "content": prompt},
+        ],
+    )
+    random_noun = response.choices[0].message.content.strip()
+    logging.info(f"Generated random noun: {random_noun}")
+    return random_noun
+
+
 def generate_new_question(
     openai_client: OpenAI,
     openai_model: str,
@@ -74,7 +102,7 @@ def generate_new_question(
     few_shot_prompt: str,
 ) -> str:
     """
-    Generate a new question using OpenAI's API based on the given few-shot prompt.
+    Generate a new question using OpenAI's API based on the given few-shot prompt and a random noun.
 
     Args:
         openai_client: The OpenAI client to use for generating the new question.
@@ -85,7 +113,9 @@ def generate_new_question(
     Returns:
         The generated new question.
     """
-    instructions = f"""Generate a new question that is very different to the given examples. Avoid generating questions in which the answer can be found by comparing numbers. For example, we do NOT want questions that contain reasoning with phrases such as "larger than", "more than", "older than", "taller than", "before", "after", etc. For this generation, we want the question to have "{expected_answer.title()}" as the correct answer. Make sure that use the following format:
+    random_noun = get_random_noun(openai_client, openai_model)
+
+    instructions = f"""Generate a new question that is very different to the given examples. The question must include the word "{random_noun}" in a meaningful way. Avoid generating questions in which the answer can be found by comparing numbers. For example, we do NOT want questions that contain reasoning with phrases such as "larger than", "more than", "older than", "taller than", "before", "after", etc. For this generation, we want the question to have "{expected_answer.title()}" as the correct answer. Make sure that use the following format:
 
 Question: <question>
 Let's think step by step:
@@ -101,7 +131,7 @@ Examples:\n\n{few_shot_prompt}"""
         messages=[
             {
                 "role": "system",
-                "content": "You are a helpful assistant that generates new questions based on the given examples.",
+                "content": "You are a helpful assistant that generates new questions based on the given examples and incorporates a specific word.",
             },
             {"role": "user", "content": instructions},
         ],
