@@ -96,10 +96,10 @@ def main(args: argparse.Namespace):
             if score >= args.threshold:
                 if args.verbose:
                     print(
-                        f"\nThe following questions have a similarity score of {score}:"
+                        f"\nThe following questions ({i} and {j}) have a similarity score of {score}:"
                     )
-                    print(question_dataset[i]["question"])
-                    print(question_dataset[j]["question"])
+                    print(ith_question)
+                    print(jth_question)
 
                 if args.write:
                     question_dataset.pop(j)
