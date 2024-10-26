@@ -3,7 +3,12 @@ import pickle
 
 from cot_probing.diverse_combinations import generate_all_combinations
 from cot_probing.generation import categorize_response
-from cot_probing.patching import Cache, get_cache
+from cot_probing.patching import (
+    Cache,
+    PatchedLogitsProbs,
+    get_cache,
+    get_patched_logits_probs,
+)
 from cot_probing.typing import *
 
 
@@ -18,6 +23,12 @@ class SingleCotSwapResult:
 class QuestionSwapResults:
     unfai_to_fai_swaps: list[SingleCotSwapResult | None]
     fai_to_unfai_swaps: list[SingleCotSwapResult | None]
+
+
+@dataclass
+class LayersFspPatchResult:
+    together: PatchedLogitsProbs
+    separate: list[PatchedLogitsProbs]
 
 
 @dataclass
@@ -39,14 +50,14 @@ class SuccessfulSwap:
     def get_input_ids_bia(self) -> list[int]:
         return self.bia_prompt + self.trunc_cot
 
-    def get_last_q_idx(self, tokenizer: PreTrainedTokenizerBase) -> int:
+    def get_last_q_pos(self, tokenizer: PreTrainedTokenizerBase) -> int:
         _, q_tok = tokenizer.encode("Question")
-        last_q_idx = len(self.unb_prompt) - 1 - self.unb_prompt[::-1].index(q_tok)
-        assert self.unb_prompt[last_q_idx] == self.bia_prompt[last_q_idx] == q_tok
-        return last_q_idx
+        last_q_pos = len(self.unb_prompt) - 1 - self.unb_prompt[::-1].index(q_tok)
+        assert self.unb_prompt[last_q_pos] == self.bia_prompt[last_q_pos] == q_tok
+        return last_q_pos
 
-    def get_all_q_idxs(self, tokenizer: PreTrainedTokenizerBase) -> list[int]:
-        q_tok = tokenizer.encode("Question")[0]
+    def get_all_q_pos(self, tokenizer: PreTrainedTokenizerBase) -> list[int]:
+        _, q_tok = tokenizer.encode("Question")
         q_idxs = [i for i, tok in enumerate(self.unb_prompt) if tok == q_tok]
         for q_idx in q_idxs:
             assert self.unb_prompt[q_idx] == self.bia_prompt[q_idx] == q_tok
@@ -65,6 +76,71 @@ class SuccessfulSwap:
             self.unfai_tok,
             pos_by_layer,
         )
+
+    def patch_all_fsps_together(
+        self,
+        model: PreTrainedModel,
+        tokenizer: PreTrainedTokenizerBase,
+        cache: Cache,
+        layers: list[int],
+    ) -> PatchedLogitsProbs:
+        last_q_pos = self.get_last_q_pos(tokenizer)
+        pos_by_layer = {l: list(range(last_q_pos)) for l in layers}
+        return get_patched_logits_probs(model, cache, pos_by_layer)
+
+    def patch_single_fsp(
+        self,
+        model: PreTrainedModel,
+        tokenizer: PreTrainedTokenizerBase,
+        cache: Cache,
+        layers: list[int],
+        fsp_idx: int,
+    ) -> PatchedLogitsProbs:
+        all_q_pos = self.get_all_q_pos(tokenizer)
+        begin = all_q_pos[fsp_idx]
+        end = all_q_pos[fsp_idx + 1]
+        pos_by_layer = {l: list(range(begin, end)) for l in layers}
+        return get_patched_logits_probs(model, cache, pos_by_layer)
+
+    def patch_every_fsp_separately(
+        self,
+        model: PreTrainedModel,
+        tokenizer: PreTrainedTokenizerBase,
+        cache: Cache,
+        layers: list[int],
+    ) -> list[PatchedLogitsProbs]:
+        all_q_pos = self.get_all_q_pos(tokenizer)
+        return [
+            self.patch_single_fsp(model, tokenizer, cache, layers, i)
+            for i in range(len(all_q_pos) - 1)
+        ]
+
+    def patch_fsps_selected_layers(
+        self,
+        model: PreTrainedModel,
+        tokenizer: PreTrainedTokenizerBase,
+        cache: Cache,
+        layers: list[int],
+    ) -> LayersFspPatchResult:
+        together = self.patch_all_fsps_together(model, tokenizer, cache, layers)
+        separate = self.patch_every_fsp_separately(model, tokenizer, cache, layers)
+        return LayersFspPatchResult(together=together, separate=separate)
+
+    def patch_fsps(
+        self,
+        model: PreTrainedModel,
+        tokenizer: PreTrainedTokenizerBase,
+        cache: Cache,
+        layer_batch_size: int,
+    ) -> dict[tuple[int, ...], LayersFspPatchResult]:
+        n_layers = model.config.num_hidden_layers
+        ret = {}
+        for i in range(0, n_layers + 1, layer_batch_size):
+            layer_batch = list(range(i, i + layer_batch_size))
+            ret[tuple(layer_batch)] = self.patch_fsps_selected_layers(
+                model, tokenizer, cache, layer_batch
+            )
+        return ret
 
 
 def greedy_gen_until_answer(
