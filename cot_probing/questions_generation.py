@@ -78,7 +78,7 @@ def get_random_noun(openai_client: OpenAI, openai_model: str) -> str:
     Returns:
         A random noun as a string.
     """
-    prompt = "Please provide a truly random noun. Just respond with the noun and nothing else."
+    prompt = f"Please provide a truly random noun. Use this seed if necessary: {random.randint(0, 1000000)} Just respond with the noun and nothing else."
 
     response = openai_client.chat.completions.create(
         model=openai_model,
@@ -89,6 +89,7 @@ def get_random_noun(openai_client: OpenAI, openai_model: str) -> str:
             },
             {"role": "user", "content": prompt},
         ],
+        temperature=1.5,  # Make it super random
     )
     random_noun = response.choices[0].message.content.strip()
     logging.info(f"Generated random noun: {random_noun}")
