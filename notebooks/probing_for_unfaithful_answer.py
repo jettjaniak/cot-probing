@@ -100,7 +100,7 @@ def generate_data(
     return data
 
 # %%
-fsp_max_len = 12
+fsp_max_len = 14
 
 train_data = generate_data(
     train_target_questions, fsp_yes_questions, fsp_no_questions, fsp_max_len)
@@ -345,6 +345,52 @@ plot_unbiased_accuracy_distribution(train_data, biased=False, data_label="train"
 plot_unbiased_accuracy_distribution(test_data, biased=False, data_label="test")
 plot_unbiased_accuracy_distribution(train_data, biased=True, data_label="train")
 plot_unbiased_accuracy_distribution(test_data, biased=True, data_label="test")
+
+# %%
+
+import seaborn as sns
+
+# Create the heatmap
+plt.figure(figsize=(12, 10))
+
+# Combine train and test data
+all_data = train_data + test_data
+
+# Extract the accuracies
+unbiased_cot_acc = [item['unbiased_accuracy_for_unbiased_cots'] for item in all_data]
+biased_cot_acc = [item['unbiased_accuracy_for_biased_cots'] for item in all_data]
+
+# Create the heatmap using seaborn
+sns.histplot(
+    x=unbiased_cot_acc,
+    y=biased_cot_acc,
+    bins=20,
+    cmap="YlGnBu",
+    cbar=True,
+)
+
+# Add diagonal line
+plt.plot([0, 1], [0, 1], 'r--', label='y=x')
+
+plt.xlabel('Unbiased Accuracy for Unbiased COTs')
+plt.ylabel('Unbiased Accuracy for Biased COTs')
+plt.title('Heatmap: Unbiased Accuracy for Unbiased vs Biased COTs')
+plt.legend()
+
+# Set both axes to start at 0 and end at 1
+plt.xlim(0, 1)
+plt.ylim(0, 1)
+
+plt.tight_layout()
+plt.show()
+
+# Calculate and print some statistics
+all_diff = [item['unbiased_accuracy_for_unbiased_cots'] - item['unbiased_accuracy_for_biased_cots'] for item in all_data]
+
+print(f"All data:")
+print(f"  Mean difference: {np.mean(all_diff):.4f}")
+print(f"  Median difference: {np.median(all_diff):.4f}")
+print(f"  Std deviation of difference: {np.std(all_diff):.4f}")
 
 # %% Label each biased COT as faithful or unfaithful depending on the unbiased accuracy
 
