@@ -3,6 +3,7 @@ import pickle
 
 from cot_probing.diverse_combinations import generate_all_combinations
 from cot_probing.generation import categorize_response
+from cot_probing.patching import Cache, get_cache
 from cot_probing.typing import *
 
 
@@ -32,34 +33,38 @@ class SuccessfulSwap:
     def __repr__(self) -> str:
         return f"SuccessfulSwap(fai_tok={self.fai_tok}, unfai_tok={self.unfai_tok}, swap_dir={self.swap_dir}, prob_diff={self.prob_diff})"
 
-    def get_biased_input_ids(self) -> list[int]:
-        return self.bia_prompt + self.trunc_cot
-
-    def get_unbiased_input_ids(self) -> list[int]:
+    def get_input_ids_unb(self) -> list[int]:
         return self.unb_prompt + self.trunc_cot
 
-    @staticmethod
-    def _get_logits(
-        model: PreTrainedModel, input_ids: list[int]
-    ) -> Float[torch.Tensor, "vocab"]:
-        input_ids_tensor = torch.tensor([input_ids]).to("cuda")
-        return model(input_ids_tensor).logits[0, -1]
+    def get_input_ids_bia(self) -> list[int]:
+        return self.bia_prompt + self.trunc_cot
 
-    def get_unbiased_logits(
-        self, model: PreTrainedModel
-    ) -> Float[torch.Tensor, "vocab"]:
-        return self._get_logits(model, self.get_unbiased_input_ids())
+    def get_last_q_idx(self, tokenizer: PreTrainedTokenizerBase) -> int:
+        _, q_tok = tokenizer.encode("Question")
+        last_q_idx = len(self.unb_prompt) - 1 - self.unb_prompt[::-1].index(q_tok)
+        assert self.unb_prompt[last_q_idx] == self.bia_prompt[last_q_idx] == q_tok
+        return last_q_idx
 
-    def get_biased_logits(self, model: PreTrainedModel) -> Float[torch.Tensor, "vocab"]:
-        return self._get_logits(model, self.get_biased_input_ids())
+    def get_all_q_idxs(self, tokenizer: PreTrainedTokenizerBase) -> list[int]:
+        q_tok = tokenizer.encode("Question")[0]
+        q_idxs = [i for i, tok in enumerate(self.unb_prompt) if tok == q_tok]
+        for q_idx in q_idxs:
+            assert self.unb_prompt[q_idx] == self.bia_prompt[q_idx] == q_tok
+        return q_idxs
 
-    def get_unbiased_probs(self, model: PreTrainedModel) -> tuple[float, float]:
-        all_probs = torch.softmax(self.get_unbiased_logits(model), dim=-1)
-        return all_probs[self.fai_tok].item(), all_probs[self.unfai_tok].item()
-
-    def get_biased_probs(self, model: PreTrainedModel) -> tuple[float, float]:
-        all_probs = torch.softmax(self.get_biased_logits(model), dim=-1)
-        return all_probs[self.fai_tok].item(), all_probs[self.unfai_tok].item()
+    def get_cache(
+        self,
+        model: PreTrainedModel,
+        pos_by_layer: dict[int, list[int]],
+    ) -> Cache | None:
+        return get_cache(
+            model,
+            self.get_input_ids_unb(),
+            self.get_input_ids_bia(),
+            self.fai_tok,
+            self.unfai_tok,
+            pos_by_layer,
+        )
 
 
 def greedy_gen_until_answer(

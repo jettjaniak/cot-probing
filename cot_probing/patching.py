@@ -1,6 +1,5 @@
 from functools import partial
 
-from cot_probing.swapping import SuccessfulSwap
 from cot_probing.typing import *
 
 
@@ -137,6 +136,14 @@ class LogitsProbs:
     prob_fai: float
     prob_unf: float
 
+    @property
+    def prob_diff(self):
+        return self.prob_fai - self.prob_unf
+
+    @property
+    def logit_diff(self):
+        return self.logit_fai - self.logit_unf
+
 
 def get_logits_probs(
     logits: Float[torch.Tensor, "vocab"], fai_tok: int, unfai_tok: int
@@ -175,7 +182,7 @@ def get_cache(
     fai_tok: int,
     unfai_tok: int,
     pos_by_layer: dict[int, list[int]],
-):
+) -> Cache | None:
     logits_unbiased, resid_pos_by_layer_unbiased = clean_run_with_cache(
         model, input_ids_unb, pos_by_layer
     )
@@ -203,24 +210,26 @@ def get_cache(
 
 @dataclass
 class PatchedLogitsProbs:
+    unb: LogitsProbs
+    bia: LogitsProbs
     bia_to_unb: LogitsProbs
     unb_to_bia: LogitsProbs
 
     @property
-    def pd_change_unb(self):
-        return self.bia_to_unb.prob_fai - self.unb_to_bia.prob_unf
+    def logit_diff_change_bia_to_unb(self):
+        return self.unb.logit_diff - self.bia_to_unb.logit_diff
 
     @property
-    def pd_change_bia(self):
-        return self.unb_to_bia.prob_fai - self.bia_to_unb.prob_unf
+    def logit_diff_change_unb_to_bia(self):
+        return self.bia.logit_diff - self.unb_to_bia.logit_diff
 
     @property
-    def ld_change_unb(self):
-        return self.bia_to_unb.logit_fai - self.unb_to_bia.logit_unf
+    def prob_diff_change_bia_to_unb(self):
+        return self.unb.prob_diff - self.bia_to_unb.prob_diff
 
     @property
-    def ld_change_bia(self):
-        return self.unb_to_bia.logit_fai - self.bia_to_unb.logit_unf
+    def prob_diff_change_unb_to_bia(self):
+        return self.bia.prob_diff - self.unb_to_bia.prob_diff
 
 
 def get_patched_logits_probs(
@@ -242,6 +251,8 @@ def get_patched_logits_probs(
         pos_by_layer,
     )
     return PatchedLogitsProbs(
+        unb=cache.logits_probs_unb,
+        bia=cache.logits_probs_bia,
         bia_to_unb=get_logits_probs(
             logits_patched_biased_to_unbiased, cache.fai_tok, cache.unfai_tok
         ),
