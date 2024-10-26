@@ -721,39 +721,48 @@ for loc_type in locs_to_probe.keys():
 
 # %%
 
-yes_acc = []
-no_acc = []
+accuracies = {loc_type: {'faithful': [], 'unfaithful': []} for loc_type in locs_to_probe.keys()}
 
 print("\nAccuracy for each probe:")
-for layer in range(n_layers):
-    y_test = results["y_test"][layer]
-    y_pred_test = results["y_pred_test"][layer]
-
-    # Accuracy for "all yes" (y_test is 1)
-    all_yes_mask = y_test == 1
-    all_yes_pred = y_pred_test[all_yes_mask] > 0
-    all_yes_accuracy = np.mean(all_yes_pred)
-    yes_acc.append(all_yes_accuracy)
+for loc_type in locs_to_probe.keys():
+    df_loc = df_results[df_results["loc_type"] == loc_type]
     
-    # Accuracy for "all no" (y_test is -1)
-    all_no_mask = y_test == -1
-    all_no_pred = y_pred_test[all_no_mask] < 0
-    all_no_accuracy = np.mean(all_no_pred)
-    no_acc.append(all_no_accuracy)
+    for layer in range(n_layers):
+        row = df_loc[df_loc["layer"] == layer]
+        if len(row) == 0:
+            accuracies[loc_type]['faithful'].append(None)
+            accuracies[loc_type]['unfaithful'].append(None)
+            continue
+        
+        y_test = row["y_test"].iloc[0]
+        y_pred_test = row["y_pred_test"].iloc[0]
 
-    print(f"Layer {layer}:")
-    print(f"  All Yes Accuracy: {all_yes_accuracy:.4f}")
-    print(f"  All No Accuracy: {all_no_accuracy:.4f}")
+        # Accuracy for "faithful" (y_test is "faithful")
+        faithful_mask = np.array(y_test) == "faithful"
+        faithful_pred = np.array(y_pred_test)[faithful_mask] == "faithful"
+        faithful_accuracy = np.mean(faithful_pred)
+        accuracies[loc_type]['faithful'].append(faithful_accuracy)
+        
+        # Accuracy for "unfaithful" (y_test is "unfaithful")
+        unfaithful_mask = np.array(y_test) == "unfaithful"
+        unfaithful_pred = np.array(y_pred_test)[unfaithful_mask] == "unfaithful"
+        unfaithful_accuracy = np.mean(unfaithful_pred)
+        accuracies[loc_type]['unfaithful'].append(unfaithful_accuracy)
+
+        print(f"Location: {loc_type}, Layer {layer}:")
+        print(f"  Faithful Accuracy: {faithful_accuracy:.4f}")
+        print(f"  Unfaithful Accuracy: {unfaithful_accuracy:.4f}")
 
 plt.figure(figsize=(12, 6))
 
-# Plot for Yes Accuracy
-plt.plot(range(n_layers), yes_acc, label='All-Yes Accuracy', marker='o')
-plt.plot(range(n_layers), no_acc, label='All-No Accuracy', marker='o')
+loc_types_to_plot = list(locs_to_probe.keys())[:3]
+for loc_type in loc_types_to_plot:
+    plt.plot(range(n_layers), accuracies[loc_type]['faithful'], label=f'{loc_type} Faithful', marker='o')
+    plt.plot(range(n_layers), accuracies[loc_type]['unfaithful'], label=f'{loc_type} Unfaithful', marker='s')
 
 plt.xlabel('Layer')
 plt.ylabel('Accuracy')
-plt.title('All-Yes and All-No Accuracy by Layer')
+plt.title('Faithful and Unfaithful Accuracy by Layer and Location Type')
 plt.legend()
 plt.grid(True, linestyle='--', alpha=0.7)
 
@@ -765,7 +774,53 @@ plt.show()
 
 # %%
 
-def visualize_top_activating_tokens(loc_type, layer, remove_bos=True):
+from cot_probing.vis import visualize_tokens_html
+
+def collect_activations_for_visualization(data_point, tokenizer, model, locs_to_cache, layers_to_cache, collect_embeddings=False):
+    activations_by_layer_by_locs = {
+        loc_type: [[] for _ in range(layers_to_cache)] for loc_type in locs_to_cache.keys()
+    }
+
+    question_to_answer = data_point["question_to_answer"]
+    expected_answer = data_point["expected_answer"]
+    biased_cots = data_point["biased_cots"]
+    biased_fsp = data_point["biased_fsp"]
+    biased_cot_label = data_point["biased_cot_label"]
+
+    # Build the prompt
+    biased_fsp_with_question = tokenizer.encode(biased_fsp + "\n\n" + question_to_answer)
+    random_biased_cot = random.choice(biased_cots)
+    random_biased_cot.tolist()
+
+    print("Expected answer: ", expected_answer)
+
+    # The prompt is missing the actual answer, so we need to add it
+    if expected_answer == "yes":
+        answer_tok = tokenizer.encode(" Yes", add_special_tokens=False)
+    else:
+        answer_tok = tokenizer.encode(" No", add_special_tokens=False)
+
+    input_ids = biased_fsp_with_question + random_biased_cot.tolist() + answer_tok
+
+    if "last_question_tokens" in locs_to_cache:
+        # Figure out where the last question starts
+        last_question_token_position = [
+            pos for pos, t in enumerate(input_ids) if t == question_token
+        ][-1]
+        locs_to_cache["last_question_tokens"] = (last_question_token_position, None)
+
+    resid_acts_by_layer_by_locs = clean_run_with_cache(
+        model, input_ids, locs_to_cache, collect_embeddings=collect_embeddings
+    )
+    for loc_type in locs_to_cache.keys():
+        for layer_idx in range(layers_to_cache):
+            activations_by_layer_by_locs[loc_type][layer_idx].append(
+                resid_acts_by_layer_by_locs[loc_type][layer_idx]
+            )
+
+    return activations_by_layer_by_locs, input_ids
+
+def visualize_top_activating_tokens(loc_type, layer, remove_bos=True, biased_cot_label="faithful"):
     df_results = pd.DataFrame(results)
     df_filtered = df_results[
         (df_results["loc_type"] == loc_type) & (df_results["layer"] == layer)
@@ -776,27 +831,30 @@ def visualize_top_activating_tokens(loc_type, layer, remove_bos=True):
         return
 
     probe = df_filtered["probe"].iloc[0]
-    probe_coefficients = probe.coef_
+    probe_coefficients = torch.tensor(probe.coef_).squeeze()
 
-    # Get an example of prompt
-    prompt_idx = random.randint(0, len(test_prompts) - 1)
-    print(f"Using prompt {prompt_idx}")
-    prompt = test_prompts[prompt_idx]
-
-    token_ids = tokenizer.encode(prompt) # list of len ~750
-    seq_len = len(token_ids)
-
+    # Get an example of test data point
+    filtered_data_points = [dp for dp in probe_test_data if dp["biased_cot_label"] == biased_cot_label]
+    data_idx = random.randint(0, len(filtered_data_points) - 1)
+    data_point = filtered_data_points[data_idx]
+    print(f"Using test data point {data_idx}")
+    
     # Get the corresponding values
-    prompt_acts = collect_activations(
-        [prompt], 
+    prompt_acts, token_ids = collect_activations_for_visualization(
+        data_point, 
         tokenizer,
         model, 
         {"all": (0, None)}, 
-        n_layers, collect_embeddings=collect_embeddings
-    )["all"][layer][0] # Shape [seq_len, d_model]
-    assert prompt_acts.shape == (seq_len, model.config.hidden_size), f"Expected shape ({seq_len}, {model.config.hidden_size}), got {prompt_acts.shape}"
+        n_layers, 
+        collect_embeddings=collect_embeddings
+    )
+    prompt_acts = prompt_acts["all"][layer][0] # Shape [seq_len, d_model]
+    seq_len = prompt_acts.shape[0]
 
     values = torch.tensor([probe_coefficients @ prompt_acts[i].float().cpu().numpy() for i in range(seq_len)])
+    print(f"values: {values}")
+    print(f"prompt_acts: {prompt_acts[0].shape}")
+    print(f"probe_coefficients: {probe_coefficients.shape}")
 
     if remove_bos:
         values = values[1:]
@@ -828,6 +886,10 @@ loc_probe_keys = list(locs_to_probe.keys())
 # Keep only the 1,5,8 indexes
 loc_probe_keys = [loc_probe_keys[1], loc_probe_keys[5], loc_probe_keys[8]]
 
+# Keep only the 1
+loc_probe_keys = [loc_probe_keys[1]]
+biased_cot_label = "unfaithful"
+
 for loc_type in loc_probe_keys:
     print(f"Location type: {loc_type}")
     df_loc = df_results[df_results["loc_type"] == loc_type]
@@ -836,7 +898,7 @@ for loc_type in loc_probe_keys:
     layers = [10]
     for layer in layers:
         print(f"Layer {layer}")
-        visualize_top_activating_tokens(loc_type, layer)
+        visualize_top_activating_tokens(loc_type, layer, biased_cot_label=biased_cot_label)
 
 # %%
 
@@ -904,7 +966,16 @@ def steer_generation(input_ids, loc_keys_to_steer, layers_to_steer, last_questio
         for hook in hooks:
             hook.remove()
 
-    return responses_tensor
+    cleaned_responses = []
+    end_of_text_tok = tokenizer.eos_token_id
+    for response in responses_tensor:
+        # right strip as many end_of_text_tok as possible from each response
+        # This is necessary because model.generate adds this when using cache
+        while response[-1] == end_of_text_tok:
+            response = response[:-1]
+        cleaned_responses.append(response)
+
+    return cleaned_responses
 
 # %%
 
@@ -939,21 +1010,27 @@ def categorize_responses(responses):
         "other": other_responses,
     }
 
-# test_prompt_idx = random.randint(0, len(test_prompts) - 1)
 results = []
-for test_prompt_idx in tqdm.tqdm(range(len(test_prompts))):
+for test_prompt_idx in tqdm.tqdm(range(len(probe_test_data))):
     # print(f"Running steering on test prompt index: {test_prompt_idx}")
-    test_prompt = test_prompts[test_prompt_idx]
+    data_point = probe_test_data[test_prompt_idx]
 
-    input_ids = tokenizer.encode(test_prompt, return_tensors="pt").to(model.device)
+    question_to_answer = data_point["question_to_answer"]
+    expected_answer = data_point["expected_answer"]
+    # print(f"Question to answer: {question_to_answer}")
+    # print(f"Expected answer: {expected_answer}")
+
+    unbiased_fsp = data_point["unbiased_fsp"]
+    biased_fsp = data_point["biased_fsp"]
+    prompt = biased_fsp + "\n\n" + question_to_answer
+
+    # Build the prompt
+    input_ids = tokenizer.encode(prompt, return_tensors="pt").to(model.device)
         
     # Find the position of the last "Question" token
     question_token_id = tokenizer.encode("Question", add_special_tokens=False)[0]
     last_question_first_token_pos = [i for i, t in enumerate(input_ids[0]) if t == question_token_id][-1]
     # print(f"Last question position first token pos: {last_question_first_token_pos}")
-
-    # print("\nOriginal prompt:")
-    # print(test_prompt)
 
     n_gen = 10
 
@@ -967,51 +1044,118 @@ for test_prompt_idx in tqdm.tqdm(range(len(test_prompts))):
         n_gen=n_gen
     )
     # for response in unsteered_responses:
-    #     print(response)
+    #     print(f"Response: {tokenizer.decode(response)}")
+    #     print()
 
     loc_probe_keys = list(locs_to_probe.keys())
     loc_keys_to_steer = [
-        loc_probe_keys[0],
+        # loc_probe_keys[0],
         loc_probe_keys[1],
         loc_probe_keys[2],
-        loc_probe_keys[5],
-        loc_probe_keys[8]
+        # loc_probe_keys[5],
+        # loc_probe_keys[8]
     ]
     # print(f"Location keys to steer: {loc_keys_to_steer}")
 
-    layers_to_steer = list(range(8, 19))
+    layers_to_steer = list(range(13, 26))
     # print(f"Layers to steer: {layers_to_steer}")
 
-    # print("\nPositive steered generation:")
+    pos_steer_magnitude = 0.4
+    # print(f"\nPositive steered generation: {pos_steer_magnitude}")
     positive_steered_responses = steer_generation(
         input_ids, 
         loc_keys_to_steer, 
         layers_to_steer, 
         last_question_first_token_pos,
-        0.4,
+        pos_steer_magnitude,
         n_gen=n_gen
     )
     # for i, response in enumerate(positive_steered_responses):
-    #     print(f"Response {i}: {response}")
+    #     print(f"Response {i}: {tokenizer.decode(response)}")
     #     print()
 
-    # print("\nNegative steered generation:")
+    neg_steer_magnitude = -0.4
+    # print(f"\nNegative steered generation: {neg_steer_magnitude}")
     negative_steered_responses = steer_generation(
         input_ids, 
         loc_keys_to_steer, 
         layers_to_steer, 
         last_question_first_token_pos,
-        -0.4,
+        neg_steer_magnitude,
         n_gen=n_gen
     )
     # for i, response in enumerate(negative_steered_responses):
-    #     print(f"Response {i}: {response}")
+    #     print(f"Response {i}: {tokenizer.decode(response)}")
     #     print()
 
+    # Measure unbiased accuracy of the CoT's produced
+
+    unbiased_fsp_with_question = f"{unbiased_fsp}\n\n{question_to_answer}"
+    tokenized_unbiased_fsp_with_question = tokenizer.encode(
+        unbiased_fsp_with_question
+    )
+
+    unsteered_unbiased_answers = {
+        "yes": [],
+        "no": [],
+        "other": [],
+    }
+    for cot in unsteered_responses:
+        cot_without_answer = cot.tolist()[:-1]
+        answer = categorize_response_unbiased(
+            model=model,
+            tokenizer=tokenizer,
+            unbiased_context_toks=tokenized_unbiased_fsp_with_question,
+            response=cot_without_answer,
+        )
+        unsteered_unbiased_answers[answer].append(cot)
+    
+    unsteered_accuracy = len(unsteered_unbiased_answers[expected_answer]) / len(unsteered_responses)
+    # print(f"Unsteered accuracy: {unsteered_accuracy:.4f}")
+
+    pos_steering_unbiased_answers = {
+        "yes": [],
+        "no": [],
+        "other": [],
+    }
+    for cot in positive_steered_responses:
+        cot_without_answer = cot.tolist()[:-1]
+        answer = categorize_response_unbiased(
+            model=model,
+            tokenizer=tokenizer,
+            unbiased_context_toks=tokenized_unbiased_fsp_with_question,
+            response=cot_without_answer,
+        )
+        pos_steering_unbiased_answers[answer].append(cot)
+
+    pos_steering_accuracy = len(pos_steering_unbiased_answers[expected_answer]) / len(positive_steered_responses)
+    # print(f"Positive steering accuracy: {pos_steering_accuracy:.4f}")
+
+    neg_steering_unbiased_answers = {
+        "yes": [],
+        "no": [],
+        "other": [],
+    }
+    for cot in negative_steered_responses:
+        cot_without_answer = cot.tolist()[:-1]
+        answer = categorize_response_unbiased(
+            model=model,
+            tokenizer=tokenizer,
+            unbiased_context_toks=tokenized_unbiased_fsp_with_question,
+            response=cot_without_answer,
+        )
+        neg_steering_unbiased_answers[answer].append(cot)
+
+    neg_steering_accuracy = len(neg_steering_unbiased_answers[expected_answer]) / len(negative_steered_responses)
+    # print(f"Negative steering accuracy: {neg_steering_accuracy:.4f}")
+
     res = {
-        "unb": categorize_responses(unsteered_responses),
-        "pos_steer": categorize_responses(positive_steered_responses),
-        "neg_steer": categorize_responses(negative_steered_responses),
+        "unsteered": unsteered_unbiased_answers,
+        "pos_steer": pos_steering_unbiased_answers,
+        "neg_steer": neg_steering_unbiased_answers,
+        "unsteered_accuracy": unsteered_accuracy,
+        "pos_steering_accuracy": pos_steering_accuracy,
+        "neg_steering_accuracy": neg_steering_accuracy,
     }
 
     # for variant in res.keys():
@@ -1025,9 +1169,9 @@ for test_prompt_idx in tqdm.tqdm(range(len(test_prompts))):
 import pickle
 # Dump steering results to file, just in case
 if "-8B-" in model_id:
-    steering_results_path = DATA_DIR / "steering_results_8B.pkl"
+    steering_results_path = DATA_DIR / "steering_results_probing_for_unfaithful_answer_8B.pkl"
 elif "-70B-" in model_id:
-    steering_results_path = DATA_DIR / "steering_results_70B.pkl"
+    steering_results_path = DATA_DIR / "steering_results_probing_for_unfaithful_answer_70B.pkl"
 else:
     raise ValueError(f"Unknown model: {model_id}")
 
@@ -1044,7 +1188,7 @@ def calculate_yes_percentage(res):
     return (len(res['yes']) - len(res['no'])) / total * 100
 
 # Select 15 random questions
-num_questions = 15
+num_questions = min(15, len(results))
 selected_indices = random.sample(range(len(results)), num_questions)
 
 # Prepare data
@@ -1054,9 +1198,9 @@ negative_steering_percentages = []
 
 for idx in selected_indices:
     res = results[idx]
-    unbiased_percentages.append(calculate_yes_percentage(res['unb']))
-    positive_steering_percentages.append(calculate_yes_percentage(res['pos_steer']))
-    negative_steering_percentages.append(calculate_yes_percentage(res['neg_steer']))
+    unbiased_percentages.append(res['unsteered_accuracy'])
+    positive_steering_percentages.append(res['pos_steering_accuracy'])
+    negative_steering_percentages.append(res['neg_steering_accuracy'])
 
 # Create the plot
 fig, ax = plt.subplots(figsize=(15, 8))
@@ -1068,13 +1212,13 @@ ax.bar(x - width, unbiased_percentages, width, label='Unbiased', color='blue')
 ax.bar(x, positive_steering_percentages, width, label='Positive Steering', color='green')
 ax.bar(x + width, negative_steering_percentages, width, label='Negative Steering', color='red')
 
-ax.set_ylabel('Percentage of All-Yes & All-No Answers')
-ax.set_title('Percentage of All-Yes & All-No Answers: Unbiased vs Positive/Negative Steering')
+ax.set_ylabel('Accuracy')
+ax.set_title('Accuracy: Unbiased vs Positive/Negative Steering')
 ax.set_xticks(x)
 ax.set_xticklabels([f'Q{i+1}' for i in range(num_questions)])
 ax.legend()
 
-plt.ylim(-100, 100)
+plt.ylim(0, 1)
 plt.axhline(y=0, color='k', linestyle='-', linewidth=0.5)
 
 # Add value labels on the bars
@@ -1102,9 +1246,9 @@ positive_steering_percentages = []
 negative_steering_percentages = []
 
 for res in results:
-    unbiased_percentages.append(calculate_yes_percentage(res['unb']))
-    positive_steering_percentages.append(calculate_yes_percentage(res['pos_steer']))
-    negative_steering_percentages.append(calculate_yes_percentage(res['neg_steer']))
+    unbiased_percentages.append(res['unsteered_accuracy'])
+    positive_steering_percentages.append(res['pos_steering_accuracy'])
+    negative_steering_percentages.append(res['neg_steering_accuracy'])
 
 # Create a DataFrame
 df = pd.DataFrame({
@@ -1120,9 +1264,9 @@ df_melted = df.melt(var_name='Condition', value_name='Percentage')
 plt.figure(figsize=(12, 8))
 sns.boxplot(x='Condition', y='Percentage', data=df_melted)
 
-plt.title('Distribution of All-Yes & All-No Answer Percentages Across All Questions')
-plt.ylabel('Percentage of All-Yes & All-No Answers')
-plt.ylim(-110, 110)  # Extend y-axis limits to make room for mean labels
+plt.title('Distribution of Biased CoT Accuracy on Unbiased Context Across All Questions')
+plt.ylabel('Accuracy')
+plt.ylim(0, 1)  # Extend y-axis limits to make room for mean labels
 plt.axhline(y=0, color='k', linestyle='--', linewidth=0.5)
 
 # Add mean values and lines for each condition
@@ -1154,7 +1298,7 @@ positive_steering_other = []
 negative_steering_other = []
 
 for res in results:
-    unbiased_other.append(calculate_other_percentage(res['unb']))
+    unbiased_other.append(calculate_other_percentage(res['unsteered']))
     positive_steering_other.append(calculate_other_percentage(res['pos_steer']))
     negative_steering_other.append(calculate_other_percentage(res['neg_steer']))
 
