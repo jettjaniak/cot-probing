@@ -100,7 +100,7 @@ def generate_data(
     return data
 
 # %%
-fsp_max_len = 8
+fsp_max_len = 12
 
 train_data = generate_data(
     train_target_questions, fsp_yes_questions, fsp_no_questions, fsp_max_len)
@@ -119,6 +119,8 @@ assert len(answer_yes_tok) == 3
 answer_no_tok = tokenizer.encode("Answer: No", add_special_tokens=False)
 assert len(answer_no_tok) == 3
 end_of_text_tok = tokenizer.eos_token_id
+
+temp = 0.9
 
 def categorize_responses(responses):
     yes_responses = []
@@ -152,7 +154,7 @@ def generate(input_ids, max_new_tokens=200, n_gen=3):
             input_ids,
             max_new_tokens=max_new_tokens,
             do_sample=True,
-            temperature=0.7,
+            temperature=temp,
             use_cache=True,
             num_return_sequences=n_gen,
             tokenizer=tokenizer,
@@ -347,7 +349,7 @@ plot_unbiased_accuracy_distribution(test_data, biased=True, data_label="test")
 # %% Label each biased COT as faithful or unfaithful depending on the unbiased accuracy
 
 faithful_accuracy_threshold = 0.8
-unfaithful_accuracy_threshold = 0.4
+unfaithful_accuracy_threshold = 0.5
 
 def label_biased_cots(data):
     for item in data:
@@ -364,6 +366,7 @@ label_biased_cots(train_data)
 label_biased_cots(test_data)
 
 # Print number of faithful, unfaithful, and mixed COTs
+print(f"Using a threshold of >={faithful_accuracy_threshold} for faithfulness and <={unfaithful_accuracy_threshold} for unfaithfulness")
 print(f"Train faithful: {sum(item['biased_cot_label'] == 'faithful' for item in train_data)}")
 print(f"Train unfaithful: {sum(item['biased_cot_label'] == 'unfaithful' for item in train_data)}")
 print(f"Train mixed: {sum(item['biased_cot_label'] == 'mixed' for item in train_data)}")
@@ -383,6 +386,9 @@ min_num_test_data = min(sum(item['biased_cot_label'] == 'faithful' for item in t
 test_data_faithful = [item for item in test_data if item['biased_cot_label'] == 'faithful'][:min_num_test_data]
 test_data_unfaithful = [item for item in test_data if item['biased_cot_label'] == 'unfaithful'][:min_num_test_data]
 probe_test_data = test_data_faithful + test_data_unfaithful
+
+print(f"Probe train data size: {len(probe_train_data)}")
+print(f"Probe test data size: {len(probe_test_data)}")
 
 # %%
 
@@ -592,7 +598,11 @@ for loc_type in locs_to_probe.keys():
 
 # %%
 
-def plot_scatter(loc_type, layer):
+from sklearn.metrics import confusion_matrix, roc_curve, auc, precision_recall_curve
+from sklearn.preprocessing import LabelEncoder
+import seaborn as sns
+
+def plot_logistic_regression_results(loc_type, layer):
     df_filtered = df_results[
         (df_results["loc_type"] == loc_type) & (df_results["layer"] == layer)
     ]
@@ -603,29 +613,57 @@ def plot_scatter(loc_type, layer):
 
     y_test = df_filtered["y_test"].iloc[0]
     y_pred_test = df_filtered["y_pred_test"].iloc[0]
+    probe = df_filtered["probe"].iloc[0]
 
-    plt.figure(figsize=(10, 6))
-    plt.scatter(y_test, y_pred_test, alpha=0.5)
-    plt.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], "r--", lw=2)
-    plt.xlabel("True Values")
-    plt.ylabel("Predicted Values")
-    plt.title(
-        f"Scatter Plot of True vs Predicted Values\nLocation: {loc_type}, Layer: {layer}"
-    )
+    # Encode categorical labels
+    le = LabelEncoder()
+    y_test_encoded = le.fit_transform(y_test)
+    y_pred_test_encoded = le.transform(y_pred_test)
 
-    accuracy = df_filtered["accuracy_test"].iloc[0]
-
-    plt.text(
-        0.05,
-        0.95,
-        f"Accuracy: {accuracy:.4f}",
-        transform=plt.gca().transAxes,
-        verticalalignment="top",
-        bbox=dict(boxstyle="round", facecolor="white", alpha=0.8),
-    )
-
-    plt.tight_layout()
+    # 1. Confusion Matrix
+    plt.figure(figsize=(10, 8))
+    cm = confusion_matrix(y_test, y_pred_test)
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues')
+    plt.title(f'Confusion Matrix\nLocation: {loc_type}, Layer: {layer}')
+    plt.ylabel('True label')
+    plt.xlabel('Predicted label')
     plt.show()
+
+    # 2. ROC Curve
+    plt.figure(figsize=(10, 8))
+    y_pred_proba = probe.predict_proba(X_test[loc_type][layer])[:, 1]
+    fpr, tpr, _ = roc_curve(y_test_encoded, y_pred_proba)
+    roc_auc = auc(fpr, tpr)
+    plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'ROC curve (AUC = {roc_auc:.2f})')
+    plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title(f'Receiver Operating Characteristic (ROC) Curve\nLocation: {loc_type}, Layer: {layer}')
+    plt.legend(loc="lower right")
+    plt.show()
+
+    # 3. Precision-Recall Curve
+    plt.figure(figsize=(10, 8))
+    precision, recall, _ = precision_recall_curve(y_test_encoded, y_pred_proba)
+    plt.plot(recall, precision, color='blue', lw=2)
+    plt.xlabel('Recall')
+    plt.ylabel('Precision')
+    plt.title(f'Precision-Recall Curve\nLocation: {loc_type}, Layer: {layer}')
+    plt.show()
+
+    # 4. Bar plot of class probabilities
+    # plt.figure(figsize=(10, 8))
+    # sns.histplot(y_pred_proba, bins=20, kde=True)
+    # plt.xlabel('Predicted Probability of Positive Class')
+    # plt.ylabel('Count')
+    # plt.title(f'Distribution of Predicted Probabilities\nLocation: {loc_type}, Layer: {layer}')
+    # plt.show()
+
+    # Print accuracy
+    accuracy = df_filtered["accuracy_test"].iloc[0]
+    print(f"Accuracy: {accuracy:.4f}")
 
 k = 1
 for loc_type in locs_to_probe.keys():
@@ -633,7 +671,7 @@ for loc_type in locs_to_probe.keys():
     df_loc = df_loc.sort_values(by="accuracy_test", ascending=False)
     top_k_layers = df_loc["layer"].iloc[:k].tolist()
     for layer in top_k_layers:
-        plot_scatter(loc_type, layer)
+        plot_logistic_regression_results(loc_type, layer)
 
 # %%
 
