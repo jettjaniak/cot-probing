@@ -173,8 +173,8 @@ def process_question(
         temp=args.temp,
         seed=args.seed,
     )
-    bia_fsp_cache = yes_fsp_cache if q["expected_answer"] == "yes" else no_fsp_cache
-    bia_fsp_toks = yes_fsp_toks if q["expected_answer"] == "yes" else no_fsp_toks
+    bia_fsp_cache = no_fsp_cache if q["expected_answer"] == "yes" else yes_fsp_cache
+    bia_fsp_toks = no_fsp_toks if q["expected_answer"] == "yes" else yes_fsp_toks
     biased_cots = generate_cots(
         model=model,
         tokenizer=tokenizer,
