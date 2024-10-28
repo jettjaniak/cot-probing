@@ -192,8 +192,8 @@ def main(args: argparse.Namespace):
             no_fsp_toks=no_fsp_toks,
             args=args,
         )
-        with open(DATA_DIR / f"measured_qs_{file_identifier}.json", "a") as f:
-            f.write(json.dumps(ret))
+        with open(DATA_DIR / f"measured_qs_{file_identifier}.json", "w") as f:
+            json.dump(ret, f)
 
 
 if __name__ == "__main__":
