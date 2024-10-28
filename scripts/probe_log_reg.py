@@ -139,8 +139,7 @@ def train_logistic_regression_probes(
                 verbose=verbose,
             )
 
-    df_results = pd.DataFrame(results)
-    return df_results
+    return results
 
 
 def main(args: argparse.Namespace):
@@ -170,7 +169,7 @@ def main(args: argparse.Namespace):
 
     locs_to_probe = get_locs_to_probe(tokenizer)
 
-    df_results = train_logistic_regression_probes(
+    probing_results = train_logistic_regression_probes(
         acts_dataset=acts_dataset,
         locs_to_probe=locs_to_probe,
         layers_to_probe=layers_to_probe,
@@ -179,13 +178,19 @@ def main(args: argparse.Namespace):
         seed=args.seed,
         verbose=args.verbose,
     )
+    ret = dict(
+        arg_model_size=model_size,
+        probing_results=probing_results,
+    )
 
     # Save the results
     output_file_name = input_file_path.name.replace("acts_", "log_reg_probe_results_")
     output_file_path = DATA_DIR / output_file_name
-    df_results.to_pickle(output_file_path)
+    with open(output_file_path, "wb") as f:
+        pickle.dump(ret, f)
 
     if args.verbose:
+        df_results = pd.DataFrame(results)
         for loc_type in locs_to_probe.keys():
             # Sort and print layers by lowest mse_test for this loc_type
             df_loc = df_results[df_results["loc_type"] == loc_type]
