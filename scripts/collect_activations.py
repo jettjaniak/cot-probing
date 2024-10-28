@@ -268,7 +268,7 @@ def main(args: argparse.Namespace):
         # "step_by_step_colon": (-3, -2),  # colon before last new line.
     }
 
-    acts_by_question = collect_activations(
+    acts_results = collect_activations(
         model=model,
         tokenizer=tokenizer,
         dataset=labeled_questions_dataset,
@@ -278,6 +278,15 @@ def main(args: argparse.Namespace):
         collect_embeddings=collect_embeddings,
     )
 
+    skip_args = ["verbose", "file"]
+    ret = dict(
+        biased_no_fsp=labeled_questions_dataset["biased_no_fsp"],
+        biased_yes_fsp=labeled_questions_dataset["biased_yes_fsp"],
+        qs=acts_results,
+        arg_model_size=model_size,
+        **{f"arg_{k}": v for k, v in vars(args).items() if k not in skip_args},
+    )
+
     output_file_name = input_file_path.name.replace("labeled_qs_", "acts_").replace(
         ".json", ".pkl"
     )
@@ -285,7 +294,7 @@ def main(args: argparse.Namespace):
 
     # Dump the result as a pickle file
     with open(output_file_path, "wb") as f:
-        pickle.dump(acts_by_question, f)
+        pickle.dump(ret, f)
 
 
 if __name__ == "__main__":
