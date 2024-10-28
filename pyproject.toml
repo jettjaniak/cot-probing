@@ -24,7 +24,7 @@ dependencies = [
     "scipy==1.14.1",
     "torch==2.4.1",
     "tqdm==4.66.5",
-    "transformers==4.45.1",
+    "transformers==4.46.0",
 ]
 
 [build-system]
