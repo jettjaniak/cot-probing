@@ -72,9 +72,7 @@ def load_model_and_tokenizer(
 
 
 def get_locs_to_probe(tokenizer: PreTrainedTokenizerBase) -> Dict[str, int]:
-    last_part_of_last_question = """?
-    Let's think step by step:
-    -"""
+    last_part_of_last_question = "?\nLet's think step by step:\n-"
     last_part_of_last_question_tokens = tokenizer.encode(
         last_part_of_last_question, add_special_tokens=False
     )
@@ -145,22 +143,18 @@ def get_probe_data(
     y = []
 
     for data in data_list:
-        cached_loc_keys = ["last_question_tokens"]
-        for cached_loc_key in cached_loc_keys:
-            biased_cots_acts = data["cached_acts"][cached_loc_key][
-                layer_idx
-            ]  # List of size biased_cots. Each item is a tensor of shape [seq len, d_model].
+        for biased_cot_acts in data["cached_acts"]:  # One per each biased_cot
+            cached_loc_keys = ["last_question_tokens"]
+            for cached_loc_key in cached_loc_keys:
+                acts = biased_cot_acts[cached_loc_key][
+                    layer_idx
+                ]  # List of size biased_cots. Each item is a tensor of shape [seq len, d_model].
 
-            for acts in biased_cots_acts:
                 X.append(np.array(acts[loc_pos].float().numpy()))
                 y.append(data["biased_cot_label"])
 
     X = np.array(X)
     y = np.array(y)
-
-    # Print the shape of X and y
-    print(f"X shape: {X.shape}")
-    print(f"y shape: {y.shape}")
 
     return X, y
 
@@ -177,8 +171,6 @@ def train_logistic_regression_probes(
     train_data, test_data = split_dataset(
         acts_dataset=acts_dataset["qs"], test_ratio=test_ratio, verbose=verbose
     )
-    print(f"len(train_data): {len(train_data)}")
-    print(f"len(test_data): {len(test_data)}")
 
     # Shuffle the data
     random.shuffle(train_data)
@@ -253,7 +245,6 @@ def main(args: argparse.Namespace):
     with open(input_file_path, "rb") as f:
         acts_dataset = pickle.load(f)
 
-    print(acts_dataset.keys())
     model_size = acts_dataset["arg_model_size"]
     model, tokenizer = load_model_and_tokenizer(model_size)
 
