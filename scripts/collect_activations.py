@@ -7,19 +7,14 @@ import os
 import pickle
 import random
 from pathlib import Path
-from typing import Dict, List, Literal, Tuple
 
 import torch
-import tqdm
-from transformers import (
-    AutoModelForCausalLM,
-    AutoTokenizer,
-    PreTrainedModel,
-    PreTrainedTokenizerBase,
-)
+from tqdm.auto import tqdm
+from transformers import PreTrainedModel, PreTrainedTokenizerBase
 
 from cot_probing import DATA_DIR
-from cot_probing.activations import clean_run_with_cache
+from cot_probing.activations import collect_resid_acts_with_pastkv
+from cot_probing.typing import *
 from cot_probing.utils import load_model_and_tokenizer
 
 
@@ -39,17 +34,11 @@ def parse_args():
         help="List of comma separated layers to cache activations for. Defaults to all layers.",
     )
     parser.add_argument(
-        "-e",
-        "--collect-embeddings",
-        action="store_true",
-        help="Collect also embeddings",
-    )
-    parser.add_argument(
         "-b",
         "--biased-cots-collection-mode",
         type=str,
         choices=["none", "one", "all"],
-        default="one",
+        default="none",
         help="Mode for collecting biased COTs. If one or all is selected, we filter first the biased COTs by the biased_cot_label.",
     )
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
@@ -66,14 +55,15 @@ def build_fsp_cache(
         return model(fsp_input_ids).past_key_values
 
 
-def get_input_ids_to_cache(
+def get_last_q_toks_to_cache(
     tokenizer: PreTrainedTokenizerBase,
     question: str,
     expected_answer: Literal["yes", "no"],
-    biased_cots: List[str],
+    biased_cots: list[str],
     biased_cot_label: Literal["faithful", "unfaithful"],
     biased_cots_collection_mode: Literal["none", "one", "all"],
 ):
+    """May or may not include the CoT tokens"""
     question_toks = tokenizer.encode(question)
     if biased_cots_collection_mode == "none":
         # Don't collect activations for biased COTs
@@ -127,20 +117,19 @@ def get_input_ids_to_cache(
 def collect_activations_for_question(
     model: PreTrainedModel,
     tokenizer: PreTrainedTokenizerBase,
-    q_data: Dict,
-    locs_to_cache: Dict,
-    layers_to_cache: List[int],
-    biased_no_fsp_cache: Dict,
-    biased_yes_fsp_cache: Dict,
+    q_data: dict,
+    layers: list[int],
+    biased_no_fsp_cache: tuple,
+    biased_yes_fsp_cache: tuple,
     biased_cots_collection_mode: Literal["none", "one", "all"],
-    collect_embeddings: bool,
 ):
     question = q_data["question"]
+    assert question.endswith("by step:\n-"), question
     expected_answer = q_data["expected_answer"]
     biased_cots = q_data["biased_cots"]
     biased_cot_label = q_data["biased_cot_label"]
 
-    input_ids_to_cache = get_input_ids_to_cache(
+    last_q_toks_to_cache = get_last_q_toks_to_cache(
         tokenizer=tokenizer,
         question=question,
         expected_answer=expected_answer,
@@ -155,47 +144,36 @@ def collect_activations_for_question(
     else:
         biased_fsp_cache = biased_yes_fsp_cache
 
-    biased_cot_acts = []
-    question_token = tokenizer.encode("Question", add_special_tokens=False)[0]
-    for input_ids in input_ids_to_cache:
-        # Figure out where the last question starts
-        if "last_question_tokens" in locs_to_cache:
-            last_question_token_position = [
-                pos for pos, t in enumerate(input_ids) if t == question_token
-            ][-1]
-            locs_to_cache["last_question_tokens"] = (
-                last_question_token_position,
-                None,
-            )
-
-        fsp_past_key_values = copy.deepcopy(biased_fsp_cache)
-
-        resid_acts_by_layer_by_locs = clean_run_with_cache(
+    resid_acts_by_layer_by_cot = []
+    for last_q_toks in last_q_toks_to_cache:
+        resid_acts_by_layer = collect_resid_acts_with_pastkv(
             model=model,
-            input_ids=input_ids,
-            locs_to_cache=locs_to_cache,
-            collect_embeddings=collect_embeddings,
-            past_key_values=fsp_past_key_values,
+            last_q_toks=last_q_toks,
+            layers=layers,
+            past_key_values=biased_fsp_cache,
         )
-        biased_cot_acts.append(resid_acts_by_layer_by_locs)
+        resid_acts_by_layer_by_cot.append(resid_acts_by_layer)
+    if biased_cots_collection_mode == "none":
+        assert len(resid_acts_by_layer_by_cot) == 1
+        resid_acts = resid_acts_by_layer_by_cot[0]
+    else:
+        resid_acts = resid_acts_by_layer_by_cot
 
     return {
         "question": question,
         "expected_answer": expected_answer,
         "biased_cot_label": biased_cot_label,
-        "biased_cots_tokens_to_cache": input_ids_to_cache,
-        "cached_acts": biased_cot_acts,
+        "biased_cots_tokens_to_cache": last_q_toks_to_cache,
+        "cached_acts": resid_acts,
     }
 
 
 def collect_activations(
     model: PreTrainedModel,
     tokenizer: PreTrainedTokenizerBase,
-    dataset: Dict,
-    locs_to_cache: Dict,
-    layers_to_cache: List[int],
+    dataset: dict,
+    layers: list[int],
     biased_cots_collection_mode: Literal["none", "one", "all"],
-    collect_embeddings: bool,
 ):
     biased_no_fsp = dataset["biased_no_fsp"] + "\n\n"
     biased_yes_fsp = dataset["biased_yes_fsp"] + "\n\n"
@@ -205,7 +183,7 @@ def collect_activations(
     biased_yes_fsp_cache = build_fsp_cache(model, tokenizer, biased_yes_fsp)
 
     result = []
-    for q_data in tqdm.tqdm(dataset["qs"]):
+    for q_data in tqdm(dataset["qs"], "Processing questions"):
         if "biased_cots" not in q_data:
             print("Warning: No biased COTs found for question")
             continue
@@ -219,12 +197,10 @@ def collect_activations(
             model=model,
             tokenizer=tokenizer,
             q_data=q_data,
-            locs_to_cache=locs_to_cache,
-            layers_to_cache=layers_to_cache,
+            layers=layers,
             biased_no_fsp_cache=biased_no_fsp_cache,
             biased_yes_fsp_cache=biased_yes_fsp_cache,
             biased_cots_collection_mode=biased_cots_collection_mode,
-            collect_embeddings=collect_embeddings,
         )
         result.append(res)
 
@@ -250,31 +226,21 @@ def main(args: argparse.Namespace):
     model, tokenizer = load_model_and_tokenizer(model_size)
 
     if args.layers:
-        layers_to_cache = args.layers.split(",")
+        layers = [int(l) for l in args.layers.split(",")]
     else:
-        layers_to_cache = list(range(model.config.num_hidden_layers))
-
-    collect_embeddings = args.collect_embeddings
-
-    locs_to_cache = {
-        "last_question_tokens": (None, None),
-        # "first_cot_dash": (-1, None),  # last token before CoT
-        # "last_new_line": (-2, -1),  # newline before first dash in CoT
-        # "step_by_step_colon": (-3, -2),  # colon before last new line.
-    }
+        layers = list(range(model.config.num_hidden_layers + 1))
 
     acts_results = collect_activations(
         model=model,
         tokenizer=tokenizer,
         dataset=labeled_questions_dataset,
-        locs_to_cache=locs_to_cache,
-        layers_to_cache=layers_to_cache,
+        layers=layers,
         biased_cots_collection_mode=args.biased_cots_collection_mode,
-        collect_embeddings=collect_embeddings,
     )
 
     skip_args = ["verbose", "file"]
     ret = dict(
+        unbiased_fsp=labeled_questions_dataset["unbiased_fsp"],
         biased_no_fsp=labeled_questions_dataset["biased_no_fsp"],
         biased_yes_fsp=labeled_questions_dataset["biased_yes_fsp"],
         qs=acts_results,
@@ -282,10 +248,8 @@ def main(args: argparse.Namespace):
         **{f"arg_{k}": v for k, v in vars(args).items() if k not in skip_args},
     )
 
-    output_file_name = input_file_path.name.replace("labeled_qs_", "acts_").replace(
-        ".json", ".pkl"
-    )
-    output_file_path = DATA_DIR / output_file_name
+    output_file_stem = input_file_path.stem.replace("labeled_qs_", "acts_")
+    output_file_path = f"activations/{output_file_stem}.pkl"
 
     # Dump the result as a pickle file
     with open(output_file_path, "wb") as f:
