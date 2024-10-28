@@ -159,6 +159,41 @@ def get_probe_data(
     return X, y
 
 
+def train_logistic_regression_probe(
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    X_test: np.ndarray,
+    y_test: np.ndarray,
+    results: Dict,
+    seed: int = 42,
+):
+    probe = LogisticRegression(random_state=seed, max_iter=1000)
+    probe.fit(X_train, y_train)
+
+    # Make predictions
+    y_pred_train = probe.predict(X_train)
+    y_pred_test = probe.predict(X_test)
+
+    # Calculate metrics
+    accuracy_train = accuracy_score(y_train, y_pred_train)
+    accuracy_test = accuracy_score(y_test, y_pred_test)
+
+    # Store results
+    results["loc_type"].append(loc_type)
+    results["layer"].append(layer_idx)
+    results["accuracy_train"].append(accuracy_train)
+    results["accuracy_test"].append(accuracy_test)
+    results["y_test"].append(y_test)
+    results["y_pred_test"].append(y_pred_test)
+    results["probe"].append(probe)
+
+    if verbose:
+        print(f"Location: {loc_type}, Layer {layer_idx}:")
+        print(f"  Accuracy (train): {accuracy_train:.4f}")
+        print(f"  Accuracy (test): {accuracy_test:.4f}")
+        print()
+
+
 def train_logistic_regression_probes(
     acts_dataset: Dict,
     locs_to_probe: Dict[str, int],
@@ -197,32 +232,15 @@ def train_logistic_regression_probes(
                 test_data, locs_to_probe[loc_type], layer_idx, embeddings_in_acts
             )
 
-            # Train the logistic regression probe
-            probe = LogisticRegression(random_state=seed, max_iter=1000)
-            probe.fit(X_train, y_train)
-
-            # Make predictions
-            y_pred_train = probe.predict(X_train)
-            y_pred_test = probe.predict(X_test)
-
-            # Calculate metrics
-            accuracy_train = accuracy_score(y_train, y_pred_train)
-            accuracy_test = accuracy_score(y_test, y_pred_test)
-
-            # Store results
-            results["loc_type"].append(loc_type)
-            results["layer"].append(layer_idx)
-            results["accuracy_train"].append(accuracy_train)
-            results["accuracy_test"].append(accuracy_test)
-            results["y_test"].append(y_test)
-            results["y_pred_test"].append(y_pred_test)
-            results["probe"].append(probe)
-
-            if verbose:
-                print(f"Location: {loc_type}, Layer {layer_idx}:")
-                print(f"  Accuracy (train): {accuracy_train:.4f}")
-                print(f"  Accuracy (test): {accuracy_test:.4f}")
-                print()
+            train_logistic_regression_probe(
+                X_train=X_train,
+                y_train=y_train,
+                X_test=X_test,
+                y_test=y_test,
+                results=results,
+                seed=seed,
+                verbose=verbose,
+            )
 
     df_results = pd.DataFrame(results)
     return df_results
