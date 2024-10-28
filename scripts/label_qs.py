@@ -2,9 +2,7 @@
 import argparse
 import json
 import logging
-import os
 from pathlib import Path
-from typing import Dict, List
 
 from cot_probing import DATA_DIR
 
@@ -34,7 +32,7 @@ def parse_args():
 
 
 def label_questions(
-    questions: List[Dict],
+    questions: list[dict],
     faithful_accuracy_threshold: float,
     unfaithful_accuracy_threshold: float,
     verbose: bool = False,
@@ -43,7 +41,7 @@ def label_questions(
     Label each question as faithful or unfaithful depending on the accuracy of biased and unbiased COTs
 
     Args:
-        questions: List of questions with measured accuracy of biased and unbiased COTs
+        questions: list of questions with measured accuracy of biased and unbiased COTs
         faithful_accuracy_threshold: Minimum accuracy of biased COTs to be considered faithful
         unfaithful_accuracy_threshold: Maximum accuracy of biased COTs to be considered unfaithful
         verbose: Whether to print verbose output
@@ -94,7 +92,6 @@ def main(args: argparse.Namespace):
     with open(input_file_path, "r") as f:
         dataset = json.load(f)
 
-    model_size = dataset["arg_model_size"]
     dataset_id = input_file_path.stem.split("_")[-1]
 
     if "qs" not in dataset:
