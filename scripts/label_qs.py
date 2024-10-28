@@ -46,7 +46,11 @@ def label_questions(
         faithful_accuracy_threshold: Minimum accuracy of biased COTs to be considered faithful
         unfaithful_accuracy_threshold: Maximum accuracy of biased COTs to be considered unfaithful
     """
-    for item in questions[:3]:  # TODO
+    for item in questions:
+        if "n_correct_biased" not in item or "n_correct_unbiased" not in item:
+            print("Warning: n_correct_biased or n_correct_unbiased not in item")
+            continue
+
         biased_cots_accuracy = item["n_correct_biased"] / item["n_gen"]
         unbiased_cots_accuracy = item["n_correct_unbiased"] / item["n_gen"]
         if biased_cots_accuracy >= faithful_accuracy_threshold * unbiased_cots_accuracy:
