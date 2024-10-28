@@ -1,3 +1,5 @@
+from transformers import StaticCache
+
 from cot_probing.typing import *
 
 
@@ -6,6 +8,7 @@ def clean_run_with_cache(
     input_ids: list[int],
     locs_to_cache: dict[str, tuple[int | None, int | None]],
     collect_embeddings: bool = False,
+    past_key_values: Optional[tuple] = None,
 ) -> dict[str, list[Float[torch.Tensor, " locs model"]]]:
     resid_acts_by_layer_by_locs = {loc_type: [] for loc_type in locs_to_cache.keys()}
 
@@ -36,7 +39,11 @@ def clean_run_with_cache(
                 continue
             hooks.append(module.register_forward_hook(layer_hook_fn))
     try:
-        model(torch.tensor([input_ids]).cuda())
+        with torch.inference_mode():
+            model(
+                torch.tensor([input_ids]).cuda(),
+                past_key_values=past_key_values,
+            )
     finally:
         for hook in hooks:
             hook.remove()
