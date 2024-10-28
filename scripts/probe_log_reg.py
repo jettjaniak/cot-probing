@@ -93,7 +93,6 @@ def train_logistic_regression_probes(
     acts_dataset: Dict,
     locs_to_probe: Dict[str, int],
     layers_to_probe: List[int],
-    embeddings_in_acts: bool = False,
     test_ratio: float = 0.2,
     seed: int = 42,
     verbose: bool = False,
@@ -121,10 +120,14 @@ def train_logistic_regression_probes(
         for layer_idx in layers_to_probe:
 
             X_train, y_train = get_probe_data(
-                train_data, locs_to_probe[loc_type], layer_idx, embeddings_in_acts
+                train_data,
+                locs_to_probe[loc_type],
+                layer_idx,
             )
             X_test, y_test = get_probe_data(
-                test_data, locs_to_probe[loc_type], layer_idx, embeddings_in_acts
+                test_data,
+                locs_to_probe[loc_type],
+                layer_idx,
             )
 
             train_logistic_regression_probe(
@@ -174,7 +177,6 @@ def main(args: argparse.Namespace):
         locs_to_probe=locs_to_probe,
         layers_to_probe=layers_to_probe,
         test_ratio=args.test_ratio,
-        embeddings_in_acts=acts_dataset["arg_collect_embeddings"],
         seed=args.seed,
         verbose=args.verbose,
     )
@@ -190,7 +192,7 @@ def main(args: argparse.Namespace):
         pickle.dump(ret, f)
 
     if args.verbose:
-        df_results = pd.DataFrame(results)
+        df_results = pd.DataFrame(probing_results)
         for loc_type in locs_to_probe.keys():
             # Sort and print layers by lowest mse_test for this loc_type
             df_loc = df_results[df_results["loc_type"] == loc_type]

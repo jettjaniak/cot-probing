@@ -2,6 +2,7 @@
 from typing import Dict, List
 
 import numpy as np
+import torch
 from transformers import PreTrainedModel, PreTrainedTokenizerBase
 
 from cot_probing.utils import to_str_tokens
@@ -79,15 +80,22 @@ def get_probe_data(
     y = []
 
     for data in data_list:
-        for biased_cot_acts in data["cached_acts"]:  # One per each biased_cot
-            cached_loc_keys = ["last_question_tokens"]
-            for cached_loc_key in cached_loc_keys:
-                acts = biased_cot_acts[cached_loc_key][
-                    layer_idx
-                ]  # List of size biased_cots. Each item is a tensor of shape [seq len, d_model].
+        cached_acts_by_layer = data["cached_acts"]
+        cached_acts = cached_acts_by_layer[layer_idx]
 
-                X.append(np.array(acts[loc_pos].float().numpy()))
+        if isinstance(cached_acts, list):
+            # We have one list of acts per biased_cot. I.e., biased_cots_collection_mode in ["all", "one"]
+            # cached_acts is a list of size biased_cots. Each item is a tensor of shape [seq len, d_model].
+            for biased_cot_acts in cached_acts:
+                X.append(np.array(biased_cot_acts[loc_pos].float().numpy()))
                 y.append(data["biased_cot_label"])
+        elif isinstance(cached_acts, torch.Tensor):
+            # We have one acts tensor for all biased_cots. I.e., biased_cots_collection_mode in ["none"]
+            # Shape is [seq len, d_model]
+            X.append(np.array(cached_acts[loc_pos].float().numpy()))
+            y.append(data["biased_cot_label"])
+        else:
+            raise ValueError("Unknown cached_acts format")
 
     X = np.array(X)
     y = np.array(y)
