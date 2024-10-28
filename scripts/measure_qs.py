@@ -26,22 +26,40 @@ def generate_cots(
     max_new_tokens: int,
     n_gen: int,
     temp: float,
+    seed: int,
 ) -> list[list[int]]:
     # TODO: batching
-    past_key_values = copy.deepcopy(fsp_cache)
+    # past_key_values = copy.deepcopy(fsp_cache)
     ret = []
     with torch.inference_mode():
-        for _ in range(n_gen):
-            response = model.generate(
-                input_ids=torch.tensor([fsp_toks + question_toks]).to("cuda"),
-                max_new_tokens=max_new_tokens,
-                do_sample=True,
-                temperature=temp,
-                tokenizer=tokenizer,
-                stop_strings=["Answer:"],
-                pad_token_id=tokenizer.eos_token_id,
-                past_key_values=past_key_values,
-            )[0, len(fsp_toks) :].tolist()
+        # for _ in range(n_gen):
+        #     response = model.generate(
+        #         input_ids=torch.tensor([fsp_toks + question_toks]).to("cuda"),
+        #         max_new_tokens=max_new_tokens,
+        #         do_sample=True,
+        #         temperature=temp,
+        #         tokenizer=tokenizer,
+        #         stop_strings=["Answer:"],
+        #         pad_token_id=tokenizer.eos_token_id,
+        #         past_key_values=past_key_values,
+        #     )[0, len(fsp_toks) :].tolist()
+        #     if tokenizer.eos_token_id in response:
+        #         response = response[: response.index(tokenizer.eos_token_id)]
+        #     ret.append(response)
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed(seed)
+        responses = model.generate(
+            input_ids=torch.tensor([fsp_toks + question_toks]).to("cuda"),
+            max_new_tokens=max_new_tokens,
+            do_sample=True,
+            temperature=temp,
+            tokenizer=tokenizer,
+            stop_strings=["Answer:"],
+            pad_token_id=tokenizer.eos_token_id,
+            use_cache=True,
+            num_return_sequences=n_gen,
+        )[:, len(fsp_toks) :].tolist()
+        for response in responses:
             if tokenizer.eos_token_id in response:
                 response = response[: response.index(tokenizer.eos_token_id)]
             ret.append(response)
@@ -153,6 +171,7 @@ def process_question(
         max_new_tokens=args.max_new_tokens,
         n_gen=args.n_gen,
         temp=args.temp,
+        seed=args.seed,
     )
     bia_fsp_cache = yes_fsp_cache if q["expected_answer"] == "yes" else no_fsp_cache
     bia_fsp_toks = yes_fsp_toks if q["expected_answer"] == "yes" else no_fsp_toks
@@ -165,6 +184,7 @@ def process_question(
         max_new_tokens=args.max_new_tokens,
         n_gen=args.n_gen,
         temp=args.temp,
+        seed=args.seed,
     )
     q["n_gen"] = args.n_gen
     q["n_correct_unbiased"] = sum(
