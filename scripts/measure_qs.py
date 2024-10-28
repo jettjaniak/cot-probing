@@ -37,7 +37,7 @@ def generate_cots(
             use_cache=True,
             num_return_sequences=n_gen,
             tokenizer=tokenizer,
-            stop_strings=["Answer: Yes", "Answer: No"],
+            stop_strings=["Answer:"],
             pad_token_id=tokenizer.eos_token_id,
         )
         responses = output[:, prompt_len:].tolist()
