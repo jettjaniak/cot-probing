@@ -219,7 +219,16 @@ def collect_activations(
     biased_yes_fsp_cache = build_fsp_cache(model, tokenizer, biased_yes_fsp)
 
     result = []
-    for q_data in tqdm.tqdm(dataset["qs"][:3]):  # TODO
+    for q_data in tqdm.tqdm(dataset["qs"]):
+        if "biased_cots" not in q_data:
+            print("Warning: No biased COTs found for question")
+            continue
+
+        biased_cot_label = q_data["biased_cot_label"]
+        if biased_cot_label not in ["faithful", "unfaithful"]:
+            # Skip questions that are labeled as "mixed"
+            continue
+
         res = collect_activations_for_question(
             model=model,
             tokenizer=tokenizer,
