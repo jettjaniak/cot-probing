@@ -20,6 +20,7 @@ from transformers import (
 
 from cot_probing import DATA_DIR
 from cot_probing.activations import clean_run_with_cache
+from cot_probing.utils import load_model_and_tokenizer
 
 
 def parse_args():
@@ -53,21 +54,6 @@ def parse_args():
     )
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
     return parser.parse_args()
-
-
-def load_model_and_tokenizer(
-    model_size: str,
-) -> Tuple[PreTrainedModel, PreTrainedTokenizerBase]:
-    assert model_size in [8, 70]
-    model_id = f"hugging-quants/Meta-Llama-3.1-{model_size}B-BNB-NF4-BF16"
-    tokenizer = AutoTokenizer.from_pretrained(model_id)
-    model = AutoModelForCausalLM.from_pretrained(
-        model_id,
-        torch_dtype=torch.bfloat16,
-        low_cpu_mem_usage=True,
-        device_map="cuda",
-    )
-    return model, tokenizer
 
 
 def build_fsp_cache(

@@ -9,19 +9,14 @@ from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
-import torch
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
 from sklearn.model_selection import train_test_split
-from transformers import (
-    AutoModelForCausalLM,
-    AutoTokenizer,
-    PreTrainedModel,
-    PreTrainedTokenizerBase,
-)
+from transformers import PreTrainedModel, PreTrainedTokenizerBase
 
 from cot_probing import DATA_DIR
-from cot_probing.utils import to_str_tokens
+from cot_probing.probing import get_locs_to_probe, get_probe_data, split_dataset
+from cot_probing.utils import load_model_and_tokenizer
 
 
 def parse_args():
@@ -56,116 +51,16 @@ def parse_args():
     return parser.parse_args()
 
 
-def load_model_and_tokenizer(
-    model_size: str,
-) -> Tuple[PreTrainedModel, PreTrainedTokenizerBase]:
-    assert model_size in [8, 70]
-    model_id = f"hugging-quants/Meta-Llama-3.1-{model_size}B-BNB-NF4-BF16"
-    tokenizer = AutoTokenizer.from_pretrained(model_id)
-    model = AutoModelForCausalLM.from_pretrained(
-        model_id,
-        torch_dtype=torch.bfloat16,
-        low_cpu_mem_usage=True,
-        device_map="cuda",
-    )
-    return model, tokenizer
-
-
-def get_locs_to_probe(tokenizer: PreTrainedTokenizerBase) -> Dict[str, int]:
-    last_part_of_last_question = "?\nLet's think step by step:\n-"
-    last_part_of_last_question_tokens = tokenizer.encode(
-        last_part_of_last_question, add_special_tokens=False
-    )
-    str_tokens = to_str_tokens(last_part_of_last_question_tokens, tokenizer)
-
-    locs_to_probe = {}
-    loc = -1
-    for str_token in reversed(str_tokens):
-        loc_key = f"loc_{loc}_{str_token}"
-        locs_to_probe[loc_key] = loc
-        loc -= 1
-
-    return locs_to_probe
-
-
-def split_dataset(
-    acts_dataset: List[Dict],
-    test_ratio: float = 0.2,
-    verbose: bool = False,
-):
-    # Split the dataset into faithful and unfaithful
-    faithful_data = [
-        item for item in acts_dataset if item["biased_cot_label"] == "faithful"
-    ]
-    unfaithful_data = [
-        item for item in acts_dataset if item["biased_cot_label"] == "unfaithful"
-    ]
-    assert len(faithful_data) > 0, "No faithful data found"
-    assert len(unfaithful_data) > 0, "No unfaithful data found"
-
-    if verbose:
-        print(f"Faithful data size: {len(faithful_data)}")
-        print(f"Unfaithful data size: {len(unfaithful_data)}")
-
-    # Discard data to have balanced train and test sets
-    min_num_data = min(len(faithful_data), len(unfaithful_data))
-    faithful_data = faithful_data[:min_num_data]
-    unfaithful_data = unfaithful_data[:min_num_data]
-
-    if verbose:
-        print(f"Faithful data size after discarding: {len(faithful_data)}")
-        print(f"Unfaithful data size after discarding: {len(unfaithful_data)}")
-
-    # Split the data into train and test sets
-    train_data = (
-        faithful_data[: int(len(faithful_data) * (1 - test_ratio))]
-        + unfaithful_data[: int(len(unfaithful_data) * (1 - test_ratio))]
-    )
-    test_data = (
-        faithful_data[int(len(faithful_data) * (1 - test_ratio)) :]
-        + unfaithful_data[int(len(unfaithful_data) * (1 - test_ratio)) :]
-    )
-
-    if verbose:
-        print(f"Train data size: {len(train_data)}")
-        print(f"Test data size: {len(test_data)}")
-
-    return train_data, test_data
-
-
-def get_probe_data(
-    data_list: List[Dict],
-    loc_pos: int,
-    layer_idx: int,
-    embeddings_in_acts: bool = False,
-):
-    X = []
-    y = []
-
-    for data in data_list:
-        for biased_cot_acts in data["cached_acts"]:  # One per each biased_cot
-            cached_loc_keys = ["last_question_tokens"]
-            for cached_loc_key in cached_loc_keys:
-                acts = biased_cot_acts[cached_loc_key][
-                    layer_idx
-                ]  # List of size biased_cots. Each item is a tensor of shape [seq len, d_model].
-
-                X.append(np.array(acts[loc_pos].float().numpy()))
-                y.append(data["biased_cot_label"])
-
-    X = np.array(X)
-    y = np.array(y)
-
-    return X, y
-
-
 def train_logistic_regression_probe(
+    loc_type: str,
+    layer_idx: int,
     X_train: np.ndarray,
     y_train: np.ndarray,
     X_test: np.ndarray,
     y_test: np.ndarray,
     results: Dict,
     seed: int = 42,
+    verbose: bool = False,
 ):
     probe = LogisticRegression(random_state=seed, max_iter=1000)
     probe.fit(X_train, y_train)
@@ -233,6 +128,8 @@ def train_logistic_regression_probes(
             )
 
             train_logistic_regression_probe(
+                loc_type=loc_type,
+                layer_idx=layer_idx,
                 X_train=X_train,
                 y_train=y_train,
                 X_test=X_test,

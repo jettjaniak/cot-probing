@@ -1,7 +1,13 @@
 import json
 import random
+from typing import Tuple
 
-from transformers import PreTrainedTokenizerBase
+from transformers import (
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    PreTrainedModel,
+    PreTrainedTokenizerBase,
+)
 
 from cot_probing import DATA_DIR
 from cot_probing.typing import *
@@ -17,6 +23,21 @@ def load_task_data(task_name: str) -> tuple[str, str, list[dict]]:
         question_dicts = json.load(f)["data"]
 
     return baseline_fsp, alla_fsp, question_dicts
+
+
+def load_model_and_tokenizer(
+    model_size: int,
+) -> Tuple[PreTrainedModel, PreTrainedTokenizerBase]:
+    assert model_size in [8, 70]
+    model_id = f"hugging-quants/Meta-Llama-3.1-{model_size}B-BNB-NF4-BF16"
+    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    model = AutoModelForCausalLM.from_pretrained(
+        model_id,
+        torch_dtype=torch.bfloat16,
+        low_cpu_mem_usage=True,
+        device_map="cuda",
+    )
+    return model, tokenizer
 
 
 def get_train_test_split(
