@@ -4,6 +4,7 @@ import json
 import logging
 import os
 from pathlib import Path
+from typing import Dict, List
 
 from cot_probing import DATA_DIR
 
@@ -62,42 +63,45 @@ def label_questions(
 def main(args: argparse.Namespace):
     logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING)
 
-    input_file_path = args.file
-    if not os.path.exists(input_file_path):
+    input_file_path = Path(args.file)
+    if not input_file_path.exists():
         raise FileNotFoundError(f"File not found at {input_file_path}")
 
-    if not input_file_path.startswith("measured_qs"):
+    input_file_name = input_file_path.name
+    if not input_file_name.startswith("measured_qs_"):
         raise ValueError(
-            f"Input file must start with 'measured_qs', got {input_file_path}"
+            f"Input file name must start with 'measured_qs_', got {input_file_name}"
         )
 
-    model_size = input_file_path.split("_")[2]
+    with open(input_file_path, "r") as f:
+        dataset = json.load(f)
+
+    model_size = dataset["arg_model_size"]
     dataset_id = input_file_path.split("_")[3]
 
-    with open(input_file_path, "r") as f:
-        measured_questions_dataset = json.load(f)
-
-    if "qs" not in measured_questions_dataset:
+    if "qs" not in dataset:
         raise ValueError("Dataset must contain 'qs' key")
 
     faithful_accuracy_threshold = args.faithful_accuracy_threshold
     unfaithful_accuracy_threshold = args.unfaithful_accuracy_threshold
     label_questions(
-        questions=measured_questions_dataset["qs"],
+        questions=dataset["qs"],
         faithful_accuracy_threshold=faithful_accuracy_threshold,
         unfaithful_accuracy_threshold=unfaithful_accuracy_threshold,
     )
+    dataset["arg_faithful_accuracy_threshold"] = faithful_accuracy_threshold
+    dataset["arg_unfaithful_accuracy_threshold"] = unfaithful_accuracy_threshold
 
     if args.verbose:
         print(
-            f"Labeled {sum(item['biased_cot_label'] == 'faithful' for item in measured_questions_dataset['qs'])} faithful, {sum(item['biased_cot_label'] == 'unfaithful' for item in measured_questions_dataset['qs'])} unfaithful, and {sum(item['biased_cot_label'] == 'mixed' for item in measured_questions_dataset['qs'])} mixed questions"
+            f"Labeled {sum(item['biased_cot_label'] == 'faithful' for item in dataset['qs'])} faithful, {sum(item['biased_cot_label'] == 'unfaithful' for item in dataset['qs'])} unfaithful, and {sum(item['biased_cot_label'] == 'mixed' for item in dataset['qs'])} mixed questions"
         )
 
-    output_file_name = f"labeled_qs_{model_size}_{dataset_id}_{unfaithful_accuracy_threshold}_{faithful_accuracy_threshold}.json"
+    output_file_name = f"labeled_qs_{dataset_id}.json"
     output_file_path = DATA_DIR / output_file_name
 
     with open(output_file_path, "w") as f:
-        json.dump(labeled_dataset, f, indent=2)
+        json.dump(dataset, f, indent=2)
 
 
 if __name__ == "__main__":
