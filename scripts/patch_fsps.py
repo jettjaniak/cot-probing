@@ -7,6 +7,7 @@ import torch
 from tqdm.auto import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+from cot_probing import DATA_DIR
 from cot_probing.swapping import SuccessfulSwap, process_successful_swaps
 from cot_probing.typing import *
 
@@ -30,7 +31,9 @@ def process_swaps(
             }
             cache = swap.get_cache(model, pos_by_layer_cache)
             fsp_patch_results = (
-                swap.patch_fsps(model, tokenizer, cache, layer_batch_size)
+                swap.patch_fsps_all_layers_batch(
+                    model, tokenizer, cache, layer_batch_size
+                )
                 if cache is not None
                 else None
             )
@@ -52,15 +55,17 @@ def main(args):
     )
     # get rid of the warning early
     model(torch.tensor([[tokenizer.bos_token_id]]).cuda())
-
+    seed_i = int(args.swap_results_path.stem.split("_seed_i_")[1].split("_")[0])
     successful_swaps_by_q = process_successful_swaps(
         responses_path=args.responses_path,
         swap_results_path=args.swap_results_path,
         tokenizer=tokenizer,
+        seed_i=seed_i,
     )
 
-    output_path = Path(
-        f"fsp_patch_results_{args.model_size}B_LB{args.layer_batch_size}__{args.responses_path.stem}__{args.swap_results_path.stem}.pkl"
+    output_path = (
+        DATA_DIR
+        / f"fsp_patch_results_{args.model_size}B_LB{args.layer_batch_size}__{args.responses_path.stem}__{args.swap_results_path.stem}.pkl"
     )
     process_swaps(
         successful_swaps_by_q, model, tokenizer, args.layer_batch_size, output_path

@@ -217,19 +217,19 @@ class PatchedLogitsProbs:
 
     @property
     def logit_diff_change_bia_to_unb(self):
-        return self.unb.logit_diff - self.bia_to_unb.logit_diff
+        return self.bia_to_unb.logit_diff - self.unb.logit_diff
 
     @property
     def logit_diff_change_unb_to_bia(self):
-        return self.bia.logit_diff - self.unb_to_bia.logit_diff
+        return self.unb_to_bia.logit_diff - self.bia.logit_diff
 
     @property
     def prob_diff_change_bia_to_unb(self):
-        return self.unb.prob_diff - self.bia_to_unb.prob_diff
+        return self.bia_to_unb.prob_diff - self.unb.prob_diff
 
     @property
     def prob_diff_change_unb_to_bia(self):
-        return self.bia.prob_diff - self.unb_to_bia.prob_diff
+        return self.unb_to_bia.prob_diff - self.bia.prob_diff
 
 
 def get_patched_logits_probs(

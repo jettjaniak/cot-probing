@@ -99,6 +99,11 @@ class SuccessfulSwap:
         all_q_pos = self.get_all_q_pos(tokenizer)
         begin = all_q_pos[fsp_idx]
         end = all_q_pos[fsp_idx + 1]
+        unb_fsp = self.unb_prompt[begin:end]
+        bia_fsp = self.bia_prompt[begin:end]
+        logging.debug(
+            f"fsp {fsp_idx}:\nunb:\n`{tokenizer.decode(unb_fsp)}`\nbia:\n`{tokenizer.decode(bia_fsp)}`"
+        )
         pos_by_layer = {l: list(range(begin, end)) for l in layers}
         return get_patched_logits_probs(model, cache, pos_by_layer)
 
@@ -126,7 +131,7 @@ class SuccessfulSwap:
         separate = self.patch_every_fsp_separately(model, tokenizer, cache, layers)
         return LayersFspPatchResult(together=together, separate=separate)
 
-    def patch_fsps(
+    def patch_fsps_all_layers_batch(
         self,
         model: PreTrainedModel,
         tokenizer: PreTrainedTokenizerBase,
@@ -139,6 +144,20 @@ class SuccessfulSwap:
             layer_batch = list(range(i, i + layer_batch_size))
             ret[tuple(layer_batch)] = self.patch_fsps_selected_layers(
                 model, tokenizer, cache, layer_batch
+            )
+        return ret
+
+    def patch_fsps_single_selected_layers(
+        self,
+        model: PreTrainedModel,
+        tokenizer: PreTrainedTokenizerBase,
+        cache: Cache,
+        layers: list[int],
+    ) -> dict[tuple[int, ...], LayersFspPatchResult]:
+        ret = {}
+        for layer in layers:
+            ret[(layer,)] = self.patch_fsps_selected_layers(
+                model, tokenizer, cache, [layer]
             )
         return ret
 
@@ -533,11 +552,14 @@ def process_successful_swaps_single_q(
 
 
 def process_successful_swaps(
-    responses_path: Path, swap_results_path: Path, tokenizer: PreTrainedTokenizerBase
+    responses_path: Path,
+    swap_results_path: Path,
+    tokenizer: PreTrainedTokenizerBase,
+    seed_i: int,
 ) -> list[list[SuccessfulSwap]]:
     with open(responses_path, "rb") as f:
         responses_by_seed = pickle.load(f)
-    seed = next(iter(responses_by_seed.keys()))
+    seed = list(responses_by_seed.keys())[seed_i]
     responses_by_answer_by_ctx_by_q = responses_by_seed[seed]
     all_combinations = generate_all_combinations(seed=seed)
 
