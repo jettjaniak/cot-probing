@@ -59,7 +59,7 @@ def get_last_q_toks_to_cache(
     tokenizer: PreTrainedTokenizerBase,
     question: str,
     expected_answer: Literal["yes", "no"],
-    biased_cots: list[str],
+    biased_cots: list[dict],
     biased_cot_label: Literal["faithful", "unfaithful"],
     biased_cots_collection_mode: Literal["none", "one", "all"],
 ):
