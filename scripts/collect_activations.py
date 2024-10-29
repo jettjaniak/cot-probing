@@ -88,6 +88,12 @@ def get_last_q_toks_to_cache(
         len(biased_cots) > 0
     ), f"No biased COTs found that match the biased CoT label {biased_cot_label}"
 
+    # Assert all biased COTs have the question. This is due to a bug in the measure_qs script.
+    for cot in biased_cots:
+        assert cot["cot"].startswith(
+            question
+        ), f"Biased COT {cot['cot']} does not start with question {question}"
+
     # Decide the answer token to cache based on the biased cot answer
     yes_tok = tokenizer.encode(" Yes", add_special_tokens=False)
     no_tok = tokenizer.encode(" No", add_special_tokens=False)
@@ -105,9 +111,9 @@ def get_last_q_toks_to_cache(
         biased_cot_indexes_to_cache = list(range(len(biased_cots)))
 
     input_ids_to_cache = [
-        question_toks
-        + tokenizer.encode(biased_cots[i]["cot"], add_special_tokens=False)
-        + answer_tok
+        # Don't include the question tokens since they are already in the biased CoT due to a bug in the measure_qs script
+        # question_toks +
+        tokenizer.encode(biased_cots[i]["cot"], add_special_tokens=False) + answer_tok
         for i in biased_cot_indexes_to_cache
     ]
 
