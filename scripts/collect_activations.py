@@ -64,7 +64,7 @@ def get_last_q_toks_to_cache(
     biased_cots_collection_mode: Literal["none", "one", "all"],
 ):
     """May or may not include the CoT tokens"""
-    question_toks = tokenizer.encode(question)
+    question_toks = tokenizer.encode(question, add_special_tokens=False)
     if biased_cots_collection_mode == "none":
         # Don't collect activations for biased COTs
         return [question_toks]
