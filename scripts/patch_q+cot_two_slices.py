@@ -69,7 +69,7 @@ def main(args):
 
     output_path = (
         DATA_DIR
-        / f"q+cot_patch_results_{args.model_size}B_LB{args.layer_batch_size}__{args.responses_path.stem}__{args.swap_results_path.stem}.pkl"
+        / f"q+cot_two_slices_patch_results_{args.model_size}B_LB{args.layer_batch_size}__{args.responses_path.stem}__{args.swap_results_path.stem}.pkl"
     )
     process_swaps(
         successful_swaps_by_q,
@@ -102,9 +102,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "-l", "--layer-batch-size", type=int, help="Batch size for processing layers"
     )
-    parser.add_argument(
-        "-i", "--slice-idx", type=int, help="Index of the slice to patch"
-    )
+    parser.add_argument("--slice-idx", type=int, help="Index of the slice to patch")
     args = parser.parse_args()
 
     main(args)
