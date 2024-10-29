@@ -154,11 +154,42 @@ class SuccessfulSwap:
         tokenizer: PreTrainedTokenizerBase,
         cache: Cache,
         layers: list[int],
-    ) -> dict[tuple[int, ...], LayersFspPatchResult]:
+    ) -> dict[tuple[int, ...], list[PatchedLogitsProbs]]:
         ret = {}
         for layer in layers:
             ret[(layer,)] = self.patch_fsps_selected_layers(
                 model, tokenizer, cache, [layer]
+            )
+        return ret
+
+    def patch_q_and_cot_selected_layers(
+        self,
+        model: PreTrainedModel,
+        tokenizer: PreTrainedTokenizerBase,
+        cache: Cache,
+        layers: list[int],
+    ) -> list[PatchedLogitsProbs]:
+        last_q_pos = self.get_last_q_pos(tokenizer)
+        ret = []
+        for seq_pos in range(last_q_pos, len(self.get_input_ids_bia())):
+            pos_by_layer = {l: [seq_pos] for l in layers}
+            ret.append(get_patched_logits_probs(model, cache, pos_by_layer))
+        return ret
+
+    def patch_q_and_cot_all_layers_batch(
+        self,
+        model: PreTrainedModel,
+        tokenizer: PreTrainedTokenizerBase,
+        cache: Cache,
+        layer_batch_size: int,
+    ) -> dict[tuple[int, ...], list[PatchedLogitsProbs]]:
+        n_layers = model.config.num_hidden_layers
+        layers = list(range(0, n_layers + 1))
+        ret = {}
+        for i in range(0, n_layers + 1, layer_batch_size):
+            layer_batch = layers[i : i + layer_batch_size]
+            ret[tuple(layer_batch)] = self.patch_q_and_cot_selected_layers(
+                model, tokenizer, cache, layer_batch
             )
         return ret
 
