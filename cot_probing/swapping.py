@@ -139,9 +139,10 @@ class SuccessfulSwap:
         layer_batch_size: int,
     ) -> dict[tuple[int, ...], LayersFspPatchResult]:
         n_layers = model.config.num_hidden_layers
+        layers = list(range(0, n_layers + 1))
         ret = {}
         for i in range(0, n_layers + 1, layer_batch_size):
-            layer_batch = list(range(i, i + layer_batch_size))
+            layer_batch = layers[i : i + layer_batch_size]
             ret[tuple(layer_batch)] = self.patch_fsps_selected_layers(
                 model, tokenizer, cache, layer_batch
             )
