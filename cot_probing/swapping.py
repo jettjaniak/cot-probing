@@ -10,6 +10,7 @@ from cot_probing.patching import (
     get_patched_logits_probs,
 )
 from cot_probing.typing import *
+from cot_probing.utils import find_sublist
 
 
 @dataclass
@@ -29,6 +30,24 @@ class QuestionSwapResults:
 class LayersFspPatchResult:
     together: PatchedLogitsProbs
     separate: list[PatchedLogitsProbs]
+
+
+@dataclass
+class InputIdsPositions:
+    question_colon: list[int]
+    toks_of_question: list[int]
+    qmark_newline: list[int]
+    ltsbs_newline_dash: list[int]
+    reasoning: list[int]
+    last_three: list[int]
+
+    def __post_init__(self):
+        assert len(self.question_colon) == 2
+        assert self.question_colon[-1] + 1 == self.toks_of_question[0]
+        assert self.toks_of_question[-1] + 1 == self.qmark_newline[0]
+        assert self.qmark_newline[-1] + 1 == self.ltsbs_newline_dash[0]
+        assert self.ltsbs_newline_dash[-1] + 1 == self.reasoning[0]
+        assert self.reasoning[-1] + 1 == self.last_three[0]
 
 
 @dataclass
@@ -55,6 +74,48 @@ class SuccessfulSwap:
         last_q_pos = len(self.unb_prompt) - 1 - self.unb_prompt[::-1].index(q_tok)
         assert self.unb_prompt[last_q_pos] == self.bia_prompt[last_q_pos] == q_tok
         return last_q_pos
+
+    def get_input_ids_positions(
+        self, tokenizer: PreTrainedTokenizerBase
+    ) -> InputIdsPositions:
+        input_ids = self.get_input_ids_unb()
+        last_q_pos = self.get_last_q_pos(tokenizer)
+        qmark_newline_tok = tokenizer.encode("?\n", add_special_tokens=False)
+        assert len(qmark_newline_tok) == 1
+        qmark_newline_tok = qmark_newline_tok[0]
+        qmark_newline_shift = input_ids[last_q_pos:].index(qmark_newline_tok)
+        assert qmark_newline_shift is not None
+        qmark_newline_pos = last_q_pos + qmark_newline_shift
+        ltsbs_start_pos = qmark_newline_pos + 1
+        colon_newline_tok = tokenizer.encode(":\n", add_special_tokens=False)
+        assert len(colon_newline_tok) == 1
+        colon_newline_tok = colon_newline_tok[0]
+        colon_newline_shift = input_ids[ltsbs_start_pos:].index(colon_newline_tok)
+        assert colon_newline_shift is not None
+        colon_newline_pos = ltsbs_start_pos + colon_newline_shift
+        dash_pos = colon_newline_pos + 1
+        reasoning_start_pos = dash_pos + 1
+        last_three_start_pos = max(reasoning_start_pos + 1, len(input_ids) - 3)
+
+        ret = InputIdsPositions(
+            question_colon=list(range(last_q_pos, last_q_pos + 2)),
+            toks_of_question=list(range(last_q_pos + 2, qmark_newline_pos)),
+            qmark_newline=[qmark_newline_pos],
+            ltsbs_newline_dash=list(range(ltsbs_start_pos, dash_pos + 1)),
+            reasoning=list(range(dash_pos + 1, last_three_start_pos)),
+            last_three=list(range(last_three_start_pos, len(input_ids))),
+        )
+        question_colon_str = tokenizer.decode(
+            input_ids[ret.question_colon[0] : ret.question_colon[-1] + 1]
+        )
+        assert question_colon_str == "Question:"
+        qmark_newline_str = tokenizer.decode(input_ids[ret.qmark_newline[0]])
+        assert qmark_newline_str == "?\n"
+        ltsbs_newline_dash_str = tokenizer.decode(
+            input_ids[ret.ltsbs_newline_dash[0] : ret.ltsbs_newline_dash[-1] + 1]
+        )
+        assert ltsbs_newline_dash_str == "Let's think step by step:\n-"
+        return ret
 
     def get_all_q_pos(self, tokenizer: PreTrainedTokenizerBase) -> list[int]:
         _, q_tok = tokenizer.encode("Question")
@@ -225,6 +286,46 @@ class SuccessfulSwap:
             layer_batch = layers[i : i + layer_batch_size]
             ret[tuple(layer_batch)] = self.patch_q_and_cot_two_slices_selected_layers(
                 model, tokenizer, cache, layer_batch, slice_idx
+            )
+        return ret
+
+    def patch_q_and_cot_groups_selected_layers(
+        self,
+        model: PreTrainedModel,
+        tokenizer: PreTrainedTokenizerBase,
+        cache: Cache,
+        layers: list[int],
+    ) -> dict[str, PatchedLogitsProbs]:
+        last_q_pos = self.get_last_q_pos(tokenizer)
+        ret = []
+        iip = self.get_input_ids_positions(tokenizer)
+        ret = {}
+        for attr in [
+            "question_colon",
+            "toks_of_question",
+            "qmark_newline",
+            "ltsbs_newline_dash",
+            "reasoning",
+            "last_three",
+        ]:
+            pos_by_layer = {l: getattr(iip, attr) for l in layers}
+            ret[attr] = get_patched_logits_probs(model, cache, pos_by_layer)
+        return ret
+
+    def patch_q_and_cot_groups_all_layers_batch(
+        self,
+        model: PreTrainedModel,
+        tokenizer: PreTrainedTokenizerBase,
+        cache: Cache,
+        layer_batch_size: int,
+    ) -> dict[tuple[int, ...], dict[str, PatchedLogitsProbs]]:
+        n_layers = model.config.num_hidden_layers
+        layers = list(range(0, n_layers + 1))
+        ret = {}
+        for i in range(0, n_layers + 1, layer_batch_size):
+            layer_batch = layers[i : i + layer_batch_size]
+            ret[tuple(layer_batch)] = self.patch_q_and_cot_groups_selected_layers(
+                model, tokenizer, cache, layer_batch
             )
         return ret
 

@@ -62,3 +62,10 @@ def to_str_tokens(
         str_token.replace("Ġ", " ").replace("Ċ", "\\n")
         for str_token in tokenizer.convert_ids_to_tokens(input_ids)
     ]
+
+
+def find_sublist(haystack: list[int], needle: list[int]) -> int | None:
+    for i in range(len(haystack) - len(needle) + 1):
+        if haystack[i : i + len(needle)] == needle:
+            return i
+    return None
