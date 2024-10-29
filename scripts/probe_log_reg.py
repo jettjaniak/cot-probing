@@ -62,7 +62,7 @@ def train_logistic_regression_probe(
     seed: int = 42,
     verbose: bool = False,
 ):
-    probe = LogisticRegression(random_state=seed, max_iter=1000)
+    probe = LogisticRegression(random_state=seed, max_iter=10_000)
     probe.fit(X_train, y_train)
 
     # Make predictions
@@ -91,7 +91,7 @@ def train_logistic_regression_probe(
 
 def train_logistic_regression_probes(
     acts_dataset: Dict,
-    locs_to_probe: Dict[str, int],
+    tokenizer: PreTrainedTokenizerBase,
     layers_to_probe: List[int],
     test_ratio: float = 0.2,
     seed: int = 42,
@@ -101,9 +101,38 @@ def train_logistic_regression_probes(
         acts_dataset=acts_dataset["qs"], test_ratio=test_ratio, verbose=verbose
     )
 
+    dash_tok = tokenizer.encode("-", add_special_tokens=False)[0]
+    max_steps = max(
+        len(
+            [
+                tok
+                for i, tok in enumerate(cached_tokens)
+                if tok == dash_tok
+                and tokenizer.decode(cached_tokens[i - 1]).endswith("\n")
+            ]
+        )
+        for q_data in acts_dataset["qs"]
+        for cached_tokens in q_data["biased_cots_tokens_to_cache"]
+    )
+
     # Shuffle the data
     random.shuffle(train_data)
     random.shuffle(test_data)
+
+    # We need to build the probe locations after shuffling the data
+    train_data_locs_to_probe = get_locs_to_probe(
+        tokenizer=tokenizer,
+        qs_data=train_data,
+        max_steps=max_steps,
+        biased_cots_collection_mode=acts_dataset["arg_biased_cots_collection_mode"],
+    )
+    test_data_locs_to_probe = get_locs_to_probe(
+        tokenizer=tokenizer,
+        qs_data=test_data,
+        max_steps=max_steps,
+        biased_cots_collection_mode=acts_dataset["arg_biased_cots_collection_mode"],
+    )
+    assert train_data_locs_to_probe.keys() == test_data_locs_to_probe.keys()
 
     results = {
         "loc_type": [],
@@ -116,19 +145,29 @@ def train_logistic_regression_probes(
     }
 
     # Train and evaluate logistic regression probes for each layer and loc_type
-    for loc_type in locs_to_probe.keys():
+    for loc_type in train_data_locs_to_probe.keys():
         for layer_idx in layers_to_probe:
-
             X_train, y_train = get_probe_data(
-                train_data,
-                locs_to_probe[loc_type],
-                layer_idx,
+                data_list=train_data,
+                loc_pos=train_data_locs_to_probe[loc_type],
+                layer_idx=layer_idx,
+                biased_cots_collection_mode=acts_dataset[
+                    "arg_biased_cots_collection_mode"
+                ],
             )
             X_test, y_test = get_probe_data(
-                test_data,
-                locs_to_probe[loc_type],
-                layer_idx,
+                data_list=test_data,
+                loc_pos=test_data_locs_to_probe[loc_type],
+                layer_idx=layer_idx,
+                biased_cots_collection_mode=acts_dataset[
+                    "arg_biased_cots_collection_mode"
+                ],
             )
+
+            # Check if y_train and y_test have data from both classes
+            if len(np.unique(y_train)) < 2 or len(np.unique(y_test)) < 2:
+                # Skip this loc_type and layer_idx if there is no data from both classes for train and test
+                continue
 
             train_logistic_regression_probe(
                 loc_type=loc_type,
@@ -170,11 +209,9 @@ def main(args: argparse.Namespace):
     else:
         layers_to_probe = list(range(model.config.num_hidden_layers))
 
-    locs_to_probe = get_locs_to_probe(tokenizer)
-
     probing_results = train_logistic_regression_probes(
         acts_dataset=acts_dataset,
-        locs_to_probe=locs_to_probe,
+        tokenizer=tokenizer,
         layers_to_probe=layers_to_probe,
         test_ratio=args.test_ratio,
         seed=args.seed,
@@ -193,7 +230,7 @@ def main(args: argparse.Namespace):
 
     if args.verbose:
         df_results = pd.DataFrame(probing_results)
-        for loc_type in locs_to_probe.keys():
+        for loc_type in df_results["loc_type"].unique():
             # Sort and print layers by lowest mse_test for this loc_type
             df_loc = df_results[df_results["loc_type"] == loc_type]
             df_loc = df_loc.sort_values(by="accuracy_test", ascending=False)

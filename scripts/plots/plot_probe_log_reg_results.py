@@ -48,13 +48,48 @@ def parse_args():
 
 
 def plot_accuracy_by_layer_and_loc_type(df_results: pd.DataFrame, images_dir: Path):
-    # Pivot the DataFrame to create a 2D matrix of accuracy_test value
+    # Define the order of columns based on locs_to_probe
+    ordered_columns = [
+        "loc_q_tok",
+        "loc_colon_after_q_tok",
+        "loc_question",
+        "loc_question_mark_new_line_tok",
+        "loc_let_tok",
+        "loc_'s_tok",
+        "loc_think_tok",
+        "loc_first_step_tok",
+        "loc_by_tok",
+        "loc_second_step_tok",
+        "loc_colon_new_line_tok",
+    ]
+    
+    # Add the step locations in order
+    for i in range(8):  # max_steps = 8
+        ordered_columns.extend([
+            f"loc_cot_step_{i}_dash",
+            f"loc_cot_step_{i}_reasoning",
+            f"loc_cot_step_{i}_newline_tok",
+        ])
+    
+    # Add the final answer locations
+    ordered_columns.extend([
+        "loc_answer_tok",
+        "loc_answer_colon_tok",
+        "loc_actual_answer_tok",
+    ])
+
+    # Pivot the DataFrame to create a 2D matrix of accuracy_test values
     pivot_df = df_results.pivot(
         index="layer", columns="loc_type", values="accuracy_test"
     )
+    
+    # Reorder the columns according to our defined order
+    # Only include columns that exist in the pivot_df
+    ordered_columns = [col for col in ordered_columns if col in pivot_df.columns]
+    pivot_df = pivot_df[ordered_columns]
 
     # Create the heatmap
-    plt.figure(figsize=(12, 8))
+    plt.figure(figsize=(20, 10))
     sns.heatmap(
         pivot_df,
         cmap="viridis_r",
