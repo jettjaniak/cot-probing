@@ -1,0 +1,230 @@
+# %%
+%load_ext autoreload
+%autoreload 2
+
+# %%
+from cot_probing.swapping import (
+    SuccessfulSwap,
+    PatchedLogitsProbs,
+)
+from cot_probing import DATA_DIR
+from cot_probing.typing import *
+from transformers import AutoTokenizer
+import pickle
+from tqdm.auto import tqdm, trange
+
+swaps_path = DATA_DIR / f"swaps_with-unbiased-cots-oct28-1156.pkl"
+with open(swaps_path, "rb") as f:
+    swaps_dict = pickle.load(f)
+swaps_dicts_list = swaps_dict["qs"]
+swaps_by_q = [swap_dict["swaps"] for swap_dict in swaps_dicts_list]
+
+patch_res_path = (
+    DATA_DIR / f"partial_patch_new_res_8B_LB33__swaps_with-unbiased-cots-oct28-1156.pkl"
+)
+with open(patch_res_path, "rb") as f:
+    patch_results_by_swap_by_q = pickle.load(f)
+
+model_id = "hugging-quants/Meta-Llama-3.1-8B-BNB-NF4-BF16"
+tokenizer = AutoTokenizer.from_pretrained(model_id)
+
+# %%
+for i, (swaps, patch_results_by_swap) in enumerate(
+    zip(swaps_by_q, patch_results_by_swap_by_q)
+):
+    print(f"q_idx: {i}: {len(swaps)} swaps")
+
+# %%
+import matplotlib.pyplot as plt
+
+
+def plot_heatmap(values, title, labels, fai_tok_str, unfai_tok_str):
+    plt.imshow(
+        values,
+        cmap="RdBu",
+        origin="lower",
+        vmin=-max(abs(np.min(values)), abs(np.max(values))),
+        vmax=max(abs(np.min(values)), abs(np.max(values))),
+    )
+    plt.title(f"{title} for `{fai_tok_str}` -> `{unfai_tok_str}`")
+    plt.colorbar()
+    plt.xticks(range(len(labels)), labels, rotation=90)
+    plt.show()
+
+# %%
+def get_patch_values(
+    plp_by_group_by_layers: dict[tuple[int, ...], dict[str, PatchedLogitsProbs]],
+    prob_or_logit: Literal["prob", "logit"],
+    direction: Literal["bia_to_unb", "unb_to_bia"],
+) -> np.ndarray:
+    attr = f"{prob_or_logit}_diff_change_{direction}"
+    values = []
+    for layers, plp_by_group in plp_by_group_by_layers.items():
+        values.append([getattr(plp, attr) for plp in plp_by_group.values()])
+    return np.array(values)
+
+# %%
+from collections import Counter
+
+LOGIT_OR_PROB = "prob"
+top_pos_cnt = Counter()
+
+values_bia_to_unb_by_q_by_swap = {}
+values_unb_to_bia_by_q_by_swap = {}
+
+for q_idx, (swaps, patch_results_by_swap) in enumerate(
+    zip(swaps_by_q, patch_results_by_swap_by_q)
+):
+    print(f"{q_idx=}")
+    print()
+    swaps: list[SuccessfulSwap]
+    patch_results_by_swap: list[
+        dict[tuple[int, ...], dict[str, PatchedLogitsProbs]] | None
+    ]
+    for swap_idx, (swap, fpr_by_layers) in enumerate(zip(swaps, patch_results_by_swap)):
+        if fpr_by_layers is None:
+            continue
+        print(f"{swap_idx=}")
+        print(f"{swap.prob_diff:.2%}")
+        unfai_tok_str = tokenizer.decode(swap.unfai_tok).replace("\n", "\\n")
+        fai_tok_str = tokenizer.decode(swap.fai_tok).replace("\n", "\\n")
+        print(f"`{fai_tok_str}` -> `{unfai_tok_str}`")
+        print()
+
+        values_bia_to_unb = get_patch_values(fpr_by_layers, LOGIT_OR_PROB, "bia_to_unb")
+        values_unb_to_bia = get_patch_values(fpr_by_layers, LOGIT_OR_PROB, "unb_to_bia")
+        values_bia_to_unb = values_bia_to_unb / values_bia_to_unb[0, -1]
+        values_unb_to_bia = values_unb_to_bia / values_unb_to_bia[0, -1]
+
+        values_bia_to_unb_by_q_by_swap[(q_idx, swap_idx)] = values_bia_to_unb
+        values_unb_to_bia_by_q_by_swap[(q_idx, swap_idx)] = values_unb_to_bia
+
+        # mean_abs_patch_values_per_tok = 0.5 * (
+        #     np.abs(values_bia_to_unb[:, 1:]).mean(0)
+        #     + np.abs(values_unb_to_bia[:, 1:]).mean(0)
+        # )
+        # top_seq_pos = mean_abs_patch_values_per_tok.argsort()[-3:]
+        # print(f"{top_seq_pos=}")
+        q_tok = tokenizer.encode("Question", add_special_tokens=False)[0]
+        last_q_idx = len(swap.unb_prompt) - 1 - swap.unb_prompt[::-1].index(q_tok)
+        last_q_str = tokenizer.decode(swap.unb_prompt[last_q_idx + 2 :])
+        trunc_cot_str = tokenizer.decode(swap.trunc_cot)
+        print(f"`{last_q_str+trunc_cot_str}`")
+        # for i, toks in enumerate(toks_in_unb_prompt):
+        #     print(f"{i}:\n`{tokenizer.decode(toks)}`")
+        groups = list(next(iter(fpr_by_layers.values())).keys())
+        # plot_heatmap(
+        #     values_bia_to_unb,
+        #     "bia_to_unb",
+        #     groups,
+        #     fai_tok_str,
+        #     unfai_tok_str,
+        # )
+        # plot_heatmap(
+        #     values_unb_to_bia,
+        #     "unb_to_bia",
+        #     groups,
+        #     fai_tok_str,
+        #     unfai_tok_str,
+        # )
+
+# %%
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
+
+# Prepare data for clustering
+X = []  # Will hold flattened tensors
+indices = []  # Will hold (q_idx, swap_idx) pairs
+
+for (q_idx, swap_idx), tensor in values_bia_to_unb_by_q_by_swap.items():
+    # Flatten the 2D tensor into a 1D array
+    flattened = tensor.flatten()
+    X.append(flattened)
+    indices.append((q_idx, swap_idx))
+
+X = np.array(X)
+indices = np.array(indices)
+
+# Standardize the features
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
+
+# Perform k-means clustering
+n_clusters = 6  # You can adjust this number
+kmeans = KMeans(n_clusters=n_clusters, random_state=45)
+cluster_labels = kmeans.fit_predict(X_scaled)
+
+# Create a dictionary mapping cluster labels to their corresponding indices
+clusters = {i: [] for i in range(n_clusters)}
+for idx, label in enumerate(cluster_labels):
+    q_idx, swap_idx = indices[idx]
+    clusters[label].append((q_idx, swap_idx))
+
+# %%
+
+# Print cluster information
+for cluster_idx, members in clusters.items():
+    print(f"\nCluster {cluster_idx}: {len(members)} members")
+    # for q_idx, swap_idx in members[:5]:  # Show first 5 examples from each cluster
+    #     print(f"  Q{q_idx} Swap{swap_idx}")
+    # if len(members) > 5:
+    #     print("  ...")
+
+# Get group names from any example
+example_q_idx, example_swap_idx = next(iter(clusters[0]))
+groups = list(next(iter(patch_results_by_swap_by_q[example_q_idx][example_swap_idx].values())).keys())
+
+# Visualize cluster centers with group names
+for i in range(n_clusters):
+    plt.figure(figsize=(10, 6))
+    center = kmeans.cluster_centers_[i].reshape(values_bia_to_unb.shape)
+    plt.imshow(center, cmap='RdBu')
+    plt.title(f'Cluster {i} Center')
+    plt.colorbar()
+    plt.xticks(range(len(groups)), groups, rotation=90)
+    plt.yticks(range(center.shape[0]), [f'L{i}' for i in range(center.shape[0])])
+    plt.tight_layout()
+    plt.show()
+
+# %%
+# Plot examples from each cluster
+n_examples = 1  # Number of examples to show from each cluster
+
+for cluster_idx, members in clusters.items():
+    print(f"\n=== Cluster {cluster_idx} Examples ===")
+
+    random.shuffle(members)
+    
+    # Take up to n_examples from this cluster
+    for q_idx, swap_idx in members[:n_examples]:
+        # Get the original swap and its values
+        swap = swaps_by_q[q_idx][swap_idx]
+        values = values_bia_to_unb_by_q_by_swap[(q_idx, swap_idx)]
+        
+        # Get token strings for the title
+        unfai_tok_str = tokenizer.decode(swap.unfai_tok).replace("\n", "\\n")
+        fai_tok_str = tokenizer.decode(swap.fai_tok).replace("\n", "\\n")
+        
+        # Extract the question text
+        q_tok = tokenizer.encode("Question", add_special_tokens=False)[0]
+        last_q_idx = len(swap.unb_prompt) - 1 - swap.unb_prompt[::-1].index(q_tok)
+        question_text = tokenizer.decode(swap.unb_prompt[last_q_idx + 2:])
+        trunc_cot_text = tokenizer.decode(swap.trunc_cot)
+        
+        # Print swap information
+        print(f"\nQ{q_idx} Swap{swap_idx}")
+        print(f"Q and CoT: {question_text+trunc_cot_text}")
+        print(f"Prob diff: {swap.prob_diff:.2%}")
+        print(f"`{fai_tok_str}` -> `{unfai_tok_str}`")
+        
+        # Plot the heatmap
+        groups = list(next(iter(patch_results_by_swap_by_q[q_idx][swap_idx].values())).keys())
+        plot_heatmap(
+            values,
+            f"Cluster {cluster_idx}",
+            groups,
+            fai_tok_str,
+            unfai_tok_str,
+        )
+
+# %%
