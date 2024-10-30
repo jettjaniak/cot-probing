@@ -19,8 +19,6 @@ from cot_probing.probing import get_locs_to_probe, get_probe_data, split_dataset
 from cot_probing.utils import load_model_and_tokenizer
 
 
-
-
 def parse_args():
     parser = argparse.ArgumentParser(description="Train logistic regression probes")
     parser.add_argument(
@@ -164,7 +162,9 @@ def run_steering_experiment(
         # Measure unbiased accuracy of the CoT's produced
 
         unbiased_fsp_with_question = f"{unbiased_fsp}\n\n{question_to_answer}"
-        tokenized_unbiased_fsp_with_question = tokenizer.encode(unbiased_fsp_with_question)
+        tokenized_unbiased_fsp_with_question = tokenizer.encode(
+            unbiased_fsp_with_question
+        )
 
         unsteered_unbiased_answers = {
             "yes": [],
@@ -201,9 +201,9 @@ def run_steering_experiment(
             )
             pos_steering_unbiased_answers[answer].append(cot)
 
-        pos_steering_accuracy = len(pos_steering_unbiased_answers[expected_answer]) / len(
-            positive_steered_responses
-        )
+        pos_steering_accuracy = len(
+            pos_steering_unbiased_answers[expected_answer]
+        ) / len(positive_steered_responses)
         # print(f"Positive steering accuracy: {pos_steering_accuracy:.4f}")
 
         neg_steering_unbiased_answers = {
@@ -221,9 +221,9 @@ def run_steering_experiment(
             )
             neg_steering_unbiased_answers[answer].append(cot)
 
-        neg_steering_accuracy = len(neg_steering_unbiased_answers[expected_answer]) / len(
-            negative_steered_responses
-        )
+        neg_steering_accuracy = len(
+            neg_steering_unbiased_answers[expected_answer]
+        ) / len(negative_steered_responses)
         # print(f"Negative steering accuracy: {neg_steering_accuracy:.4f}")
 
         res = {
@@ -289,4 +289,4 @@ def main(args: argparse.Namespace):
 
 
 if __name__ == "__main__":
-    main(parse_args())`
+    main(parse_args())

@@ -8,7 +8,7 @@ from tqdm.auto import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from cot_probing import DATA_DIR
-from cot_probing.swapping import SuccessfulSwap, process_successful_swaps
+from cot_probing.swapping import SuccessfulSwap
 from cot_probing.typing import *
 
 
