@@ -20,7 +20,7 @@ swaps_dicts_list = swaps_dict["qs"]
 swaps_by_q = [swap_dict["swaps"] for swap_dict in swaps_dicts_list]
 
 patch_res_path = (
-    DATA_DIR / f"partial_patch_new_res_8B_LB33__swaps_with-unbiased-cots-oct28-1156.pkl"
+    DATA_DIR / f"patch_new_res_8B_LB33__swaps_with-unbiased-cots-oct28-1156.pkl"
 )
 with open(patch_res_path, "rb") as f:
     patch_results_by_swap_by_q = pickle.load(f)
@@ -150,7 +150,7 @@ scaler = StandardScaler()
 X_scaled = scaler.fit_transform(X)
 
 # Perform k-means clustering
-n_clusters = 3  # You can adjust this number
+n_clusters = 10  # You can adjust this number
 kmeans = KMeans(n_clusters=n_clusters, random_state=45)
 cluster_labels = kmeans.fit_predict(X_scaled)
 
@@ -159,6 +159,9 @@ clusters = {i: [] for i in range(n_clusters)}
 for idx, label in enumerate(cluster_labels):
     q_idx, swap_idx = indices[idx]
     clusters[label].append((q_idx, swap_idx))
+
+# Sort clusters by size
+clusters = dict(sorted(clusters.items(), key=lambda x: len(x[1]), reverse=True))
 
 # %%
 
@@ -170,28 +173,119 @@ for cluster_idx, members in clusters.items():
     # if len(members) > 5:
     #     print("  ...")
 
-# Get group names from any example
-example_q_idx, example_swap_idx = next(iter(clusters[0]))
-groups = list(next(iter(patch_results_by_swap_by_q[example_q_idx][example_swap_idx].values())).keys())
+# %% Compute means of each cluster
 
-# Visualize cluster centers with group names
-for i in range(n_clusters):
-    plt.figure(figsize=(10, 6))
-    center = kmeans.cluster_centers_[i].reshape(values_bia_to_unb.shape)
-    plt.imshow(center, cmap='RdBu')
-    plt.title(f'Cluster {i} Center')
-    plt.colorbar()
-    plt.xticks(range(len(groups)), groups, rotation=90)
-    plt.yticks(range(center.shape[0]), [f'L{i}' for i in range(center.shape[0])])
-    plt.tight_layout()
-    plt.show()
+centers = []
+for cluster_idx, members in clusters.items():
+    center = np.mean(
+        [values_bia_to_unb_by_q_by_swap[(q_idx, swap_idx)] for q_idx, swap_idx in members],
+        axis=0,
+    )
+    centers.append(center)
 
 # %%
-# Plot examples from each cluster
-n_examples = 1  # Number of examples to show from each cluster
 
+groups = ['question_colon', 'toks_of_question', 'qmark_newline', 'ltsbs_newline_dash', 'reasoning', 'last_three']
+
+def get_group_idx(group_name: str) -> int:
+    return groups.index(group_name)
+
+# Assign names to each cluster
+both_important_idxs = []
+ltsbs_important_idxs = []
+reasoning_important_idxs = []
+only_last_three_important_idxs = []
+other_idxs = []
+
+almost_zero_threshold = 0.25
+
+for (q_idx, swap_idx), values_bia_to_unb in values_bia_to_unb_by_q_by_swap.items():
+    assert values_bia_to_unb.shape == (1, len(groups))
+    v = np.abs(values_bia_to_unb[0])
+
+    max_first_three_groups = max(v[:3])
+    if max_first_three_groups >= almost_zero_threshold:
+        other_idxs.append((q_idx, swap_idx))
+        continue
+
+    ltsbs_score = v[3]
+    reasoning_score = v[4]
+    last_three_score = v[5]
+    if max(ltsbs_score, reasoning_score) < last_three_score/4:
+        only_last_three_important_idxs.append((q_idx, swap_idx))
+        continue
+
+    if ltsbs_score > reasoning_score * 2:
+        ltsbs_important_idxs.append((q_idx, swap_idx))
+        continue
+
+    if reasoning_score > ltsbs_score * 2:
+        reasoning_important_idxs.append((q_idx, swap_idx))
+        continue
+
+    bigger = max(ltsbs_score, reasoning_score)
+    smaller = min(ltsbs_score, reasoning_score)
+
+    if bigger / smaller < 1.5:
+        both_important_idxs.append((q_idx, swap_idx))
+        continue
+
+    other_idxs.append((q_idx, swap_idx))
+
+# print size of each type
+print(f"both_important_idxs: {len(both_important_idxs)}")
+print(f"ltsbs_important_idxs: {len(ltsbs_important_idxs)}")
+print(f"reasoning_important_idxs: {len(reasoning_important_idxs)}")
+print(f"only_last_three_important_idxs: {len(only_last_three_important_idxs)}")
+print(f"other_idxs: {len(other_idxs)}")
+
+# %% 
+
+for type in [both_important_idxs, ltsbs_important_idxs, reasoning_important_idxs, only_last_three_important_idxs, other_idxs]:
+    item_idx = random.randint(0, len(type) - 1)
+    q_idx, swap_idx = type[item_idx]
+    values = values_bia_to_unb_by_q_by_swap[(q_idx, swap_idx)]
+    type_str = "both_important" if type == both_important_idxs else "ltsbs_important" if type == ltsbs_important_idxs else "reasoning_important" if type == reasoning_important_idxs else "only_last_three_important" if type == only_last_three_important_idxs else "other"
+    plot_heatmap(
+        values,
+        f"{type_str}",
+        groups,
+        "",
+        "",
+)
+
+
+# %%
+
+
+
+# Visualize cluster centers with group names
 for cluster_idx, members in clusters.items():
-    print(f"\n=== Cluster {cluster_idx} Examples ===")
+    plot_heatmap(
+        centers[cluster_idx],
+        f'Cluster {cluster_idx} Center',
+        groups,
+        "",
+        "",
+    )
+
+# %%
+
+# Take mean of examples in each cluster
+# for cluster_idx, members in clusters.items():
+#     mean_values = np.mean(
+#         [values_bia_to_unb_by_q_by_swap[(q_idx, swap_idx)] for q_idx, swap_idx in members],
+#         axis=0,
+#     )
+#     print(f"Cluster {cluster_idx} mean values: {mean_values}")
+
+#     center = kmeans.cluster_centers_[cluster_idx]
+#     print(f"Cluster {cluster_idx} center: {center}")
+
+# %%
+
+def show_cluster_examples(cluster_idx: int, n_examples: int = 1):
+    members = clusters[cluster_idx]
 
     random.shuffle(members)
     
@@ -228,3 +322,14 @@ for cluster_idx, members in clusters.items():
         )
 
 # %%
+# Plot examples from each cluster
+n_examples = 1  # Number of examples to show from each cluster
+
+for cluster_idx, members in clusters.items():
+    print(f"\n=== Cluster {cluster_idx} Examples ===")
+
+    show_cluster_examples(cluster_idx, n_examples)
+
+# %%
+
+show_cluster_examples(3, 20)
