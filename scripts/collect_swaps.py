@@ -72,8 +72,8 @@ def process_single_cot(
     swap_dir: Literal["fai_to_unfai", "unfai_to_fai"],
 ) -> SuccessfulSwap | None:
     # cot includes question + ltsbs + "\n-" + CoT + "\nAnswer:"
-    assert q_and_cot_str.endswith("Answer:")
-    assert q_and_cot_str.startswith("Question")
+    assert q_and_cot_str.endswith("Answer:"), q_and_cot_str
+    assert q_and_cot_str.startswith("Question"), q_and_cot_str
 
     q_and_cot_toks = tokenizer.encode(q_and_cot_str, add_special_tokens=False)
 
@@ -160,12 +160,16 @@ def collect_swaps_for_question(
 
     # Filter biased COTs based on the expected answer (unfaithful questions only)
     biased_cots_dict_list = [
-        cot for cot in biased_cots_dict_list if cot["answer"] != expected_answer
+        cot
+        for cot in biased_cots_dict_list
+        if cot["answer"] != expected_answer and cot["answer"] != "other"
     ]
 
     # Filter unbiased COTs based on the expected answer
     unbiased_cots_dict_list = [
-        cot for cot in unbiased_cots_dict_list if cot["answer"] == expected_answer
+        cot
+        for cot in unbiased_cots_dict_list
+        if cot["answer"] == expected_answer and cot["answer"] != "other"
     ]
 
     # Choose the biased FSP based on the expected answer
