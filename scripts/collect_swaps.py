@@ -3,9 +3,8 @@ import argparse
 import copy
 import json
 import logging
-import os
 import pickle
-import random
+from functools import partial
 from pathlib import Path
 
 import torch
@@ -13,7 +12,6 @@ from tqdm.auto import tqdm
 from transformers import PreTrainedModel, PreTrainedTokenizerBase
 
 from cot_probing import DATA_DIR
-from cot_probing.activations import collect_resid_acts_with_pastkv
 from cot_probing.swapping import SuccessfulSwap
 from cot_probing.typing import *
 from cot_probing.utils import find_sublist, load_model_and_tokenizer
@@ -31,8 +29,8 @@ def parse_args():
         "-t",
         "--probe-diff-threshold",
         type=float,
-        default=0.2,
-        help="Probe diff threshold to truncate COTs. Defaults to 0.2.",
+        default=0.1,
+        help="Probe diff threshold to truncate COTs.",
     )
 
     # argument for probe diff threshold
@@ -62,50 +60,83 @@ def build_fsp_cache(
         return model(fsp_input_ids).past_key_values
 
 
-def get_last_q_toks_to_cache(
+def process_single_cot(
+    model: PreTrainedModel,
     tokenizer: PreTrainedTokenizerBase,
-    question: str,
-    expected_answer: Literal["yes", "no"],
-    biased_cots: list[dict],
-    biased_cot_label: Literal["faithful", "unfaithful"],
-):
-    """May or may not include the CoT tokens"""
-    question_toks = tokenizer.encode(question, add_special_tokens=False)
+    q_and_cot_str: str,
+    unbiased_fsp_toks: list[int],
+    biased_fsp_toks: list[int],
+    unbiased_fsp_cache: tuple,
+    biased_fsp_cache: tuple,
+    prob_diff_threshold: float,
+    swap_dir: Literal["fai_to_unfai", "unfai_to_fai"],
+) -> SuccessfulSwap | None:
+    # cot includes question + ltsbs + "\n-" + CoT + "\nAnswer:"
+    assert q_and_cot_str.endswith("Answer:")
+    assert q_and_cot_str.startswith("Question")
 
-    assert (
-        len(biased_cots) > 0
-    ), f"No biased COTs found that match the biased CoT label {biased_cot_label}"
+    q_and_cot_toks = tokenizer.encode(q_and_cot_str, add_special_tokens=False)
 
-    # Assert all biased COTs have the question. This is due to a bug in the measure_qs script.
-    for cot in biased_cots:
-        assert cot["cot"].startswith(
-            question
-        ), f"Biased COT {cot['cot']} does not start with question {question}"
+    # Figure out the position of the start of the CoT
+    ltsbs_tok = tokenizer.encode(
+        "Let's think step by step:\n-", add_special_tokens=False
+    )
+    ltsbs_idx = find_sublist(q_and_cot_toks, ltsbs_tok)
+    assert ltsbs_idx is not None
+    cot_start_pos = ltsbs_idx + len(ltsbs_tok)
+    q_toks = q_and_cot_toks[:cot_start_pos]
 
-    # Decide the answer token to cache based on the biased cot answer
-    yes_tok = tokenizer.encode(" Yes", add_special_tokens=False)
-    no_tok = tokenizer.encode(" No", add_special_tokens=False)
-    if biased_cot_answer == "yes":
-        answer_tok = yes_tok
-    else:
-        answer_tok = no_tok
+    # Get the logits for the CoT
+    unb_logits = (
+        model(
+            torch.tensor([q_and_cot_toks]).cuda(),
+            past_key_values=copy.deepcopy(unbiased_fsp_cache),
+        )
+        .logits[0, cot_start_pos - 1 : -1]
+        .cpu()
+    )
 
-    biased_cot_indexes_to_cache = []
-    if biased_cots_collection_mode == "one":
-        # Pick one random biased COT
-        biased_cot_indexes_to_cache = [random.randint(0, len(biased_cots) - 1)]
-    elif biased_cots_collection_mode == "all":
-        # Collect activations for all biased COTs
-        biased_cot_indexes_to_cache = list(range(len(biased_cots)))
+    bia_logits = (
+        model(
+            torch.tensor([q_and_cot_toks]).cuda(),
+            past_key_values=copy.deepcopy(biased_fsp_cache),
+        )
+        .logits[0, cot_start_pos - 1 : -1]
+        .cpu()
+    )
 
-    input_ids_to_cache = [
-        # Don't include the question tokens since they are already in the biased CoT due to a bug in the measure_qs script
-        # question_toks +
-        tokenizer.encode(biased_cots[i]["cot"], add_special_tokens=False) + answer_tok
-        for i in biased_cot_indexes_to_cache
-    ]
+    # Compute the probabilities
+    unb_probs = torch.softmax(unb_logits, dim=-1)
+    bia_probs = torch.softmax(bia_logits, dim=-1)
 
-    return input_ids_to_cache
+    # Compute the probability difference, shape (seq_len, vocab_size)
+    prob_diff = unb_probs - bia_probs
+
+    prob_diff_max_values, prob_diff_max_indices = prob_diff.max(dim=-1)
+    prob_diff_min_values, prob_diff_min_indices = prob_diff.min(dim=-1)
+
+    thresh_mask = (prob_diff_max_values > prob_diff_threshold) & (
+        prob_diff_min_values < -prob_diff_threshold
+    )
+    if not thresh_mask.any():
+        return None
+
+    trunc_pos = int(torch.arange(len(thresh_mask))[thresh_mask][0].item())
+    prob_diff = float(prob_diff_max_values[trunc_pos] - prob_diff_min_values[trunc_pos])
+    assert prob_diff >= 2 * prob_diff_threshold
+    fai_tok = int(prob_diff_max_indices[trunc_pos].item())
+    unfai_tok = int(prob_diff_min_indices[trunc_pos].item())
+    trunc_cot = q_and_cot_toks[cot_start_pos : cot_start_pos + trunc_pos]
+
+    return SuccessfulSwap(
+        unb_prompt=unbiased_fsp_toks + q_toks,
+        bia_prompt=biased_fsp_toks + q_toks,
+        trunc_cot=trunc_cot,
+        fai_tok=fai_tok,
+        unfai_tok=unfai_tok,
+        prob_diff=prob_diff,
+        swap_dir=swap_dir,
+    )
 
 
 def collect_swaps_for_question(
@@ -124,14 +155,18 @@ def collect_swaps_for_question(
     assert question.endswith("by step:\n-"), question
 
     expected_answer = q_data["expected_answer"]
-    biased_cots = q_data["biased_cots"]
-    unbiased_cots = q_data["unbiased_cots"]
+    biased_cots_dict_list = q_data["biased_cots"]
+    unbiased_cots_dict_list = q_data["unbiased_cots"]
 
     # Filter biased COTs based on the expected answer (unfaithful questions only)
-    biased_cots = [cot for cot in biased_cots if cot["answer"] != expected_answer]
+    biased_cots_dict_list = [
+        cot for cot in biased_cots_dict_list if cot["answer"] != expected_answer
+    ]
 
     # Filter unbiased COTs based on the expected answer
-    unbiased_cots = [cot for cot in unbiased_cots if cot["answer"] == expected_answer]
+    unbiased_cots_dict_list = [
+        cot for cot in unbiased_cots_dict_list if cot["answer"] == expected_answer
+    ]
 
     # Choose the biased FSP based on the expected answer
     if expected_answer == "yes":
@@ -145,76 +180,30 @@ def collect_swaps_for_question(
     biased_fsp_toks = tokenizer.encode(biased_fsp_str)
 
     swaps: list[SuccessfulSwap] = []
-    for q_and_cot_str, _ in unbiased_cots:
-        # cot includes question + ltsbs + "\n-" + CoT + "\nAnswer:"
-        assert q_and_cot_str.endswith("Answer:")
-        assert q_and_cot_str.startswith("Question")
-
-        q_and_cot_toks = tokenizer.encode(q_and_cot_str, add_special_tokens=False)
-
-        # Figure out the position of the start of the CoT
-        ltsbs_tok = tokenizer.encode(
-            "Let's think step by step:\n-", add_special_tokens=False
-        )
-        ltsbs_idx = find_sublist(q_and_cot_toks, ltsbs_tok)
-        assert ltsbs_idx is not None
-        cot_start_pos = ltsbs_idx + len(ltsbs_tok)
-        q_toks = q_and_cot_toks[:cot_start_pos]
-
-        # Get the logits for the CoT
-        unb_logits = model(
-            torch.tensor([q_and_cot_toks]).cuda(),
-            past_key_values=copy.deepcopy(unbiased_fsp_cache),
-        ).logits[
-            0, cot_start_pos - 1 : -1
-        ]  # -1 because we need logits for prediction of the first CoT token. -1 for the end of the slice so we drop the predictions after the answer
-
-        bia_logits = model(
-            torch.tensor([q_and_cot_toks]).cuda(),
-            past_key_values=copy.deepcopy(biased_fsp_cache),
-        ).logits[
-            0, cot_start_pos - 1 : -1
-        ]  # -1 because we need logits for prediction of the first CoT token. -1 for the end of the slice so we drop the predictions after the answer
-
-        # Compute the probabilities
-        unb_probs = torch.softmax(unb_logits, dim=-1)
-        bia_probs = torch.softmax(bia_logits, dim=-1)
-
-        # Compute the probability difference, shape (seq_len, vocab_size)
-        prob_diff = unb_probs - bia_probs
-
-        # values: (seq_len,), indices: (seq_len,) - they contain token ids
-        # we subtract biased from unbiased
-        # so max indices are for faithful tokens
-        prob_diff_max_values, prob_diff_max_indices = prob_diff.max(dim=-1)
-        # and min indices are for unfaithful tokens
-        prob_diff_min_values, prob_diff_min_indices = prob_diff.min(dim=-1)
-
-        thresh_mask = (prob_diff_max_values > prob_diff_threshold) & (
-            prob_diff_min_values < -prob_diff_threshold
-        )
-        if not thresh_mask.any():
-            continue
-
-        trunc_pos = torch.arange(len(thresh_mask))[thresh_mask][0].item()
-        prob_diff = prob_diff_max_values[trunc_pos] - prob_diff_min_values[trunc_pos]
-        prob_diff = prob_diff.item()
-        assert prob_diff >= 2 * prob_diff_threshold
-        fai_tok = prob_diff_max_indices[trunc_pos].item()
-        unf_tok = prob_diff_min_indices[trunc_pos].item()
-        trunc_cot = q_and_cot_toks[cot_start_pos : cot_start_pos + trunc_pos]
-
-        swap = SuccessfulSwap(
-            unb_prompt=unbiased_fsp_toks + q_toks,
-            bia_prompt=biased_fsp_toks + q_toks,
-            trunc_cot=trunc_cot,
-            fai_tok=fai_tok,
-            unfai_tok=unf_tok,
-            prob_diff=prob_diff,
+    partial_process_single_cot = partial(
+        process_single_cot,
+        model=model,
+        tokenizer=tokenizer,
+        unbiased_fsp_toks=unbiased_fsp_toks,
+        biased_fsp_toks=biased_fsp_toks,
+        unbiased_fsp_cache=unbiased_fsp_cache,
+        biased_fsp_cache=biased_fsp_cache,
+        prob_diff_threshold=prob_diff_threshold,
+    )
+    for unbiased_cot_dict in unbiased_cots_dict_list:
+        swap = partial_process_single_cot(
+            q_and_cot_str=unbiased_cot_dict["cot"],
             swap_dir="fai_to_unfai",
         )
-
-        swaps.append(swap)
+        if swap is not None:
+            swaps.append(swap)
+    for biased_cot_dict in biased_cots_dict_list:
+        swap = partial_process_single_cot(
+            q_and_cot_str=biased_cot_dict["cot"],
+            swap_dir="unfai_to_fai",
+        )
+        if swap is not None:
+            swaps.append(swap)
 
     return {"question": question, "expected_answer": expected_answer, "swaps": swaps}
 
@@ -225,9 +214,9 @@ def collect_swaps(
     dataset: dict,
     prob_diff_threshold: float,
 ):
-    unbiased_fsp = dataset["unbiased_fsp"] + "\n\n"
-    biased_no_fsp = dataset["biased_no_fsp"] + "\n\n"
-    biased_yes_fsp = dataset["biased_yes_fsp"] + "\n\n"
+    unbiased_fsp = dataset["unbiased_fsp"]
+    biased_no_fsp = dataset["biased_no_fsp"]
+    biased_yes_fsp = dataset["biased_yes_fsp"]
 
     # Pre-cache FSP activations
     unbiased_fsp_cache = build_fsp_cache(model, tokenizer, unbiased_fsp)
