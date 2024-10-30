@@ -203,17 +203,19 @@ def collect_swaps_for_question(
         fai_tok = prob_diff_max_indices[trunc_pos].item()
         unf_tok = prob_diff_min_indices[trunc_pos].item()
         trunc_cot = q_and_cot_toks[cot_start_pos : cot_start_pos + trunc_pos]
-        swaps.append(
-            SuccessfulSwap(
-                unb_prompt=unbiased_fsp_toks + q_toks,
-                bia_prompt=biased_fsp_toks + q_toks,
-                trunc_cot=trunc_cot,
-                fai_tok=fai_tok,
-                unfai_tok=unf_tok,
-                prob_diff=prob_diff,
-                swap_dir="fai_to_unfai",
-            )
+
+        swap = SuccessfulSwap(
+            unb_prompt=unbiased_fsp_toks + q_toks,
+            bia_prompt=biased_fsp_toks + q_toks,
+            trunc_cot=trunc_cot,
+            fai_tok=fai_tok,
+            unfai_tok=unf_tok,
+            prob_diff=prob_diff,
+            swap_dir="fai_to_unfai",
         )
+
+        swaps.append(swap)
+
     return {"question": question, "expected_answer": expected_answer, "swaps": swaps}
 
 
@@ -250,8 +252,11 @@ def collect_swaps(
         res = collect_swaps_for_question(
             model=model,
             tokenizer=tokenizer,
-            prob_diff_threshold=prob_diff_threshold,
             q_data=q_data,
+            prob_diff_threshold=prob_diff_threshold,
+            unbiased_fsp_str=unbiased_fsp,
+            biased_no_fsp_str=biased_no_fsp,
+            biased_yes_fsp_str=biased_yes_fsp,
             unbiased_fsp_cache=unbiased_fsp_cache,
             biased_no_fsp_cache=biased_no_fsp_cache,
             biased_yes_fsp_cache=biased_yes_fsp_cache,
@@ -279,7 +284,7 @@ def main(args: argparse.Namespace):
     model_size = labeled_questions_dataset["arg_model_size"]
     model, tokenizer = load_model_and_tokenizer(model_size)
 
-    acts_results = collect_swaps(
+    swaps_results = collect_swaps(
         model=model,
         tokenizer=tokenizer,
         dataset=labeled_questions_dataset,
@@ -291,7 +296,7 @@ def main(args: argparse.Namespace):
         unbiased_fsp=labeled_questions_dataset["unbiased_fsp"],
         biased_no_fsp=labeled_questions_dataset["biased_no_fsp"],
         biased_yes_fsp=labeled_questions_dataset["biased_yes_fsp"],
-        qs=acts_results,
+        qs=swaps_results,
         arg_model_size=model_size,
         **{f"arg_{k}": v for k, v in vars(args).items() if k not in skip_args},
     )
