@@ -93,8 +93,8 @@ for q_idx, (swaps, patch_results_by_swap) in enumerate(
 
         values_bia_to_unb = get_patch_values(fpr_by_layers, LOGIT_OR_PROB, "bia_to_unb")
         values_unb_to_bia = get_patch_values(fpr_by_layers, LOGIT_OR_PROB, "unb_to_bia")
-        values_bia_to_unb = values_bia_to_unb / values_bia_to_unb[0, -1]
-        values_unb_to_bia = values_unb_to_bia / values_unb_to_bia[0, -1]
+        values_bia_to_unb = values_bia_to_unb / np.abs(values_bia_to_unb[0]).max()
+        values_unb_to_bia = values_unb_to_bia / np.abs(values_unb_to_bia[0]).max()
 
         values_bia_to_unb_by_q_by_swap[(q_idx, swap_idx)] = values_bia_to_unb
         values_unb_to_bia_by_q_by_swap[(q_idx, swap_idx)] = values_unb_to_bia
@@ -150,7 +150,7 @@ scaler = StandardScaler()
 X_scaled = scaler.fit_transform(X)
 
 # Perform k-means clustering
-n_clusters = 6  # You can adjust this number
+n_clusters = 3  # You can adjust this number
 kmeans = KMeans(n_clusters=n_clusters, random_state=45)
 cluster_labels = kmeans.fit_predict(X_scaled)
 
