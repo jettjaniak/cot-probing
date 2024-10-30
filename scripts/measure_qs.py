@@ -187,11 +187,17 @@ def process_question(
         seed=args.seed,
     )
     q["n_gen"] = args.n_gen
-    q["n_correct_unbiased"] = sum(
-        categorize_response_cache(model, tokenizer, unb_fsp_cache, cot)
-        == q["expected_answer"]
-        for cot in unb_cots
-    )
+
+    n_correct_unb = 0
+    ret_unbiased_cots = []
+    for unb_cot_tok in unb_cots:
+        unb_cot_str = tokenizer.decode(unb_cot_tok, skip_special_tokens=True)
+        answer = categorize_response_cache(model, tokenizer, unb_fsp_cache, unb_cot_tok)
+        n_correct_unb += answer == q["expected_answer"]
+        ret_unbiased_cots.append(dict(cot=unb_cot_str, answer=answer))
+    q["n_correct_unbiased"] = n_correct_unb
+    q["unbiased_cots"] = ret_unbiased_cots
+
     n_correct_bia = 0
     ret_biased_cots = []
     for biased_cot_tok in biased_cots:
@@ -203,6 +209,7 @@ def process_question(
         ret_biased_cots.append(dict(cot=biased_cot_str, answer=answer))
     q["n_correct_biased"] = n_correct_bia
     q["biased_cots"] = ret_biased_cots
+
     # from the LLM-generated question file
     if "unbiased_responses" in q:
         del q["unbiased_responses"]
