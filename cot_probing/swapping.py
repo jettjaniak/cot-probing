@@ -46,8 +46,11 @@ class InputIdsPositions:
         assert self.question_colon[-1] + 1 == self.toks_of_question[0]
         assert self.toks_of_question[-1] + 1 == self.qmark_newline[0]
         assert self.qmark_newline[-1] + 1 == self.ltsbs_newline_dash[0]
-        assert self.ltsbs_newline_dash[-1] + 1 == self.reasoning[0]
-        assert self.reasoning[-1] + 1 == self.last_three[0]
+        if self.reasoning:
+            assert self.ltsbs_newline_dash[-1] + 1 == self.reasoning[0]
+            assert self.reasoning[-1] + 1 == self.last_three[0]
+        else:
+            assert self.ltsbs_newline_dash[-1] + 1 >= self.last_three[0]
 
 
 @dataclass
@@ -95,14 +98,14 @@ class SuccessfulSwap:
         colon_newline_pos = ltsbs_start_pos + colon_newline_shift
         dash_pos = colon_newline_pos + 1
         reasoning_start_pos = dash_pos + 1
-        last_three_start_pos = max(reasoning_start_pos + 1, len(input_ids) - 3)
+        last_three_start_pos = max(0, len(input_ids) - 3)
 
         ret = InputIdsPositions(
             question_colon=list(range(last_q_pos, last_q_pos + 2)),
             toks_of_question=list(range(last_q_pos + 2, qmark_newline_pos)),
             qmark_newline=[qmark_newline_pos],
-            ltsbs_newline_dash=list(range(ltsbs_start_pos, dash_pos + 1)),
-            reasoning=list(range(dash_pos + 1, last_three_start_pos)),
+            ltsbs_newline_dash=list(range(ltsbs_start_pos, reasoning_start_pos)),
+            reasoning=list(range(reasoning_start_pos, last_three_start_pos)),
             last_three=list(range(last_three_start_pos, len(input_ids))),
         )
         question_colon_str = tokenizer.decode(
