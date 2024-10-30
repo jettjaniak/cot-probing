@@ -38,17 +38,44 @@ for i, (swaps, patch_results_by_swap) in enumerate(
 import matplotlib.pyplot as plt
 
 
-def plot_heatmap(values, title, labels, fai_tok_str, unfai_tok_str):
-    plt.imshow(
+def plot_heatmap(values, title, labels, fai_tok_str, unfai_tok_str, question_and_cot: str | None = None):
+    plt.figure(figsize=(10, 6 if question_and_cot is None else 8))
+    
+    # Create gridspec to manage subplot layout
+    if question_and_cot is not None:
+        gs = plt.GridSpec(2, 1, height_ratios=[4, 1])
+        ax1 = plt.subplot(gs[0])
+    else:
+        ax1 = plt.gca()
+    
+    # Plot heatmap
+    im = ax1.imshow(
         values,
         cmap="RdBu",
         origin="lower",
         vmin=-max(abs(np.min(values)), abs(np.max(values))),
         vmax=max(abs(np.min(values)), abs(np.max(values))),
     )
-    plt.title(f"{title} for `{fai_tok_str}` -> `{unfai_tok_str}`")
-    plt.colorbar()
-    plt.xticks(range(len(labels)), labels, rotation=90)
+    ax1.set_title(f"{title} for `{fai_tok_str}` -> `{unfai_tok_str}`")
+    plt.colorbar(im, ax=ax1)
+    ax1.set_xticks(range(len(labels)))
+    ax1.set_xticklabels(labels, rotation=90)
+    
+    if question_and_cot is not None:
+        # Use the second subplot for text
+        ax2 = plt.subplot(gs[1])
+        ax2.axis('off')
+        ax2.text(
+            0,
+            0.5,
+            f"Q&CoT: {question_and_cot}",
+            wrap=True,
+            horizontalalignment='left',
+            verticalalignment='center',
+            fontsize=12,
+        )
+    
+    plt.tight_layout()
     plt.show()
 
 # %%
@@ -185,6 +212,77 @@ for cluster_idx, members in clusters.items():
 
 # %%
 
+# Visualize cluster centers with group names
+for cluster_idx, members in clusters.items():
+    plot_heatmap(
+        centers[cluster_idx],
+        f'Cluster {cluster_idx} Center',
+        groups,
+        "",
+        "",
+    )
+
+# %%
+
+def show_bia_to_unb_heatmap(q_idx: int, swap_idx: int):
+    # Get the original swap and its values
+    swap = swaps_by_q[q_idx][swap_idx]
+    values = values_bia_to_unb_by_q_by_swap[(q_idx, swap_idx)]
+    
+    # Get token strings for the title
+    unfai_tok_str = tokenizer.decode(swap.unfai_tok).replace("\n", "\\n")
+    fai_tok_str = tokenizer.decode(swap.fai_tok).replace("\n", "\\n")
+    
+    # Extract the question text
+    q_tok = tokenizer.encode("Question", add_special_tokens=False)[0]
+    last_q_idx = len(swap.unb_prompt) - 1 - swap.unb_prompt[::-1].index(q_tok)
+    question_text = tokenizer.decode(swap.unb_prompt[last_q_idx + 2:])
+    trunc_cot_text = tokenizer.decode(swap.trunc_cot)
+    
+    # Print swap information
+    print(f"\nQ{q_idx} Swap{swap_idx}")
+    print(f"Q and CoT: {question_text+trunc_cot_text}")
+    print(f"Prob diff: {swap.prob_diff:.2%}")
+    print(f"`{fai_tok_str}` -> `{unfai_tok_str}`")
+    
+    # Plot the heatmap
+    groups = list(next(iter(patch_results_by_swap_by_q[q_idx][swap_idx].values())).keys())
+    plot_heatmap(
+        values=values,
+        title=f"Q {q_idx}, Swap {swap_idx}",
+        labels=groups,
+        fai_tok_str=fai_tok_str,
+        unfai_tok_str=unfai_tok_str,
+        question_and_cot=question_text+trunc_cot_text,
+    )
+
+def show_cluster_examples(cluster_idx: int, n_examples: int = 1):
+    members = clusters[cluster_idx]
+
+    random.shuffle(members)
+    
+    # Take up to n_examples from this cluster
+    for q_idx, swap_idx in members[:n_examples]:
+        show_bia_to_unb_heatmap(q_idx, swap_idx)
+        
+
+# %%
+# Plot examples from each cluster
+# n_examples = 1  # Number of examples to show from each cluster
+
+# for cluster_idx, members in clusters.items():
+#     print(f"\n=== Cluster {cluster_idx} Examples ===")
+
+#     show_cluster_examples(cluster_idx, n_examples)
+
+# %%
+
+# show_cluster_examples(3, 20)
+
+# show_bia_to_unb_heatmap(7, 0)
+
+# %%
+
 groups = ['question_colon', 'toks_of_question', 'qmark_newline', 'ltsbs_newline_dash', 'reasoning', 'last_three']
 
 def get_group_idx(group_name: str) -> int:
@@ -256,80 +354,3 @@ for type in [both_important_idxs, ltsbs_important_idxs, reasoning_important_idxs
 
 
 # %%
-
-
-
-# Visualize cluster centers with group names
-for cluster_idx, members in clusters.items():
-    plot_heatmap(
-        centers[cluster_idx],
-        f'Cluster {cluster_idx} Center',
-        groups,
-        "",
-        "",
-    )
-
-# %%
-
-# Take mean of examples in each cluster
-# for cluster_idx, members in clusters.items():
-#     mean_values = np.mean(
-#         [values_bia_to_unb_by_q_by_swap[(q_idx, swap_idx)] for q_idx, swap_idx in members],
-#         axis=0,
-#     )
-#     print(f"Cluster {cluster_idx} mean values: {mean_values}")
-
-#     center = kmeans.cluster_centers_[cluster_idx]
-#     print(f"Cluster {cluster_idx} center: {center}")
-
-# %%
-
-def show_cluster_examples(cluster_idx: int, n_examples: int = 1):
-    members = clusters[cluster_idx]
-
-    random.shuffle(members)
-    
-    # Take up to n_examples from this cluster
-    for q_idx, swap_idx in members[:n_examples]:
-        # Get the original swap and its values
-        swap = swaps_by_q[q_idx][swap_idx]
-        values = values_bia_to_unb_by_q_by_swap[(q_idx, swap_idx)]
-        
-        # Get token strings for the title
-        unfai_tok_str = tokenizer.decode(swap.unfai_tok).replace("\n", "\\n")
-        fai_tok_str = tokenizer.decode(swap.fai_tok).replace("\n", "\\n")
-        
-        # Extract the question text
-        q_tok = tokenizer.encode("Question", add_special_tokens=False)[0]
-        last_q_idx = len(swap.unb_prompt) - 1 - swap.unb_prompt[::-1].index(q_tok)
-        question_text = tokenizer.decode(swap.unb_prompt[last_q_idx + 2:])
-        trunc_cot_text = tokenizer.decode(swap.trunc_cot)
-        
-        # Print swap information
-        print(f"\nQ{q_idx} Swap{swap_idx}")
-        print(f"Q and CoT: {question_text+trunc_cot_text}")
-        print(f"Prob diff: {swap.prob_diff:.2%}")
-        print(f"`{fai_tok_str}` -> `{unfai_tok_str}`")
-        
-        # Plot the heatmap
-        groups = list(next(iter(patch_results_by_swap_by_q[q_idx][swap_idx].values())).keys())
-        plot_heatmap(
-            values,
-            f"Cluster {cluster_idx}",
-            groups,
-            fai_tok_str,
-            unfai_tok_str,
-        )
-
-# %%
-# Plot examples from each cluster
-n_examples = 1  # Number of examples to show from each cluster
-
-for cluster_idx, members in clusters.items():
-    print(f"\n=== Cluster {cluster_idx} Examples ===")
-
-    show_cluster_examples(cluster_idx, n_examples)
-
-# %%
-
-show_cluster_examples(3, 20)
