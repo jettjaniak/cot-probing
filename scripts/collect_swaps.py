@@ -14,6 +14,7 @@ from transformers import PreTrainedModel, PreTrainedTokenizerBase
 
 from cot_probing import DATA_DIR
 from cot_probing.activations import collect_resid_acts_with_pastkv
+from cot_probing.swapping import SuccessfulSwap
 from cot_probing.typing import *
 from cot_probing.utils import find_sublist, load_model_and_tokenizer
 
@@ -112,6 +113,9 @@ def collect_swaps_for_question(
     tokenizer: PreTrainedTokenizerBase,
     q_data: dict,
     prob_diff_threshold: float,
+    unbiased_fsp_str: str,
+    biased_no_fsp_str: str,
+    biased_yes_fsp_str: str,
     unbiased_fsp_cache: tuple,
     biased_no_fsp_cache: tuple,
     biased_yes_fsp_cache: tuple,
@@ -132,9 +136,15 @@ def collect_swaps_for_question(
     # Choose the biased FSP based on the expected answer
     if expected_answer == "yes":
         biased_fsp_cache = biased_no_fsp_cache
+        biased_fsp_str = biased_no_fsp_str
     else:
         biased_fsp_cache = biased_yes_fsp_cache
+        biased_fsp_str = biased_yes_fsp_str
 
+    unbiased_fsp_toks = tokenizer.encode(unbiased_fsp_str)
+    biased_fsp_toks = tokenizer.encode(biased_fsp_str)
+
+    swaps: list[SuccessfulSwap] = []
     for q_and_cot_str, _ in unbiased_cots:
         # cot includes question + ltsbs + "\n-" + CoT + "\nAnswer:"
         assert q_and_cot_str.endswith("Answer:")
@@ -149,6 +159,7 @@ def collect_swaps_for_question(
         ltsbs_idx = find_sublist(q_and_cot_toks, ltsbs_tok)
         assert ltsbs_idx is not None
         cot_start_pos = ltsbs_idx + len(ltsbs_tok)
+        q_toks = q_and_cot_toks[:cot_start_pos]
 
         # Get the logits for the CoT
         unb_logits = model(
@@ -169,35 +180,41 @@ def collect_swaps_for_question(
         unb_probs = torch.softmax(unb_logits, dim=-1)
         bia_probs = torch.softmax(bia_logits, dim=-1)
 
-        # Compute the probability difference
+        # Compute the probability difference, shape (seq_len, vocab_size)
         prob_diff = unb_probs - bia_probs
 
-        prob_diff_min_values, prob_diff_min_indices = prob_diff.min(dim=-1)
+        # values: (seq_len,), indices: (seq_len,) - they contain token ids
+        # we subtract biased from unbiased
+        # so max indices are for faithful tokens
         prob_diff_max_values, prob_diff_max_indices = prob_diff.max(dim=-1)
+        # and min indices are for unfaithful tokens
+        prob_diff_min_values, prob_diff_min_indices = prob_diff.min(dim=-1)
 
-    resid_acts_by_layer_by_cot = []
-    for last_q_toks in last_q_toks_to_cache:
-        resid_acts_by_layer = collect_resid_acts_with_pastkv(
-            model=model,
-            last_q_toks=last_q_toks,
-            layers=layers,
-            past_key_values=biased_fsp_cache,
+        thresh_mask = (prob_diff_max_values > prob_diff_threshold) & (
+            prob_diff_min_values < -prob_diff_threshold
         )
-        resid_acts_by_layer_by_cot.append(resid_acts_by_layer)
+        if not thresh_mask.any():
+            continue
 
-    if biased_cots_collection_mode == "none":
-        assert len(resid_acts_by_layer_by_cot) == 1
-        resid_acts = resid_acts_by_layer_by_cot[0]
-    else:
-        resid_acts = resid_acts_by_layer_by_cot
-
-    return {
-        "question": question,
-        "expected_answer": expected_answer,
-        "biased_cot_label": biased_cot_label,
-        "biased_cots_tokens_to_cache": last_q_toks_to_cache,
-        "cached_acts": resid_acts,
-    }
+        trunc_pos = torch.arange(len(thresh_mask))[thresh_mask][0].item()
+        prob_diff = prob_diff_max_values[trunc_pos] - prob_diff_min_values[trunc_pos]
+        prob_diff = prob_diff.item()
+        assert prob_diff >= 2 * prob_diff_threshold
+        fai_tok = prob_diff_max_indices[trunc_pos].item()
+        unf_tok = prob_diff_min_indices[trunc_pos].item()
+        trunc_cot = q_and_cot_toks[cot_start_pos : cot_start_pos + trunc_pos]
+        swaps.append(
+            SuccessfulSwap(
+                unb_prompt=unbiased_fsp_toks + q_toks,
+                bia_prompt=biased_fsp_toks + q_toks,
+                trunc_cot=trunc_cot,
+                fai_tok=fai_tok,
+                unfai_tok=unf_tok,
+                prob_diff=prob_diff,
+                swap_dir="fai_to_unfai",
+            )
+        )
+    return {"question": question, "expected_answer": expected_answer, "swaps": swaps}
 
 
 def collect_swaps(

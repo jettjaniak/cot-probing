@@ -276,7 +276,9 @@ def main(args: argparse.Namespace):
             no_fsp_cache=no_fsp_cache,
             args=args,
         )
-        with open(DATA_DIR / f"measured_qs_{file_identifier}.json", "w") as f:
+        with open(
+            DATA_DIR / f"measured_qs_with-unbiased-cots-{file_identifier}.json", "w"
+        ) as f:
             json.dump(ret, f)
 
 
