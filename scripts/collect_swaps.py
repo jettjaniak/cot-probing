@@ -15,7 +15,7 @@ from transformers import PreTrainedModel, PreTrainedTokenizerBase
 from cot_probing import DATA_DIR
 from cot_probing.activations import collect_resid_acts_with_pastkv
 from cot_probing.typing import *
-from cot_probing.utils import load_model_and_tokenizer
+from cot_probing.utils import find_sublist, load_model_and_tokenizer
 
 
 def parse_args():
@@ -27,12 +27,17 @@ def parse_args():
         help="Path to the dataset of labeled questions",
     )
     parser.add_argument(
-        "-l",
-        "--layers",
-        type=str,
-        default=None,
-        help="List of comma separated layers to cache activations for. Defaults to all layers.",
+        "-t",
+        "--probe-diff-threshold",
+        type=float,
+        default=0.2,
+        help="Probe diff threshold to truncate COTs. Defaults to 0.2.",
     )
+
+    # argument for probe diff threshold
+    # We use this probe diff to truncate cots
+    # We discard questions labeled as mixed.
+
     # TODO: we collect both biased and unbiased, remove it
     # parser.add_argument(
     #     "-b",
@@ -62,28 +67,9 @@ def get_last_q_toks_to_cache(
     expected_answer: Literal["yes", "no"],
     biased_cots: list[dict],
     biased_cot_label: Literal["faithful", "unfaithful"],
-    biased_cots_collection_mode: Literal["none", "one", "all"],
 ):
     """May or may not include the CoT tokens"""
     question_toks = tokenizer.encode(question, add_special_tokens=False)
-    if biased_cots_collection_mode == "none":
-        # Don't collect activations for biased COTs
-        return [question_toks]
-
-    biased_cot_answer = None
-    if biased_cot_label == "faithful":
-        if expected_answer == "yes":
-            biased_cot_answer = "yes"
-        else:
-            biased_cot_answer = "no"
-    elif biased_cot_label == "unfaithful":
-        if expected_answer == "yes":
-            biased_cot_answer = "no"
-        else:
-            biased_cot_answer = "yes"
-
-    # Keep only the COTs that have the answer we expect based on the biased cot label
-    biased_cots = [cot for cot in biased_cots if cot["answer"] == biased_cot_answer]
 
     assert (
         len(biased_cots) > 0
@@ -121,35 +107,73 @@ def get_last_q_toks_to_cache(
     return input_ids_to_cache
 
 
-def collect_activations_for_question(
+def collect_swaps_for_question(
     model: PreTrainedModel,
     tokenizer: PreTrainedTokenizerBase,
     q_data: dict,
-    layers: list[int],
+    prob_diff_threshold: float,
+    unbiased_fsp_cache: tuple,
     biased_no_fsp_cache: tuple,
     biased_yes_fsp_cache: tuple,
-    biased_cots_collection_mode: Literal["none", "one", "all"],
 ):
     question = q_data["question"]
     assert question.endswith("by step:\n-"), question
+
     expected_answer = q_data["expected_answer"]
     biased_cots = q_data["biased_cots"]
-    biased_cot_label = q_data["biased_cot_label"]
+    unbiased_cots = q_data["unbiased_cots"]
 
-    last_q_toks_to_cache = get_last_q_toks_to_cache(
-        tokenizer=tokenizer,
-        question=question,
-        expected_answer=expected_answer,
-        biased_cots=biased_cots,
-        biased_cot_label=biased_cot_label,
-        biased_cots_collection_mode=biased_cots_collection_mode,
-    )
+    # Filter biased COTs based on the expected answer (unfaithful questions only)
+    biased_cots = [cot for cot in biased_cots if cot["answer"] != expected_answer]
+
+    # Filter unbiased COTs based on the expected answer
+    unbiased_cots = [cot for cot in unbiased_cots if cot["answer"] == expected_answer]
 
     # Choose the biased FSP based on the expected answer
     if expected_answer == "yes":
         biased_fsp_cache = biased_no_fsp_cache
     else:
         biased_fsp_cache = biased_yes_fsp_cache
+
+    for q_and_cot_str, _ in unbiased_cots:
+        # cot includes question + ltsbs + "\n-" + CoT + "\nAnswer:"
+        assert q_and_cot_str.endswith("Answer:")
+        assert q_and_cot_str.startswith("Question")
+
+        q_and_cot_toks = tokenizer.encode(q_and_cot_str, add_special_tokens=False)
+
+        # Figure out the position of the start of the CoT
+        ltsbs_tok = tokenizer.encode(
+            "Let's think step by step:\n-", add_special_tokens=False
+        )
+        ltsbs_idx = find_sublist(q_and_cot_toks, ltsbs_tok)
+        assert ltsbs_idx is not None
+        cot_start_pos = ltsbs_idx + len(ltsbs_tok)
+
+        # Get the logits for the CoT
+        unb_logits = model(
+            torch.tensor([q_and_cot_toks]).cuda(),
+            past_key_values=copy.deepcopy(unbiased_fsp_cache),
+        ).logits[
+            0, cot_start_pos - 1 : -1
+        ]  # -1 because we need logits for prediction of the first CoT token. -1 for the end of the slice so we drop the predictions after the answer
+
+        bia_logits = model(
+            torch.tensor([q_and_cot_toks]).cuda(),
+            past_key_values=copy.deepcopy(biased_fsp_cache),
+        ).logits[
+            0, cot_start_pos - 1 : -1
+        ]  # -1 because we need logits for prediction of the first CoT token. -1 for the end of the slice so we drop the predictions after the answer
+
+        # Compute the probabilities
+        unb_probs = torch.softmax(unb_logits, dim=-1)
+        bia_probs = torch.softmax(bia_logits, dim=-1)
+
+        # Compute the probability difference
+        prob_diff = unb_probs - bia_probs
+
+        prob_diff_min_values, prob_diff_min_indices = prob_diff.min(dim=-1)
+        prob_diff_max_values, prob_diff_max_indices = prob_diff.max(dim=-1)
 
     resid_acts_by_layer_by_cot = []
     for last_q_toks in last_q_toks_to_cache:
@@ -160,6 +184,7 @@ def collect_activations_for_question(
             past_key_values=biased_fsp_cache,
         )
         resid_acts_by_layer_by_cot.append(resid_acts_by_layer)
+
     if biased_cots_collection_mode == "none":
         assert len(resid_acts_by_layer_by_cot) == 1
         resid_acts = resid_acts_by_layer_by_cot[0]
@@ -175,17 +200,18 @@ def collect_activations_for_question(
     }
 
 
-def collect_activations(
+def collect_swaps(
     model: PreTrainedModel,
     tokenizer: PreTrainedTokenizerBase,
     dataset: dict,
-    layers: list[int],
-    biased_cots_collection_mode: Literal["none", "one", "all"],
+    prob_diff_threshold: float,
 ):
+    unbiased_fsp = dataset["unbiased_fsp"] + "\n\n"
     biased_no_fsp = dataset["biased_no_fsp"] + "\n\n"
     biased_yes_fsp = dataset["biased_yes_fsp"] + "\n\n"
 
     # Pre-cache FSP activations
+    unbiased_fsp_cache = build_fsp_cache(model, tokenizer, unbiased_fsp)
     biased_no_fsp_cache = build_fsp_cache(model, tokenizer, biased_no_fsp)
     biased_yes_fsp_cache = build_fsp_cache(model, tokenizer, biased_yes_fsp)
 
@@ -195,19 +221,23 @@ def collect_activations(
             print("Warning: No biased COTs found for question")
             continue
 
-        biased_cot_label = q_data["biased_cot_label"]
-        if biased_cot_label not in ["faithful", "unfaithful"]:
-            # Skip questions that are labeled as "mixed"
+        if "unbiased_cots" not in q_data:
+            print("Warning: No unbiased COTs found for question")
             continue
 
-        res = collect_activations_for_question(
+        biased_cot_label = q_data["biased_cot_label"]
+        if biased_cot_label != "unfaithful":
+            # Skip questions that are not labeled as "unfaithful"
+            continue
+
+        res = collect_swaps_for_question(
             model=model,
             tokenizer=tokenizer,
+            prob_diff_threshold=prob_diff_threshold,
             q_data=q_data,
-            layers=layers,
+            unbiased_fsp_cache=unbiased_fsp_cache,
             biased_no_fsp_cache=biased_no_fsp_cache,
             biased_yes_fsp_cache=biased_yes_fsp_cache,
-            biased_cots_collection_mode=biased_cots_collection_mode,
         )
         result.append(res)
 
@@ -232,17 +262,11 @@ def main(args: argparse.Namespace):
     model_size = labeled_questions_dataset["arg_model_size"]
     model, tokenizer = load_model_and_tokenizer(model_size)
 
-    if args.layers:
-        layers = [int(l) for l in args.layers.split(",")]
-    else:
-        layers = list(range(model.config.num_hidden_layers + 1))
-
-    acts_results = collect_activations(
+    acts_results = collect_swaps(
         model=model,
         tokenizer=tokenizer,
         dataset=labeled_questions_dataset,
-        layers=layers,
-        biased_cots_collection_mode=args.biased_cots_collection_mode,
+        prob_diff_threshold=args.probe_diff_threshold,
     )
 
     skip_args = ["verbose", "file"]
@@ -255,8 +279,9 @@ def main(args: argparse.Namespace):
         **{f"arg_{k}": v for k, v in vars(args).items() if k not in skip_args},
     )
 
-    output_file_stem = input_file_path.stem.replace("labeled_qs_", "acts_")
-    output_file_path = f"activations/{output_file_stem}.pkl"
+    output_file_stem = input_file_path.stem.replace("labeled_qs_", "swaps_")
+    output_file_name = Path(output_file_stem).with_suffix(".pkl")
+    output_file_path = DATA_DIR / output_file_name
 
     # Dump the result as a pickle file
     with open(output_file_path, "wb") as f:
