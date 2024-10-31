@@ -241,7 +241,6 @@ def collect_activations(
     if start_idx > 0:
         print(f"Resuming from question {start_idx}")
 
-    result = []
     for idx, q_data in enumerate(tqdm(remaining_qs, "Processing questions")):
         if "biased_cots" not in q_data:
             print("Warning: No biased COTs found for question")
