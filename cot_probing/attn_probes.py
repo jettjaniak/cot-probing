@@ -252,7 +252,7 @@ class ProbeTrainer:
         project_name: str = "attn-probes",
     ) -> AbstractAttnProbeModel:
         # Initialize W&B
-        wandb.init(project=project_name, name=run_name)
+        wandb.init(entity="cot-probing", project=project_name, name=run_name)
         wandb.config.update(asdict(self.c))
 
         # Prepare data
