@@ -177,6 +177,36 @@ class MinimalAttnProbeModel(AbstractAttnProbeModel):
         return einsum("batch seq model, model -> batch seq", resids, self.probe_vector)
 
 
+@dataclass(kw_only=True)
+class MediumAttnProbeConfig(AbstractAttnProbeConfig):
+    def __post_init__(self):
+        assert self.d_head == self.d_model
+
+
+class MediumAttnProbeModel(AbstractAttnProbeModel):
+    def __init__(self, c: MediumAttnProbeConfig):
+        super().__init__(c)
+        setup_determinism(c.weight_init_seed)
+        # Separate vectors for query and value projections
+        self.query_vector = nn.Parameter(torch.randn(c.d_model) * c.weight_init_range)
+        self.value_vector = nn.Parameter(torch.randn(c.d_model) * c.weight_init_range)
+
+    def _query(self) -> Float[torch.Tensor, " head"]:
+        return self.query_vector
+
+    def _keys(
+        self, resids: Float[torch.Tensor, " batch seq model"]
+    ) -> Float[torch.Tensor, " batch seq head"]:
+        # Use residuals directly as keys since d_model == d_head
+        return resids
+
+    def values(
+        self, resids: Float[torch.Tensor, " batch seq model"]
+    ) -> Float[torch.Tensor, " batch seq"]:
+        # Project residuals using the value vector
+        return einsum("batch seq model, model -> batch seq", resids, self.value_vector)
+
+
 class ProbeTrainer:
     def __init__(self, c: ProbingConfig):
         self.c = c
