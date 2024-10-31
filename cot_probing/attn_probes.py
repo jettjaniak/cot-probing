@@ -319,24 +319,48 @@ class ProbeTrainer:
         model.load_state_dict(best_model_state)
         # Final test set evaluation
         model.eval()
-        test_loss = 0
-        test_acc = 0
-        with torch.no_grad():
-            for batch, labels_t, attn_mask in test_loader:
-                batch = batch.to(self.device)
-                labels_t = labels_t.to(self.device)
-                attn_mask = attn_mask.to(self.device)
-                outputs = model(batch, attn_mask)
-                test_loss += criterion(outputs, labels_t).item()
-                test_acc += ((outputs > 0.5) == labels_t).float().mean().item()
-
-        test_loss /= len(test_loader)
-        test_acc /= len(test_loader)
+        test_loss, test_acc = self._compute_loss_and_acc(model, criterion, test_loader)
 
         wandb.log({"test_loss": test_loss, "test_accuracy": test_acc})
         wandb.finish()
 
         return model
+
+    def _compute_loss_and_acc_single_batch(
+        self,
+        model: AbstractAttnProbeModel,
+        criterion: nn.BCELoss,
+        batch: torch.Tensor,
+        labels_t: torch.Tensor,
+        attn_mask: torch.Tensor,
+    ) -> tuple[Float[torch.Tensor, ""], float]:
+        batch = batch.to(self.device)
+        labels_t = labels_t.to(self.device)
+        attn_mask = attn_mask.to(self.device)
+        outputs = model(batch, attn_mask)
+        loss = criterion(outputs, labels_t)
+        acc = ((outputs > 0.5) == labels_t).float().mean().item()
+        return loss, acc
+
+    def _compute_loss_and_acc(
+        self,
+        model: AbstractAttnProbeModel,
+        criterion: nn.BCELoss,
+        data_loader: DataLoader,
+    ) -> tuple[float, float]:
+        total_loss = 0
+        total_acc = 0
+        with torch.no_grad():
+            for batch, labels_t, attn_mask in data_loader:
+                loss, acc = self._compute_loss_and_acc_single_batch(
+                    model, criterion, batch, labels_t, attn_mask
+                )
+                total_loss += loss
+                total_acc += acc
+
+        avg_loss = total_loss / len(data_loader)
+        avg_acc = total_acc / len(data_loader)
+        return avg_loss.item(), avg_acc
 
     def _train_epoch(
         self,
@@ -352,36 +376,20 @@ class ProbeTrainer:
         train_loss = 0
         train_acc = 0
         for batch, labels_t, attn_mask in tqdm(train_loader, desc=f"Epoch {epoch}"):
-            batch = batch.to(self.device)
-            labels_t = labels_t.to(self.device)
-            attn_mask = attn_mask.to(self.device)
-
             optimizer.zero_grad()
-            outputs = model(batch, attn_mask)
-            loss = criterion(outputs, labels_t)
+            loss, acc = self._compute_loss_and_acc_single_batch(
+                model, criterion, batch, labels_t, attn_mask
+            )
             loss.backward()
             optimizer.step()
-
-            train_loss += loss.item()
-            train_acc += ((outputs > 0.5) == labels_t).float().mean().item()
+            train_loss += loss
+            train_acc += acc
 
         train_loss /= len(train_loader)
         train_acc /= len(train_loader)
 
         # Validation
         model.eval()
-        val_loss = 0
-        val_acc = 0
-        with torch.no_grad():
-            for batch, labels_t, attn_mask in val_loader:
-                batch = batch.to(self.device)
-                labels_t = labels_t.to(self.device)
-                attn_mask = attn_mask.to(self.device)
-                outputs = model(batch, attn_mask)
-                val_loss += criterion(outputs, labels_t).item()
-                val_acc += ((outputs > 0.5) == labels_t).float().mean().item()
-
-        val_loss /= len(val_loader)
-        val_acc /= len(val_loader)
+        val_loss, val_acc = self._compute_loss_and_acc(model, criterion, val_loader)
 
         return train_loss, train_acc, val_loss, val_acc
