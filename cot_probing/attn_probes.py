@@ -355,12 +355,12 @@ class ProbeTrainer:
                 loss, acc = self._compute_loss_and_acc_single_batch(
                     model, criterion, batch, labels_t, attn_mask
                 )
-                total_loss += loss
+                total_loss += loss.item()
                 total_acc += acc
 
         avg_loss = total_loss / len(data_loader)
         avg_acc = total_acc / len(data_loader)
-        return avg_loss.item(), avg_acc
+        return avg_loss, avg_acc
 
     def _train_epoch(
         self,
@@ -391,5 +391,5 @@ class ProbeTrainer:
         # Validation
         model.eval()
         val_loss, val_acc = self._compute_loss_and_acc(model, criterion, val_loader)
-
-        return train_loss, train_acc, val_loss, val_acc
+        assert isinstance(train_loss, torch.Tensor)
+        return train_loss.item(), train_acc, val_loss, val_acc
