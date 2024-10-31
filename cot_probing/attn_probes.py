@@ -338,9 +338,24 @@ class ProbeTrainer:
         labels_t = labels_t.to(self.device)
         attn_mask = attn_mask.to(self.device)
         outputs = model(batch, attn_mask)
-        loss = criterion(outputs, labels_t)
+
+        # Calculate class weights based on batch distribution
+        n_pos = (labels_t == 1).sum()
+        n_neg = (labels_t == 0).sum()
+        total = n_pos + n_neg
+
+        # Separate losses for positive and negative classes
+        pos_mask = labels_t == 1
+        neg_mask = labels_t == 0
+
+        pos_loss = criterion(outputs[pos_mask], labels_t[pos_mask]) if n_pos > 0 else 0
+        neg_loss = criterion(outputs[neg_mask], labels_t[neg_mask]) if n_neg > 0 else 0
+
+        # Weight losses based on class distribution
+        weighted_loss = (n_neg / total) * pos_loss + (n_pos / total) * neg_loss
+
         acc = ((outputs > 0.5) == labels_t).float().mean().item()
-        return loss, acc
+        return weighted_loss, acc
 
     def _compute_loss_and_acc(
         self,
