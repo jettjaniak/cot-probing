@@ -148,7 +148,7 @@ def build_probe_config(
     probe_class_arg = args.probe_class
     d_head = args.d_head
     if d_head is None:
-        assert args.probe_class == "minimal"
+        assert args.probe_class != "full"
         d_head = args.d_model
 
     probe_config = AttnProbeModelConfig(

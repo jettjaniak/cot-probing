@@ -195,10 +195,9 @@ class MinimalAttnProbeModel(AbstractAttnProbeModel):
 
 class MediumAttnProbeModel(AbstractAttnProbeModel):
     def __init__(self, c: AttnProbeModelConfig):
-        assert c.d_head == c.d_model
         super().__init__(c)
         # Only need query vector since value vector is in parent
-        self.query_vector = nn.Parameter(torch.randn(c.d_model) * c.weight_init_range)
+        self.query_vector = nn.Parameter(torch.randn(c.d_head) * c.weight_init_range)
 
     def _query(self) -> Float[torch.Tensor, " head"]:
         return self.query_vector
@@ -207,6 +206,7 @@ class MediumAttnProbeModel(AbstractAttnProbeModel):
         self, resids: Float[torch.Tensor, " batch seq model"]
     ) -> Float[torch.Tensor, " batch seq head"]:
         # Use residuals directly as keys since d_model == d_head
+        assert self.c.d_head == self.c.d_model
         return resids
 
 
