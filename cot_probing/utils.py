@@ -77,3 +77,17 @@ def setup_determinism(seed: int):
     torch.cuda.manual_seed_all(seed)
     random.seed(seed)
     np.random.seed(seed)
+
+
+def get_git_commit_hash() -> str:
+    """Returns the current git commit hash."""
+    try:
+        import subprocess
+
+        return (
+            subprocess.check_output(["git", "rev-parse", "HEAD"])
+            .decode("ascii")
+            .strip()
+        )
+    except:
+        return "git_hash_not_found"

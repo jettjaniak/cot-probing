@@ -5,7 +5,6 @@ import pickle
 import uuid
 from pathlib import Path
 
-import numpy as np
 import torch
 from beartype import beartype
 
@@ -77,7 +76,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=32,
+        default=4,
         help="Batch size for training",
     )
     parser.add_argument(

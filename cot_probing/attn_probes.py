@@ -14,7 +14,7 @@ from tqdm.auto import tqdm
 
 import wandb
 from cot_probing.typing import *
-from cot_probing.utils import setup_determinism
+from cot_probing.utils import get_git_commit_hash, setup_determinism
 
 torch.set_grad_enabled(True)
 
@@ -101,7 +101,7 @@ def collate_fn(
         # upcast from BFloat16
         cot_acts=padded_cot_acts.float(),
         attn_mask=attn_mask,
-        labels=torch.stack(flat_labels),
+        labels=torch.tensor(flat_labels, dtype=torch.float),
         q_idxs=flat_q_idxs,
     )
 
@@ -309,6 +309,7 @@ class ProbeTrainer:
         wandb.init(entity="cot-probing", project=project_name, name=run_name)
         wandb.config.update(asdict(self.c))
         wandb.config.update({f"args_{k}": v for k, v in args_dict.items()})
+        wandb.config.update({"git_commit": get_git_commit_hash()})
         # Prepare data
         train_loader, val_loader, test_loader = self.prepare_data(
             cots_by_q, labels_by_q_list
