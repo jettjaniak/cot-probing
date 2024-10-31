@@ -17,7 +17,7 @@ from cot_probing.utils import setup_determinism
 
 
 @dataclass(kw_only=True)
-class AbstractAttentionProbeConfig:
+class AbstractAttnProbeConfig:
     d_model: int
     d_head: int
     weight_init_range: float = 0.02
@@ -27,7 +27,7 @@ class AbstractAttentionProbeConfig:
 @dataclass
 class ProbingConfig:
     probe_class_name: str
-    probe_config: AbstractAttentionProbeConfig
+    probe_config: AbstractAttnProbeConfig
     data_seed: int = 0
     lr: float = 1e-3
     batch_size: int = 32
@@ -74,8 +74,8 @@ def collate_fn(
     return padded, torch.stack(list(labels))
 
 
-class AbstractAttentionProbe(nn.Module, ABC):
-    def __init__(self, c: AbstractAttentionProbeConfig):
+class AbstractAttnProbeModel(nn.Module, ABC):
+    def __init__(self, c: AbstractAttnProbeConfig):
         super().__init__()
         self.c = c
 
@@ -140,6 +140,38 @@ class AbstractAttentionProbe(nn.Module, ABC):
         return torch.sigmoid(z)
 
 
+@dataclass(kw_only=True)
+class MinimalAttnProbeConfig(AbstractAttnProbeConfig):
+    def __post_init__(self):
+        assert self.d_head == self.d_model
+
+
+class MinimalAttnProbeModel(AbstractAttnProbeModel):
+    def __init__(self, c: MinimalAttnProbeConfig):
+        super().__init__(c)
+        setup_determinism(c.weight_init_seed)
+        # Initialize a single vector for both query and value
+        self.probe_vector = nn.Parameter(torch.randn(c.d_model) * c.weight_init_range)
+        # Temperature parameter for scaling attention
+        self.temperature = nn.Parameter(torch.ones(1))
+
+    def _query(self) -> Float[torch.Tensor, " head"]:
+        # Scale the probe vector by temperature for query
+        return self.probe_vector * self.temperature
+
+    def _keys(
+        self, resids: Float[torch.Tensor, " batch seq model"]
+    ) -> Float[torch.Tensor, " batch seq head"]:
+        # Use residuals directly as keys since d_model == d_head
+        return resids
+
+    def values(
+        self, resids: Float[torch.Tensor, " batch seq model"]
+    ) -> Float[torch.Tensor, " batch seq"]:
+        # Project residuals using the same probe vector
+        return einsum("batch seq model, model -> batch seq", resids, self.probe_vector)
+
+
 class ProbeTrainer:
     def __init__(self, c: ProbingConfig):
         self.c = c
@@ -195,7 +227,7 @@ class ProbeTrainer:
         labels_list: list[int],
         run_name: str,
         project_name: str = "attn-probes",
-    ) -> AbstractAttentionProbe:
+    ) -> AbstractAttnProbeModel:
         # Initialize W&B
         wandb.init(project=project_name, name=run_name)
         wandb.config.update(asdict(self.c))
