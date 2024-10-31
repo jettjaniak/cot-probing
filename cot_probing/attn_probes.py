@@ -210,27 +210,45 @@ class ProbeTrainer:
         self, sequences: list[Float[torch.Tensor, " seq d_model"]], labels: list[int]
     ) -> tuple[DataLoader, DataLoader, DataLoader]:
         setup_determinism(self.c.data_seed)
-        # Create train/val/test splits
-        indices = np.random.permutation(len(sequences))
-        test_size = int(len(sequences) * self.c.test_split)
-        val_size = int(len(sequences) * self.c.validation_split)
 
-        test_idx = indices[:test_size]
-        val_idx = indices[test_size : test_size + val_size]
-        train_idx = indices[test_size + val_size :]
+        # Balance the dataset
+        label_0_indices = [i for i, label in enumerate(labels) if label == 0]
+        label_1_indices = [i for i, label in enumerate(labels) if label == 1]
+        min_label_count = min(len(label_0_indices), len(label_1_indices))
+
+        balanced_indices = (
+            np.random.choice(label_0_indices, min_label_count, replace=False).tolist()
+            + np.random.choice(label_1_indices, min_label_count, replace=False).tolist()
+        )
+        np.random.shuffle(balanced_indices)
+
+        balanced_sequences = [sequences[i] for i in balanced_indices]
+        balanced_labels = [labels[i] for i in balanced_indices]
+
+        # Create train/val/test splits
+        total_samples = len(balanced_sequences)
+        test_size = int(total_samples * self.c.test_split)
+        val_size = int(total_samples * self.c.validation_split)
+        train_size = total_samples - test_size - val_size
 
         # Create datasets
         train_dataset = SequenceDataset(
-            [sequences[i].to(self.device).float() for i in train_idx],
-            [labels[i] for i in train_idx],
+            [balanced_sequences[i].to(self.device).float() for i in range(train_size)],
+            [balanced_labels[i] for i in range(train_size)],
         )
         val_dataset = SequenceDataset(
-            [sequences[i].to(self.device).float() for i in val_idx],
-            [labels[i] for i in val_idx],
+            [
+                balanced_sequences[i + train_size].to(self.device).float()
+                for i in range(val_size)
+            ],
+            [balanced_labels[i + train_size] for i in range(val_size)],
         )
         test_dataset = SequenceDataset(
-            [sequences[i].to(self.device).float() for i in test_idx],
-            [labels[i] for i in test_idx],
+            [
+                balanced_sequences[i + train_size + val_size].to(self.device).float()
+                for i in range(test_size)
+            ],
+            [balanced_labels[i + train_size + val_size] for i in range(test_size)],
         )
 
         # Create dataloaders
