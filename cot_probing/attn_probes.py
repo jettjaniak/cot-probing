@@ -6,13 +6,13 @@ from typing import Sequence
 
 import numpy as np
 import torch
+import wandb
 from fancy_einsum import einsum
 from torch import nn
 from torch.optim.adam import Adam
 from torch.utils.data import DataLoader, Dataset
 from tqdm.auto import tqdm
 
-import wandb
 from cot_probing.typing import *
 from cot_probing.utils import get_git_commit_hash, setup_determinism
 
@@ -38,7 +38,7 @@ class ProbingConfig:
     n_epochs: int
     validation_split: float
     test_split: float
-    device: str
+    model_device: str
     layer: int
 
 
@@ -70,7 +70,7 @@ class CollateFnOutput:
 
 
 def collate_fn(
-    batch: Sequence[tuple[list[Float[torch.Tensor, "seq d_model"]], int]]
+    batch: Sequence[tuple[list[Float[torch.Tensor, "seq d_model"]], int]],
 ) -> CollateFnOutput:
     flat_cot_acts = []
     flat_labels = []
@@ -88,9 +88,10 @@ def collate_fn(
 
     # Create padded tensor
     d_model = flat_cot_acts[0].shape[-1]
-    padded_cot_acts = torch.zeros(n_cots, max_seq_len, d_model)
+    device = flat_cot_acts[0].device
+    padded_cot_acts = torch.zeros(n_cots, max_seq_len, d_model, device=device)
     # Create attention mask
-    attn_mask = torch.zeros(n_cots, max_seq_len, dtype=torch.bool)
+    attn_mask = torch.zeros(n_cots, max_seq_len, dtype=torch.bool, device=device)
     for i, flat_cot in enumerate(flat_cot_acts):
         seq_len = flat_cot.shape[-2]
         padded_cot_acts[i, :seq_len] = flat_cot
@@ -101,7 +102,7 @@ def collate_fn(
         # upcast from BFloat16
         cot_acts=padded_cot_acts.float(),
         attn_mask=attn_mask,
-        labels=torch.tensor(flat_labels, dtype=torch.float),
+        labels=torch.tensor(flat_labels, dtype=torch.float, device=device),
         q_idxs=flat_q_idxs,
     )
 
@@ -226,7 +227,7 @@ class FullAttnProbeModel(MediumAttnProbeModel):
 class ProbeTrainer:
     def __init__(self, c: ProbingConfig):
         self.c = c
-        self.device = torch.device(c.device)
+        self.model_device = torch.device(c.model_device)
 
     def prepare_data(
         self,
@@ -316,7 +317,9 @@ class ProbeTrainer:
         )
 
         # Initialize model and optimizer
-        model = self.c.probe_model_class(self.c.probe_model_config).to(self.device)
+        model = self.c.probe_model_class(self.c.probe_model_config).to(
+            self.model_device
+        )
         optimizer = Adam(model.parameters(), lr=self.c.lr)
         criterion = nn.BCELoss()
 
@@ -378,9 +381,9 @@ class ProbeTrainer:
         criterion: nn.BCELoss,
         collate_fn_output: CollateFnOutput,
     ) -> tuple[Float[torch.Tensor, ""], float]:
-        cot_acts = collate_fn_output.cot_acts.to(self.device)
-        attn_mask = collate_fn_output.attn_mask.to(self.device)
-        labels = collate_fn_output.labels.to(self.device)
+        cot_acts = collate_fn_output.cot_acts.to(self.model_device)
+        attn_mask = collate_fn_output.attn_mask.to(self.model_device)
+        labels = collate_fn_output.labels.to(self.model_device)
         q_idxs = collate_fn_output.q_idxs
         outputs = model(cot_acts, attn_mask)
 
@@ -411,7 +414,7 @@ class ProbeTrainer:
 
             # Average metrics
             if not q_losses:
-                return torch.tensor(0.0).to(self.device), 0.0
+                return torch.tensor(0.0).to(self.model_device), 0.0
             return torch.stack(q_losses).mean(), sum(q_accs) / len(q_accs)
 
         # Compute metrics for positive and negative classes

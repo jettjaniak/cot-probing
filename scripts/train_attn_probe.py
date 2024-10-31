@@ -92,11 +92,16 @@ def parse_args() -> argparse.Namespace:
         help="Maximum number of epochs to train for",
     )
     parser.add_argument(
-        "--device",
+        "--model-device",
         type=str,
         default="cuda" if torch.cuda.is_available() else "cpu",
-        choices=["cuda", "cpu"],
         help="Device to train on",
+    )
+    parser.add_argument(
+        "--data-device",
+        type=str,
+        default="cpu",
+        help="Device to load data on",
     )
     parser.add_argument(
         "--wandb-project",
@@ -168,7 +173,7 @@ def build_probe_config(
         n_epochs=args.epochs,
         validation_split=args.validation_split_size,
         test_split=args.test_split_size,
-        device=args.device,
+        model_device=args.model_device,
         layer=layer,
     )
 
@@ -178,6 +183,7 @@ def prepare_probe_data(
     acts_dataset: dict,
     include_answer_toks: bool,
     d_model: int,
+    data_device: str,
 ) -> tuple[list[list[Float[torch.Tensor, "seq d_model"]]], list[int]]:
     """Extract sequences and labels from the dataset for probe training"""
     cots_by_q = []
@@ -194,7 +200,7 @@ def prepare_probe_data(
         labels_by_q.append(label)
         # activations
         # we have multiple CoTs per question
-        acts_by_cot = q_data["cached_acts"]
+        acts_by_cot = [acts.to(data_device) for acts in q_data["cached_acts"]]
         assert isinstance(acts_by_cot, list)
         assert acts_by_cot[0].shape[-1] == d_model
         if not include_answer_toks:
@@ -214,7 +220,7 @@ def train_attn_probe(
     """Train attention probe on the dataset"""
     # Extract sequences and labels from the dataset
     cots_by_q, labels_by_q = prepare_probe_data(
-        acts_dataset, args.include_answer_toks, args.d_model
+        acts_dataset, args.include_answer_toks, args.d_model, args.data_device
     )
     # Create probe configuration
     probe_config = build_probe_config(args, layer)
