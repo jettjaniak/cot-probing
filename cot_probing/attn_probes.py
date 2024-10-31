@@ -210,14 +210,43 @@ class ProbeTrainer:
         self, sequences: list[Float[torch.Tensor, " seq d_model"]], labels: list[int]
     ) -> tuple[DataLoader, DataLoader, DataLoader]:
         setup_determinism(self.c.data_seed)
-        # Create train/val/test splits
-        indices = np.random.permutation(len(sequences))
-        test_size = int(len(sequences) * self.c.test_split)
-        val_size = int(len(sequences) * self.c.validation_split)
 
-        test_idx = indices[:test_size]
-        val_idx = indices[test_size : test_size + val_size]
-        train_idx = indices[test_size + val_size :]
+        # Separate indices by label
+        pos_indices = [i for i, label in enumerate(labels) if label == 1]
+        neg_indices = [i for i, label in enumerate(labels) if label == 0]
+
+        # Shuffle indices
+        np.random.shuffle(pos_indices)
+        np.random.shuffle(neg_indices)
+
+        # Calculate sizes for each split
+        test_size_per_class = int(
+            min(len(pos_indices), len(neg_indices)) * self.c.test_split
+        )
+        val_size_per_class = int(
+            min(len(pos_indices), len(neg_indices)) * self.c.validation_split
+        )
+
+        # Split indices for each class
+        pos_test = pos_indices[:test_size_per_class]
+        pos_val = pos_indices[
+            test_size_per_class : test_size_per_class + val_size_per_class
+        ]
+        pos_train = pos_indices[test_size_per_class + val_size_per_class :]
+
+        neg_test = neg_indices[:test_size_per_class]
+        neg_val = neg_indices[
+            test_size_per_class : test_size_per_class + val_size_per_class
+        ]
+        neg_train = neg_indices[test_size_per_class + val_size_per_class :]
+
+        # Combine and shuffle indices for each split
+        train_idx = pos_train + neg_train
+        val_idx = pos_val + neg_val
+        test_idx = pos_test + neg_test
+        np.random.shuffle(train_idx)
+        np.random.shuffle(val_idx)
+        np.random.shuffle(test_idx)
 
         # Create datasets
         train_dataset = SequenceDataset(
