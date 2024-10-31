@@ -8,6 +8,7 @@ import numpy as np
 import torch
 from fancy_einsum import einsum
 from torch import nn
+from torch.optim.adam import Adam
 from torch.utils.data import DataLoader, Dataset
 from tqdm.auto import tqdm
 
@@ -38,50 +39,71 @@ class ProbingConfig:
     validation_split: float
     test_split: float
     device: str
+    layer: int
 
 
 class SequenceDataset(Dataset):
     def __init__(
-        self, sequences: list[Float[torch.Tensor, "seq d_model"]], labels: list[int]
+        self,
+        cots_by_q: list[list[Float[torch.Tensor, "seq d_model"]]],
+        labels_by_q: list[int],
     ):
-        self.sequences = sequences
+        self.cots_by_q = cots_by_q
         # Convert labels to same dtype and device as first sequence
-        self.labels = torch.tensor(
-            labels, dtype=self.sequences[0].dtype, device=self.sequences[0].device
-        )
+        self.labels_by_q = labels_by_q
 
     def __len__(self) -> int:
-        return len(self.labels)
+        return len(self.labels_by_q)
 
     def __getitem__(
         self, idx: int
-    ) -> tuple[Float[torch.Tensor, "seq d_model"], Float[torch.Tensor, ""]]:
-        return self.sequences[idx], self.labels[idx]
+    ) -> tuple[list[Float[torch.Tensor, "seq d_model"]], int]:
+        return self.cots_by_q[idx], self.labels_by_q[idx]
+
+
+@dataclass
+class CollateFnOutput:
+    cot_acts: Float[torch.Tensor, " batch seq model"]
+    attn_mask: Bool[torch.Tensor, " batch seq"]
+    labels: Float[torch.Tensor, " batch"]
+    q_idxs: list[int]
 
 
 def collate_fn(
-    batch: Sequence[tuple[Float[torch.Tensor, "seq d_model"], Float[torch.Tensor, ""]]]
-) -> tuple[
-    Float[torch.Tensor, " batch seq d_model"],
-    Float[torch.Tensor, " batch"],
-    Bool[torch.Tensor, " batch seq"],
-]:
-    """Handle variable sequence lengths with padding"""
-    sequences, labels = zip(*batch)
-    max_len = max(seq.shape[-2] for seq in sequences)
-    d_model = sequences[0].shape[-1]
+    batch: Sequence[tuple[list[Float[torch.Tensor, "seq d_model"]], int]]
+) -> CollateFnOutput:
+    flat_cot_acts = []
+    flat_labels = []
+    # these are indices into the batch, not the original question indices
+    flat_q_idxs = []
+    for i, (cots, label) in enumerate(batch):
+        for cot in cots:
+            flat_cot_acts.append(cot)
+            flat_labels.append(label)
+            flat_q_idxs.append(i)
+    n_cots = len(flat_cot_acts)
+
+    # flat_cot is shape (seq, d_model)
+    max_seq_len = max(flat_cot_act.shape[-2] for flat_cot_act in flat_cot_acts)
 
     # Create padded tensor
-    padded = torch.zeros(len(sequences), max_len, d_model)
+    d_model = flat_cot_acts[0].shape[-1]
+    padded_cot_acts = torch.zeros(n_cots, max_seq_len, d_model)
     # Create attention mask
-    attn_mask = torch.zeros(len(sequences), max_len, dtype=torch.bool)
-    for i, seq in enumerate(sequences):
-        seq_len = seq.shape[0]
-        padded[i, :seq_len] = seq
+    attn_mask = torch.zeros(n_cots, max_seq_len, dtype=torch.bool)
+    for i, flat_cot in enumerate(flat_cot_acts):
+        seq_len = flat_cot.shape[-2]
+        padded_cot_acts[i, :seq_len] = flat_cot
         attn_mask[i, :seq_len] = True
 
     # labels is iterable of 0-dim tensors, just stack them?
-    return padded, torch.stack(list(labels)), attn_mask
+    return CollateFnOutput(
+        # upcast from BFloat16
+        cot_acts=padded_cot_acts.float(),
+        attn_mask=attn_mask,
+        labels=torch.stack(flat_labels),
+        q_idxs=flat_q_idxs,
+    )
 
 
 class AbstractAttnProbeModel(nn.Module, ABC):
@@ -207,60 +229,52 @@ class ProbeTrainer:
         self.device = torch.device(c.device)
 
     def prepare_data(
-        self, sequences: list[Float[torch.Tensor, " seq d_model"]], labels: list[int]
+        self,
+        cots_by_q: list[list[Float[torch.Tensor, " seq model"]]],
+        labels_by_q_list: list[int],
     ) -> tuple[DataLoader, DataLoader, DataLoader]:
         setup_determinism(self.c.data_seed)
 
         # Separate indices by label
-        pos_indices = [i for i, label in enumerate(labels) if label == 1]
-        neg_indices = [i for i, label in enumerate(labels) if label == 0]
+        pos_idxs = [i for i, label in enumerate(labels_by_q_list) if label == 1]
+        neg_idxs = [i for i, label in enumerate(labels_by_q_list) if label == 0]
 
         # Shuffle indices
-        np.random.shuffle(pos_indices)
-        np.random.shuffle(neg_indices)
+        np.random.shuffle(pos_idxs)
+        np.random.shuffle(neg_idxs)
 
+        min_size = min(len(pos_idxs), len(neg_idxs))
         # Calculate sizes for each split
-        test_size_per_class = int(
-            min(len(pos_indices), len(neg_indices)) * self.c.test_split
-        )
-        val_size_per_class = int(
-            min(len(pos_indices), len(neg_indices)) * self.c.validation_split
-        )
+        test_size_per_class = int(min_size * self.c.test_split)
+        val_size_per_class = int(min_size * self.c.validation_split)
 
         # Split indices for each class
-        pos_test = pos_indices[:test_size_per_class]
-        pos_val = pos_indices[
+        pos_test = pos_idxs[:test_size_per_class]
+        pos_val = pos_idxs[
             test_size_per_class : test_size_per_class + val_size_per_class
         ]
-        pos_train = pos_indices[test_size_per_class + val_size_per_class :]
+        pos_train = pos_idxs[test_size_per_class + val_size_per_class :]
 
-        neg_test = neg_indices[:test_size_per_class]
-        neg_val = neg_indices[
+        neg_test = neg_idxs[:test_size_per_class]
+        neg_val = neg_idxs[
             test_size_per_class : test_size_per_class + val_size_per_class
         ]
-        neg_train = neg_indices[test_size_per_class + val_size_per_class :]
+        neg_train = neg_idxs[test_size_per_class + val_size_per_class :]
 
-        # Combine and shuffle indices for each split
-        train_idx = pos_train + neg_train
-        val_idx = pos_val + neg_val
-        test_idx = pos_test + neg_test
-        np.random.shuffle(train_idx)
-        np.random.shuffle(val_idx)
-        np.random.shuffle(test_idx)
+        train_idxs = pos_train + neg_train
+        val_idxs = pos_val + neg_val
+        test_idxs = pos_test + neg_test
+
+        def make_dataset(idxs: list[int]) -> SequenceDataset:
+            return SequenceDataset(
+                [cots_by_q[i] for i in idxs],
+                [labels_by_q_list[i] for i in idxs],
+            )
 
         # Create datasets
-        train_dataset = SequenceDataset(
-            [sequences[i].to(self.device).float() for i in train_idx],
-            [labels[i] for i in train_idx],
-        )
-        val_dataset = SequenceDataset(
-            [sequences[i].to(self.device).float() for i in val_idx],
-            [labels[i] for i in val_idx],
-        )
-        test_dataset = SequenceDataset(
-            [sequences[i].to(self.device).float() for i in test_idx],
-            [labels[i] for i in test_idx],
-        )
+        train_dataset = make_dataset(train_idxs)
+        val_dataset = make_dataset(val_idxs)
+        test_dataset = make_dataset(test_idxs)
 
         # Create dataloaders
         train_loader = DataLoader(
@@ -269,14 +283,15 @@ class ProbeTrainer:
             shuffle=True,
             collate_fn=collate_fn,
         )
+        # no batching for validation and test sets
         val_loader = DataLoader(
             val_dataset,
-            batch_size=self.c.batch_size,
+            batch_size=len(val_dataset),
             collate_fn=collate_fn,
         )
         test_loader = DataLoader(
             test_dataset,
-            batch_size=self.c.batch_size,
+            batch_size=len(test_dataset),
             collate_fn=collate_fn,
         )
 
@@ -288,11 +303,12 @@ class ProbeTrainer:
         labels_by_q_list: list[int],
         run_name: str,
         project_name: str,
+        args_dict: dict,
     ) -> AbstractAttnProbeModel:
         # Initialize W&B
         wandb.init(entity="cot-probing", project=project_name, name=run_name)
         wandb.config.update(asdict(self.c))
-
+        wandb.config.update({f"args_{k}": v for k, v in args_dict.items()})
         # Prepare data
         train_loader, val_loader, test_loader = self.prepare_data(
             cots_by_q, labels_by_q_list
@@ -300,7 +316,7 @@ class ProbeTrainer:
 
         # Initialize model and optimizer
         model = self.c.probe_model_class(self.c.probe_model_config).to(self.device)
-        optimizer = torch.optim.Adam(model.parameters(), lr=self.c.lr)
+        optimizer = Adam(model.parameters(), lr=self.c.lr)
         criterion = nn.BCELoss()
 
         # Training loop
@@ -359,32 +375,53 @@ class ProbeTrainer:
         self,
         model: AbstractAttnProbeModel,
         criterion: nn.BCELoss,
-        batch: torch.Tensor,
-        labels_t: torch.Tensor,
-        attn_mask: torch.Tensor,
+        collate_fn_output: CollateFnOutput,
     ) -> tuple[Float[torch.Tensor, ""], float]:
-        batch = batch.to(self.device)
-        labels_t = labels_t.to(self.device)
-        attn_mask = attn_mask.to(self.device)
-        outputs = model(batch, attn_mask)
+        cot_acts = collate_fn_output.cot_acts.to(self.device)
+        attn_mask = collate_fn_output.attn_mask.to(self.device)
+        labels = collate_fn_output.labels.to(self.device)
+        q_idxs = collate_fn_output.q_idxs
+        outputs = model(cot_acts, attn_mask)
 
-        # Calculate class weights based on batch distribution
-        n_pos = (labels_t == 1).sum()
-        n_neg = (labels_t == 0).sum()
-        total = n_pos + n_neg
+        def compute_class_metrics(
+            target_label: int,
+        ) -> tuple[Float[torch.Tensor, ""], float]:
+            # Get unique question indices for target label
+            target_q_idxs = list(
+                {q_idx for i, q_idx in enumerate(q_idxs) if labels[i] == target_label}
+            )
 
-        # Separate losses for positive and negative classes
-        pos_mask = labels_t == 1
-        neg_mask = labels_t == 0
+            # Compute loss and accuracy for each question with target label
+            q_losses = []
+            q_accs = []
+            for q_idx in target_q_idxs:
+                # in each iteration we process all CoTs
+                # that were present in a batch for one question
+                q_mask = [i == q_idx for i in q_idxs]
+                q_outputs = outputs[q_mask]
+                q_labels = labels[q_mask]
+                assert torch.all(q_labels == target_label)
+                # Compute loss
+                q_loss = criterion(q_outputs, q_labels)
+                q_losses.append(q_loss)
+                # Compute accuracy
+                q_acc = ((q_outputs > 0.5) == q_labels.bool()).float().mean().item()
+                q_accs.append(q_acc)
 
-        pos_loss = criterion(outputs[pos_mask], labels_t[pos_mask]) if n_pos > 0 else 0
-        neg_loss = criterion(outputs[neg_mask], labels_t[neg_mask]) if n_neg > 0 else 0
+            # Average metrics
+            if not q_losses:
+                return torch.tensor(0.0).to(self.device), 0.0
+            return torch.stack(q_losses).mean(), sum(q_accs) / len(q_accs)
 
-        # Weight losses based on class distribution
-        weighted_loss = (n_neg / total) * pos_loss + (n_pos / total) * neg_loss
+        # Compute metrics for positive and negative classes
+        pos_loss, pos_acc = compute_class_metrics(target_label=1)
+        neg_loss, neg_acc = compute_class_metrics(target_label=0)
 
-        acc = ((outputs > 0.5) == labels_t).float().mean().item()
-        return weighted_loss, acc
+        # Take average of positive and negative metrics
+        balanced_loss = (pos_loss + neg_loss) / 2
+        balanced_acc = (pos_acc + neg_acc) / 2
+
+        return balanced_loss, balanced_acc
 
     def _compute_loss_and_acc(
         self,
@@ -395,9 +432,9 @@ class ProbeTrainer:
         total_loss = 0
         total_acc = 0
         with torch.no_grad():
-            for batch, labels_t, attn_mask in data_loader:
+            for collate_fn_output in data_loader:
                 loss, acc = self._compute_loss_and_acc_single_batch(
-                    model, criterion, batch, labels_t, attn_mask
+                    model, criterion, collate_fn_output
                 )
                 total_loss += loss.item()
                 total_acc += acc
@@ -409,7 +446,7 @@ class ProbeTrainer:
     def _train_epoch(
         self,
         model: AbstractAttnProbeModel,
-        optimizer: torch.optim.Adam,
+        optimizer: Adam,
         criterion: nn.BCELoss,
         train_loader: DataLoader,
         val_loader: DataLoader,
@@ -419,14 +456,14 @@ class ProbeTrainer:
         model.train()
         train_loss = 0
         train_acc = 0
-        for batch, labels_t, attn_mask in tqdm(train_loader, desc=f"Epoch {epoch}"):
+        for collate_fn_output in tqdm(train_loader, desc=f"Epoch {epoch}"):
             optimizer.zero_grad()
             loss, acc = self._compute_loss_and_acc_single_batch(
-                model, criterion, batch, labels_t, attn_mask
+                model, criterion, collate_fn_output
             )
             loss.backward()
             optimizer.step()
-            train_loss += loss
+            train_loss += loss.item()
             train_acc += acc
 
         train_loss /= len(train_loader)
@@ -435,5 +472,4 @@ class ProbeTrainer:
         # Validation
         model.eval()
         val_loss, val_acc = self._compute_loss_and_acc(model, criterion, val_loader)
-        assert isinstance(train_loss, torch.Tensor)
-        return train_loss.item(), train_acc, val_loss, val_acc
+        return train_loss, train_acc, val_loss, val_acc

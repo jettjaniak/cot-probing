@@ -2,12 +2,12 @@
 import argparse
 import logging
 import pickle
-import random
 import uuid
 from pathlib import Path
 
 import numpy as np
 import torch
+from beartype import beartype
 
 from cot_probing.attn_probes import (
     AbstractAttnProbeModel,
@@ -21,7 +21,8 @@ from cot_probing.attn_probes import (
 from cot_probing.typing import *
 
 
-def parse_args():
+@beartype
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train attn probes")
     parser.add_argument(
         "-f",
@@ -131,6 +132,7 @@ def parse_args():
     return parser.parse_args()
 
 
+@beartype
 def get_probe_model_class(probe_class_arg: str) -> type[AbstractAttnProbeModel]:
     return {
         "minimal": MinimalAttnProbeModel,
@@ -139,8 +141,10 @@ def get_probe_model_class(probe_class_arg: str) -> type[AbstractAttnProbeModel]:
     }[probe_class_arg]
 
 
+@beartype
 def build_probe_config(
     args: argparse.Namespace,
+    layer: int,
 ) -> ProbingConfig:
     probe_class_arg = args.probe_class
     d_head = args.d_head
@@ -166,9 +170,11 @@ def build_probe_config(
         validation_split=args.validation_split_size,
         test_split=args.test_split_size,
         device=args.device,
+        layer=layer,
     )
 
 
+@beartype
 def prepare_probe_data(
     acts_dataset: dict,
     include_answer_toks: bool,
@@ -198,20 +204,21 @@ def prepare_probe_data(
     return cots_by_q, labels_by_q
 
 
+@beartype
 def train_attn_probe(
     acts_dataset: dict,
+    layer: int,
     args: argparse.Namespace,
-    include_answer_toks: bool,
     wandb_run_name: str,
     wandb_project: str,
 ) -> dict:
     """Train attention probe on the dataset"""
     # Extract sequences and labels from the dataset
     cots_by_q, labels_by_q = prepare_probe_data(
-        acts_dataset, include_answer_toks, args.d_model
+        acts_dataset, args.include_answer_toks, args.d_model
     )
     # Create probe configuration
-    probe_config = build_probe_config(args)
+    probe_config = build_probe_config(args, layer)
 
     # Initialize trainer
     trainer = ProbeTrainer(probe_config)
@@ -222,6 +229,7 @@ def train_attn_probe(
         labels_by_q_list=labels_by_q,
         run_name=wandb_run_name,
         project_name=wandb_project,
+        args_dict=vars(args),
     )
 
     return {
@@ -230,6 +238,7 @@ def train_attn_probe(
     }
 
 
+@beartype
 def main(args: argparse.Namespace):
     logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING)
     logging.info("Running with arguments:")
@@ -238,16 +247,18 @@ def main(args: argparse.Namespace):
 
     assert args.file.stem.startswith("acts_")
     layer_str = args.file.stem.split("_")[1]
+    layer_int = int(layer_str[1:])
     with open(args.file, "rb") as f:
         acts_dataset = pickle.load(f)
 
     # Create default wandb run name if none provided
     if args.wandb_run_name is None:
-        wandb_run_name = f"{layer_str}_{args.probe_class}_ds{args.data_seed}_ws{args.weight_init_seed}{'_WITH_ANSWER' if args.include_answer_toks else ''}_{uuid.uuid4().hex[:8]}"
+        with_answer_str = "WITH_ANSWER_" if args.include_answer_toks else ""
+        wandb_run_name = f"{with_answer_str}{layer_str}_{args.probe_class}_ds{args.data_seed}_ws{args.weight_init_seed}_{uuid.uuid4().hex[:8]}"
     probing_results = train_attn_probe(
         acts_dataset=acts_dataset,
+        layer=layer_int,
         args=args,
-        include_answer_toks=args.include_answer_toks,
         wandb_project=args.wandb_project,
         wandb_run_name=wandb_run_name,
     )
