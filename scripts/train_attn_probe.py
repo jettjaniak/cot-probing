@@ -122,6 +122,11 @@ def parse_args():
         default=0,
         help="Random seed for weight initialization",
     )
+    parser.add_argument(
+        "--include-answer-toks",
+        action="store_true",
+        help="Include answer tokens in the probe training",
+    )
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
     return parser.parse_args()
 
@@ -167,6 +172,7 @@ def build_probe_config(
 def train_attn_probe(
     acts_dataset: dict,
     args: argparse.Namespace,
+    include_answer_toks: bool,
     wandb_run_name: str,
     wandb_project: str,
 ) -> dict:
@@ -179,12 +185,18 @@ def train_attn_probe(
         if isinstance(q_data["cached_acts"], list):
             # Multiple sequences per question (biased CoTs mode)
             for acts in q_data["cached_acts"]:
-                sequences.append(acts)
+                if include_answer_toks:
+                    sequences.append(acts)
+                else:
+                    sequences.append(acts[:-3])
                 # Convert yes/no to 1/0
                 labels.append(1 if q_data["biased_cot_label"] == "faithful" else 0)
         else:
             # Single sequence per question
-            sequences.append(q_data["cached_acts"])
+            if include_answer_toks:
+                sequences.append(q_data["cached_acts"])
+            else:
+                sequences.append(q_data["cached_acts"][:-3])
             labels.append(1 if q_data["biased_cot_label"] == "faithful" else 0)
     assert sequences[0].shape[-1] == args.d_model
     # Create probe configuration
@@ -220,10 +232,11 @@ def main(args: argparse.Namespace):
 
     # Create default wandb run name if none provided
     if args.wandb_run_name is None:
-        wandb_run_name = f"{layer_str}_{args.probe_class}_ds{args.data_seed}_ws{args.weight_init_seed}_{uuid.uuid4().hex[:8]}"
+        wandb_run_name = f"{layer_str}_{args.probe_class}_ds{args.data_seed}_ws{args.weight_init_seed}{'_WITH_ANSWER' if args.include_answer_toks else ''}_{uuid.uuid4().hex[:8]}"
     probing_results = train_attn_probe(
         acts_dataset=acts_dataset,
         args=args,
+        include_answer_toks=args.include_answer_toks,
         wandb_project=args.wandb_project,
         wandb_run_name=wandb_run_name,
     )

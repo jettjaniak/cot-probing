@@ -333,15 +333,14 @@ class ProbeTrainer:
                 best_val_loss = val_loss
                 patience_counter = 0
                 best_model_state = model.state_dict().copy()
+                # Save best model state to wandb
+                torch.save(best_model_state, "results/best_model.pt")
+                wandb.save("results/best_model.pt")
             else:
                 patience_counter += 1
                 if patience_counter >= self.c.patience:
                     print(f"Early stopping at epoch {epoch}")
                     break
-
-        # Save best model state to wandb
-        torch.save(best_model_state, "results/best_model.pt")
-        wandb.save("results/best_model.pt")
 
         # Load best model
         model.load_state_dict(best_model_state)
