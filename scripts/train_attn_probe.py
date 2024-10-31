@@ -100,7 +100,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--data-device",
         type=str,
-        default="cpu",
+        default="cuda" if torch.cuda.is_available() else "cpu",
         help="Device to load data on",
     )
     parser.add_argument(
@@ -117,12 +117,14 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--data-seed",
+        "--ds",
         type=int,
         default=0,
         help="Random seed for reproducibility of dataset splitting",
     )
     parser.add_argument(
         "--weight-init-seed",
+        "--ws",
         type=int,
         default=0,
         help="Random seed for weight initialization",
