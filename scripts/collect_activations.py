@@ -12,7 +12,6 @@ import torch
 from tqdm.auto import tqdm
 from transformers import PreTrainedModel, PreTrainedTokenizerBase
 
-from cot_probing import DATA_DIR
 from cot_probing.activations import collect_resid_acts_with_pastkv
 from cot_probing.typing import *
 from cot_probing.utils import load_model_and_tokenizer
@@ -38,7 +37,7 @@ def parse_args():
         "--biased-cots-collection-mode",
         type=str,
         choices=["none", "one", "all"],
-        default="none",
+        default="all",
         help="Mode for collecting biased COTs. If one or all is selected, we filter first the biased COTs by the biased_cot_label.",
     )
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
@@ -152,11 +151,13 @@ def collect_activations_for_question(
 
     resid_acts_by_layer_by_cot = []
     for last_q_toks in last_q_toks_to_cache:
-        resid_acts_by_layer = collect_resid_acts_with_pastkv(
-            model=model,
-            last_q_toks=last_q_toks,
-            layers=layers,
-            past_key_values=biased_fsp_cache,
+        resid_acts_by_layer: dict[int, Float[torch.Tensor, " seq model"]] = (
+            collect_resid_acts_with_pastkv(
+                model=model,
+                last_q_toks=last_q_toks,
+                layers=layers,
+                past_key_values=biased_fsp_cache,
+            )
         )
         resid_acts_by_layer_by_cot.append(resid_acts_by_layer)
     if biased_cots_collection_mode == "none":
@@ -174,12 +175,47 @@ def collect_activations_for_question(
     }
 
 
+def get_layer_file_path(output_file_stem: str, layer: int) -> str:
+    return f"activations/acts_L{layer:02d}_{output_file_stem}.pkl"
+
+
+def load_existing_results(output_file_stem: str, layers: list[int]) -> tuple[dict, int]:
+    """
+    Loads existing results for all layers and returns them along with the last consistent index.
+    Returns (layer_results, last_processed_index)
+    """
+    layer_results = {}
+    last_indices = []
+
+    for layer in layers:
+        layer_file = get_layer_file_path(output_file_stem, layer)
+        if os.path.exists(layer_file):
+            try:
+                with open(layer_file, "rb") as f:
+                    layer_data = pickle.load(f)
+                    layer_results[layer] = layer_data["qs"]
+                    last_indices.append(len(layer_data["qs"]))
+            except (EOFError, pickle.UnpicklingError):
+                layer_results[layer] = []
+                last_indices.append(0)
+        else:
+            layer_results[layer] = []
+            last_indices.append(0)
+
+    # Get minimum index across all layers
+    last_processed_index = min(last_indices) if last_indices else 0
+
+    return layer_results, last_processed_index
+
+
 def collect_activations(
     model: PreTrainedModel,
     tokenizer: PreTrainedTokenizerBase,
     dataset: dict,
     layers: list[int],
+    output_file_stem: str,
     biased_cots_collection_mode: Literal["none", "one", "all"],
+    args: argparse.Namespace,
 ):
     biased_no_fsp = dataset["biased_no_fsp"] + "\n\n"
     biased_yes_fsp = dataset["biased_yes_fsp"] + "\n\n"
@@ -188,8 +224,19 @@ def collect_activations(
     biased_no_fsp_cache = build_fsp_cache(model, tokenizer, biased_no_fsp)
     biased_yes_fsp_cache = build_fsp_cache(model, tokenizer, biased_yes_fsp)
 
+    # Create output directory if it doesn't exist
+    os.makedirs("activations", exist_ok=True)
+
+    # Load existing results and get last processed index in one pass
+    layer_results, start_idx = load_existing_results(output_file_stem, layers)
+
+    # Create progress bar for remaining questions
+    remaining_qs = dataset["qs"][start_idx:]
+    if start_idx > 0:
+        print(f"Resuming from question {start_idx}")
+
     result = []
-    for q_data in tqdm(dataset["qs"], "Processing questions"):
+    for q_data in tqdm(remaining_qs, "Processing questions"):
         if "biased_cots" not in q_data:
             print("Warning: No biased COTs found for question")
             continue
@@ -208,9 +255,31 @@ def collect_activations(
             biased_yes_fsp_cache=biased_yes_fsp_cache,
             biased_cots_collection_mode=biased_cots_collection_mode,
         )
-        result.append(res)
 
-    return result
+        # Split result by layer and append to corresponding lists
+        for layer in layers:
+            layer_res = copy.deepcopy(res)
+            layer_res["cached_acts"] = (
+                res["cached_acts"][layer]
+                if isinstance(res["cached_acts"], dict)
+                else [r[layer] for r in res["cached_acts"]]
+            )
+            layer_results[layer].append(layer_res)
+
+            # Save updated layer results
+            skip_args = ["verbose", "file"]
+            layer_output = {
+                "unbiased_fsp": dataset["unbiased_fsp"],
+                "biased_no_fsp": dataset["biased_no_fsp"],
+                "biased_yes_fsp": dataset["biased_yes_fsp"],
+                "qs": layer_results[layer],
+                "arg_model_size": dataset["arg_model_size"],
+                **{f"arg_{k}": v for k, v in vars(args).items() if k not in skip_args},
+            }
+
+            layer_file = get_layer_file_path(output_file_stem, layer)
+            with open(layer_file, "wb") as f:
+                pickle.dump(layer_output, f)
 
 
 def main(args: argparse.Namespace):
@@ -236,30 +305,17 @@ def main(args: argparse.Namespace):
     else:
         layers = list(range(model.config.num_hidden_layers + 1))
 
-    acts_results = collect_activations(
+    output_file_stem = input_file_path.stem.replace("labeled_qs_", "")
+
+    collect_activations(
         model=model,
         tokenizer=tokenizer,
         dataset=labeled_questions_dataset,
         layers=layers,
+        output_file_stem=output_file_stem,
         biased_cots_collection_mode=args.biased_cots_collection_mode,
+        args=args,
     )
-
-    skip_args = ["verbose", "file"]
-    ret = dict(
-        unbiased_fsp=labeled_questions_dataset["unbiased_fsp"],
-        biased_no_fsp=labeled_questions_dataset["biased_no_fsp"],
-        biased_yes_fsp=labeled_questions_dataset["biased_yes_fsp"],
-        qs=acts_results,
-        arg_model_size=model_size,
-        **{f"arg_{k}": v for k, v in vars(args).items() if k not in skip_args},
-    )
-
-    output_file_stem = input_file_path.stem.replace("labeled_qs_", "acts_")
-    output_file_path = f"activations/{output_file_stem}.pkl"
-
-    # Dump the result as a pickle file
-    with open(output_file_path, "wb") as f:
-        pickle.dump(ret, f)
 
 
 if __name__ == "__main__":
