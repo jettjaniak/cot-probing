@@ -41,6 +41,12 @@ def parse_args():
         help="Mode for collecting biased COTs. If one or all is selected, we filter first the biased COTs by the biased_cot_label.",
     )
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
+    parser.add_argument(
+        "--save-frequency",
+        type=int,
+        default=10,
+        help="Save results to disk every N questions.",
+    )
     return parser.parse_args()
 
 
@@ -236,7 +242,7 @@ def collect_activations(
         print(f"Resuming from question {start_idx}")
 
     result = []
-    for q_data in tqdm(remaining_qs, "Processing questions"):
+    for idx, q_data in enumerate(tqdm(remaining_qs, "Processing questions")):
         if "biased_cots" not in q_data:
             print("Warning: No biased COTs found for question")
             continue
@@ -266,20 +272,27 @@ def collect_activations(
             )
             layer_results[layer].append(layer_res)
 
-            # Save updated layer results
-            skip_args = ["verbose", "file"]
-            layer_output = {
-                "unbiased_fsp": dataset["unbiased_fsp"],
-                "biased_no_fsp": dataset["biased_no_fsp"],
-                "biased_yes_fsp": dataset["biased_yes_fsp"],
-                "qs": layer_results[layer],
-                "arg_model_size": dataset["arg_model_size"],
-                **{f"arg_{k}": v for k, v in vars(args).items() if k not in skip_args},
-            }
+        # Modified saving logic: only save every N questions
+        if (idx + 1) % args.save_frequency == 0 or idx == len(remaining_qs) - 1:
+            for layer in layers:
+                # Save updated layer results
+                skip_args = ["verbose", "file"]
+                layer_output = {
+                    "unbiased_fsp": dataset["unbiased_fsp"],
+                    "biased_no_fsp": dataset["biased_no_fsp"],
+                    "biased_yes_fsp": dataset["biased_yes_fsp"],
+                    "qs": layer_results[layer],
+                    "arg_model_size": dataset["arg_model_size"],
+                    **{
+                        f"arg_{k}": v
+                        for k, v in vars(args).items()
+                        if k not in skip_args
+                    },
+                }
 
-            layer_file = get_layer_file_path(output_file_stem, layer)
-            with open(layer_file, "wb") as f:
-                pickle.dump(layer_output, f)
+                layer_file = get_layer_file_path(output_file_stem, layer)
+                with open(layer_file, "wb") as f:
+                    pickle.dump(layer_output, f)
 
 
 def main(args: argparse.Namespace):
