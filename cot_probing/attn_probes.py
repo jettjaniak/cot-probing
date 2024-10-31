@@ -6,12 +6,12 @@ from typing import Sequence
 
 import numpy as np
 import torch
-import wandb
 from fancy_einsum import einsum
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
 from tqdm.auto import tqdm
 
+import wandb
 from cot_probing.typing import *
 from cot_probing.utils import setup_determinism
 
@@ -20,22 +20,22 @@ from cot_probing.utils import setup_determinism
 class AttnProbeModelConfig:
     d_model: int
     d_head: int
-    weight_init_range: float = 0.02
-    weight_init_seed: int = 0
+    weight_init_range: float
+    weight_init_seed: int
 
 
 @dataclass
 class ProbingConfig:
-    probe_model_class_name: str
+    probe_model_class: type["AbstractAttnProbeModel"]
     probe_model_config: AttnProbeModelConfig
-    data_seed: int = 0
-    lr: float = 1e-3
-    batch_size: int = 32
-    patience: int = 5
-    n_epochs: int = 100
-    validation_split: float = 0.1
-    test_split: float = 0.1
-    device: str = "cuda" if torch.cuda.is_available() else "cpu"
+    data_seed: int
+    lr: float
+    batch_size: int
+    patience: int
+    n_epochs: int
+    validation_split: float
+    test_split: float
+    device: str
 
 
 class SequenceDataset(Dataset):
@@ -59,7 +59,11 @@ class SequenceDataset(Dataset):
 
 def collate_fn(
     batch: Sequence[tuple[Float[torch.Tensor, "seq d_model"], Float[torch.Tensor, ""]]]
-) -> tuple[Float[torch.Tensor, " batch seq d_model"], Float[torch.Tensor, " batch"]]:
+) -> tuple[
+    Float[torch.Tensor, " batch seq d_model"],
+    Float[torch.Tensor, " batch"],
+    Bool[torch.Tensor, " batch seq"],
+]:
     """Handle variable sequence lengths with padding"""
     sequences, labels = zip(*batch)
     max_len = max(seq.shape[-2] for seq in sequences)
@@ -215,13 +219,16 @@ class ProbeTrainer:
 
         # Create datasets
         train_dataset = SequenceDataset(
-            [sequences[i] for i in train_idx], [labels[i] for i in train_idx]
+            [sequences[i].to(self.device) for i in train_idx],
+            [labels[i] for i in train_idx],
         )
         val_dataset = SequenceDataset(
-            [sequences[i] for i in val_idx], [labels[i] for i in val_idx]
+            [sequences[i].to(self.device) for i in val_idx],
+            [labels[i] for i in val_idx],
         )
         test_dataset = SequenceDataset(
-            [sequences[i] for i in test_idx], [labels[i] for i in test_idx]
+            [sequences[i].to(self.device) for i in test_idx],
+            [labels[i] for i in test_idx],
         )
 
         # Create dataloaders
@@ -249,7 +256,7 @@ class ProbeTrainer:
         sequences: list[Float[torch.Tensor, "seq d_model"]],
         labels_list: list[int],
         run_name: str,
-        project_name: str = "attn-probes",
+        project_name: str,
     ) -> AbstractAttnProbeModel:
         # Initialize W&B
         wandb.init(entity="cot-probing", project=project_name, name=run_name)
@@ -261,14 +268,14 @@ class ProbeTrainer:
         )
 
         # Initialize model and optimizer
-        model = globals()[self.c.probe_model_class_name](self.c.probe_model_config)
+        model = self.c.probe_model_class(self.c.probe_model_config).to(self.device)
         optimizer = torch.optim.Adam(model.parameters(), lr=self.c.lr)
         criterion = nn.BCELoss()
 
         # Training loop
         best_val_loss = float("inf")
         patience_counter = 0
-        best_model_state = None
+        best_model_state = model.state_dict().copy()
 
         for epoch in range(self.c.n_epochs):
             # Training

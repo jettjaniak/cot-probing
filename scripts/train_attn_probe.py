@@ -3,18 +3,22 @@ import argparse
 import logging
 import pickle
 import random
+import uuid
 from pathlib import Path
-from typing import Dict
 
 import numpy as np
 import torch
 
-from cot_probing.attn_probes import (  # FullAttnProbeConfig,
-    MediumAttnProbeConfig,
-    MinimalAttnProbeConfig,
+from cot_probing.attn_probes import (
+    AbstractAttnProbeModel,
+    AttnProbeModelConfig,
+    FullAttnProbeModel,
+    MediumAttnProbeModel,
+    MinimalAttnProbeModel,
     ProbeTrainer,
     ProbingConfig,
 )
+from cot_probing.typing import *
 
 
 def parse_args():
@@ -41,7 +45,7 @@ def parse_args():
     parser.add_argument(
         "--probe-class",
         type=str,
-        default="minimal",
+        required=True,
         choices=["minimal", "medium", "full"],
         help="Type of attention probe to use",
     )
@@ -50,6 +54,12 @@ def parse_args():
         type=int,
         default=4096,
         help="Model dimension (should match the model being probed)",
+    )
+    parser.add_argument(
+        "--d-head",
+        type=int,
+        default=None,
+        help="Head dimension",
     )
     parser.add_argument(
         "--weight-init-range",
@@ -68,11 +78,6 @@ def parse_args():
         type=int,
         default=32,
         help="Batch size for training",
-    )
-    parser.add_argument(
-        "--use-temperature",
-        action="store_true",
-        help="Use temperature for attention queries",
     )
     parser.add_argument(
         "--patience",
@@ -106,20 +111,26 @@ def parse_args():
         help="Wandb run name. If not provided, will be auto-generated.",
     )
     parser.add_argument(
-        "--seed",
+        "--data-seed",
         type=int,
-        default=42,
-        help="Random seed for reproducibility",
+        default=0,
+        help="Random seed for reproducibility of dataset splitting",
+    )
+    parser.add_argument(
+        "--weight-init-seed",
+        type=int,
+        default=0,
+        help="Random seed for weight initialization",
     )
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
     return parser.parse_args()
 
 
-def get_probe_class_name(probe_class_arg: str) -> str:
+def get_probe_model_class(probe_class_arg: str) -> type[AbstractAttnProbeModel]:
     return {
-        "minimal": "MinimalAttnProbeModel",
-        "medium": "MediumAttnProbeModel",
-        "full": "FullAttnProbeModel",
+        "minimal": MinimalAttnProbeModel,
+        "medium": MediumAttnProbeModel,
+        "full": FullAttnProbeModel,
     }[probe_class_arg]
 
 
@@ -127,37 +138,22 @@ def build_probe_config(
     args: argparse.Namespace,
 ) -> ProbingConfig:
     probe_class_arg = args.probe_class
+    d_head = args.d_head
+    if d_head is None:
+        assert args.probe_class == "minimal"
+        d_head = args.d_model
 
-    if probe_class_arg == "minimal":
-        probe_config = MinimalAttnProbeConfig(
-            d_model=args.d_model,
-            d_head=args.d_model,  # For MinimalAttnProbe, d_head must equal d_model
-            weight_init_range=args.weight_init_range,
-            weight_init_seed=args.seed,
-            use_temperature=args.use_temperature,
-        )
-    elif probe_class_arg == "medium":
-        probe_config = MediumAttnProbeConfig(
-            d_model=args.d_model,
-            d_head=args.d_model,
-            weight_init_range=args.weight_init_range,
-            weight_init_seed=args.seed,
-        )
-    elif probe_class_arg == "full":
-        # probe_config = FullAttnProbeConfig(
-        #     d_model=args.d_model,
-        #     d_head=args.d_model,
-        #     weight_init_range=args.weight_init_range,
-        #     weight_init_seed=args.seed,
-        # )
-        raise NotImplementedError("FullAttnProbeConfig is not implemented")
-    else:
-        raise ValueError(f"Invalid probe class: {probe_class_arg}")
+    probe_config = AttnProbeModelConfig(
+        d_model=args.d_model,
+        d_head=d_head,
+        weight_init_range=args.weight_init_range,
+        weight_init_seed=args.weight_init_seed,
+    )
 
     return ProbingConfig(
-        probe_class_name=get_probe_class_name(probe_class_arg),
-        probe_config=probe_config,
-        data_seed=args.seed,
+        probe_model_class=get_probe_model_class(probe_class_arg),
+        probe_model_config=probe_config,
+        data_seed=args.data_seed,
         lr=args.learning_rate,
         batch_size=args.batch_size,
         patience=args.patience,
@@ -169,31 +165,28 @@ def build_probe_config(
 
 
 def train_attn_probe(
-    acts_dataset: Dict,
+    acts_dataset: dict,
     args: argparse.Namespace,
-    seed: int = 42,
-    wandb_project: str = "attn-probes",
-    wandb_run_name: str | None = None,
-    verbose: bool = False,
-) -> Dict:
+    wandb_run_name: str,
+    wandb_project: str,
+) -> dict:
     """Train attention probe on the dataset"""
     # Extract sequences and labels from the dataset
     sequences = []
     labels = []
-
     for q_data in acts_dataset["qs"]:
         # Convert cached activations to torch tensors
         if isinstance(q_data["cached_acts"], list):
             # Multiple sequences per question (biased CoTs mode)
             for acts in q_data["cached_acts"]:
-                sequences.append(torch.tensor(acts))
+                sequences.append(acts)
                 # Convert yes/no to 1/0
                 labels.append(1 if q_data["biased_cot_label"] == "faithful" else 0)
         else:
             # Single sequence per question
-            sequences.append(torch.tensor(q_data["cached_acts"]))
+            sequences.append(q_data["cached_acts"])
             labels.append(1 if q_data["biased_cot_label"] == "faithful" else 0)
-
+    assert sequences[0].shape[-1] == args.d_model
     # Create probe configuration
     probe_config = build_probe_config(args)
 
@@ -201,11 +194,10 @@ def train_attn_probe(
     trainer = ProbeTrainer(probe_config)
 
     # Train probe
-    run_name = wandb_run_name or f"attn_probe_seed_{seed}"
     model = trainer.train(
         sequences=sequences,
         labels_list=labels,
-        run_name=run_name,
+        run_name=wandb_run_name,
         project_name=wandb_project,
     )
 
@@ -217,25 +209,23 @@ def train_attn_probe(
 
 def main(args: argparse.Namespace):
     logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING)
+    logging.info("Running with arguments:")
+    for arg, value in vars(args).items():
+        logging.info(f"  {arg}: {value}")
 
-    # Set seed
-    random.seed(args.seed)
-    np.random.seed(args.seed)
-
-    acts_file_path = Path(args.file)
-    if not acts_file_path.exists():
-        raise FileNotFoundError(f"File not found at {acts_file_path}")
-
-    with open(acts_file_path, "rb") as f:
+    assert args.file.stem.startswith("acts_")
+    layer_str = args.file.stem.split("_")[1]
+    with open(args.file, "rb") as f:
         acts_dataset = pickle.load(f)
 
+    # Create default wandb run name if none provided
+    if args.wandb_run_name is None:
+        wandb_run_name = f"{layer_str}_{args.probe_class}_ds{args.data_seed}_ws{args.weight_init_seed}_{uuid.uuid4().hex[:8]}"
     probing_results = train_attn_probe(
         acts_dataset=acts_dataset,
         args=args,
-        seed=args.seed,
         wandb_project=args.wandb_project,
-        wandb_run_name=args.wandb_run_name,
-        verbose=args.verbose,
+        wandb_run_name=wandb_run_name,
     )
 
     # Save results
