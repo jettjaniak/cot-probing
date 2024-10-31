@@ -15,6 +15,8 @@ import wandb
 from cot_probing.typing import *
 from cot_probing.utils import setup_determinism
 
+torch.set_grad_enabled(True)
+
 
 @dataclass(kw_only=True)
 class AttnProbeModelConfig:
@@ -219,15 +221,15 @@ class ProbeTrainer:
 
         # Create datasets
         train_dataset = SequenceDataset(
-            [sequences[i].to(self.device) for i in train_idx],
+            [sequences[i].to(self.device).float() for i in train_idx],
             [labels[i] for i in train_idx],
         )
         val_dataset = SequenceDataset(
-            [sequences[i].to(self.device) for i in val_idx],
+            [sequences[i].to(self.device).float() for i in val_idx],
             [labels[i] for i in val_idx],
         )
         test_dataset = SequenceDataset(
-            [sequences[i].to(self.device) for i in test_idx],
+            [sequences[i].to(self.device).float() for i in test_idx],
             [labels[i] for i in test_idx],
         )
 
