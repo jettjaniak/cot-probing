@@ -27,11 +27,16 @@ def parse_args():
         help="Path to the dataset of activations",
     )
     parser.add_argument(
-        "-t",
-        "--test-ratio",
+        "--test-split-size",
         type=float,
-        default=0.2,
-        help="Ratio of the dataset to use as test set. Defaults to 0.2.",
+        default=0.1,
+        help="Size of the test set split.",
+    )
+    parser.add_argument(
+        "--validation-split-size",
+        type=float,
+        default=0.1,
+        help="Size of the validation set split.",
     )
     parser.add_argument(
         "--probe-class",
@@ -157,8 +162,8 @@ def build_probe_config(
         batch_size=args.batch_size,
         patience=args.patience,
         n_epochs=args.epochs,
-        validation_split=args.test_ratio / 2,  # Split test ratio between val and test
-        test_split=args.test_ratio / 2,
+        validation_split=args.validation_split_size,
+        test_split=args.test_split_size,
         device=args.device,
     )
 
@@ -234,7 +239,7 @@ def main(args: argparse.Namespace):
     )
 
     # Save results
-    output_path = Path("results") / f"probe_{args.file.stem}.pt"
+    output_path = Path("results") / f"attn_probe_{args.file.stem}.pt"
     output_path.parent.mkdir(exist_ok=True)
     torch.save(probing_results, output_path)
 
