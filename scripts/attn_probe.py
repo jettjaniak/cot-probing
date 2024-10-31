@@ -9,7 +9,12 @@ from typing import Dict
 import numpy as np
 import torch
 
-from cot_probing.attn_probes import MinimalAttnProbeConfig, ProbeTrainer, ProbingConfig
+from cot_probing.attn_probes import (  # FullAttnProbeConfig,
+    MediumAttnProbeConfig,
+    MinimalAttnProbeConfig,
+    ProbeTrainer,
+    ProbingConfig,
+)
 
 
 def parse_args():
@@ -60,6 +65,11 @@ def parse_args():
         help="Batch size for training",
     )
     parser.add_argument(
+        "--use-temperature",
+        action="store_true",
+        help="Use temperature for attention queries",
+    )
+    parser.add_argument(
         "--patience",
         type=int,
         default=5,
@@ -100,28 +110,6 @@ def parse_args():
     return parser.parse_args()
 
 
-def build_config(args: argparse.Namespace) -> Dict:
-    """Build configuration for the attention probe"""
-    return {
-        "probe_class_name": args.probe_class,
-        "probe_config": {
-            "d_model": args.d_model,
-            "d_head": args.d_model,  # For MinimalAttnProbe, d_head must equal d_model
-            "weight_init_range": args.weight_init_range,
-            "weight_init_seed": args.seed,
-        },
-        "data_seed": args.seed,
-        "lr": args.learning_rate,
-        "batch_size": args.batch_size,
-        "patience": args.patience,
-        "n_epochs": args.epochs,
-        "validation_split": args.test_ratio
-        / 2,  # Split test ratio between val and test
-        "test_split": args.test_ratio / 2,
-        "device": args.device,
-    }
-
-
 def get_probe_class_name(probe_class_arg: str) -> str:
     return {
         "minimal": "MinimalAttnProbeModel",
@@ -130,9 +118,54 @@ def get_probe_class_name(probe_class_arg: str) -> str:
     }[probe_class_arg]
 
 
+def build_probe_config(
+    args: argparse.Namespace,
+) -> ProbingConfig:
+    probe_class_arg = args.probe_class
+
+    if probe_class_arg == "minimal":
+        probe_config = MinimalAttnProbeConfig(
+            d_model=args.d_model,
+            d_head=args.d_model,  # For MinimalAttnProbe, d_head must equal d_model
+            weight_init_range=args.weight_init_range,
+            weight_init_seed=args.seed,
+            use_temperature=args.use_temperature,
+        )
+    elif probe_class_arg == "medium":
+        probe_config = MediumAttnProbeConfig(
+            d_model=args.d_model,
+            d_head=args.d_model,
+            weight_init_range=args.weight_init_range,
+            weight_init_seed=args.seed,
+        )
+    elif probe_class_arg == "full":
+        # probe_config = FullAttnProbeConfig(
+        #     d_model=args.d_model,
+        #     d_head=args.d_model,
+        #     weight_init_range=args.weight_init_range,
+        #     weight_init_seed=args.seed,
+        # )
+        raise NotImplementedError("FullAttnProbeConfig is not implemented")
+    else:
+        raise ValueError(f"Invalid probe class: {probe_class_arg}")
+
+    return ProbingConfig(
+        probe_class_name=get_probe_class_name(probe_class_arg),
+        probe_config=probe_config,
+        data_seed=args.seed,
+        lr=args.learning_rate,
+        batch_size=args.batch_size,
+        patience=args.patience,
+        n_epochs=args.epochs,
+        validation_split=args.test_ratio / 2,  # Split test ratio between val and test
+        test_split=args.test_ratio / 2,
+        device=args.device,
+    )
+
+
 def train_attn_probe(
     acts_dataset: Dict,
-    probe_class_arg: str,
+    args: argparse.Namespace,
     seed: int = 42,
     wandb_project: str = "attn-probes",
     wandb_run_name: str | None = None,
@@ -157,15 +190,7 @@ def train_attn_probe(
             labels.append(1 if q_data["biased_cot_label"] == "faithful" else 0)
 
     # Create probe configuration
-    probe_config = ProbingConfig(
-        probe_class_name=get_probe_class_name(probe_class_arg),
-        probe_config=MinimalAttnProbeConfig(
-            d_model=sequences[0].shape[-1],
-            d_head=sequences[0].shape[-1],
-            weight_init_seed=seed,
-        ),
-        data_seed=seed,
-    )
+    probe_config = build_probe_config(args)
 
     # Initialize trainer
     trainer = ProbeTrainer(probe_config)
@@ -201,7 +226,7 @@ def main(args: argparse.Namespace):
 
     probing_results = train_attn_probe(
         acts_dataset=acts_dataset,
-        probe_class_arg=args.probe_class,
+        args=args,
         seed=args.seed,
         wandb_project=args.wandb_project,
         wandb_run_name=args.wandb_run_name,
