@@ -78,6 +78,7 @@ class AbstractAttnProbeModel(nn.Module, ABC):
     def __init__(self, c: AbstractAttnProbeConfig):
         super().__init__()
         self.c = c
+        self.z_bias = nn.Parameter(torch.zeros(1))
 
     @abstractmethod
     def _query(
@@ -137,11 +138,13 @@ class AbstractAttnProbeModel(nn.Module, ABC):
         # unlike normal attention, these are 1-dimensional
         values = self.values(resids)
         z = einsum("batch seq, batch seq -> batch", attn_probs, values)
-        return torch.sigmoid(z)
+        return torch.sigmoid(z + self.z_bias)
 
 
 @dataclass(kw_only=True)
 class MinimalAttnProbeConfig(AbstractAttnProbeConfig):
+    use_temperature: bool
+
     def __post_init__(self):
         assert self.d_head == self.d_model
 
@@ -152,8 +155,10 @@ class MinimalAttnProbeModel(AbstractAttnProbeModel):
         setup_determinism(c.weight_init_seed)
         # Initialize a single vector for both query and value
         self.probe_vector = nn.Parameter(torch.randn(c.d_model) * c.weight_init_range)
-        # Temperature parameter for scaling attention
-        self.temperature = nn.Parameter(torch.ones(1))
+        # Optional temperature parameter for scaling attention
+        self.temperature = (
+            nn.Parameter(torch.ones(1)) if c.use_temperature else torch.ones(1)
+        )
 
     def _query(self) -> Float[torch.Tensor, " head"]:
         # Scale the probe vector by temperature for query
