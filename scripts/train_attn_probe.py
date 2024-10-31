@@ -88,7 +88,7 @@ def parse_args():
     parser.add_argument(
         "--epochs",
         type=int,
-        default=100,
+        default=300,
         help="Maximum number of epochs to train for",
     )
     parser.add_argument(
