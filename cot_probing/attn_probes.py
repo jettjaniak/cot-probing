@@ -17,7 +17,7 @@ from cot_probing.utils import setup_determinism
 
 
 @dataclass(kw_only=True)
-class AbstractAttnProbeConfig:
+class AttnProbeModelConfig:
     d_model: int
     d_head: int
     weight_init_range: float = 0.02
@@ -26,8 +26,8 @@ class AbstractAttnProbeConfig:
 
 @dataclass
 class ProbingConfig:
-    probe_class_name: str
-    probe_config: AbstractAttnProbeConfig
+    probe_model_class_name: str
+    probe_model_config: AttnProbeModelConfig
     data_seed: int = 0
     lr: float = 1e-3
     batch_size: int = 32
@@ -75,10 +75,12 @@ def collate_fn(
 
 
 class AbstractAttnProbeModel(nn.Module, ABC):
-    def __init__(self, c: AbstractAttnProbeConfig):
+    def __init__(self, c: AttnProbeModelConfig):
         super().__init__()
         self.c = c
+        setup_determinism(c.weight_init_seed)
         self.z_bias = nn.Parameter(torch.zeros(1))
+        self.value_vector = nn.Parameter(torch.randn(c.d_model) * c.weight_init_range)
 
     @abstractmethod
     def _query(
@@ -106,11 +108,11 @@ class AbstractAttnProbeModel(nn.Module, ABC):
         assert ret.shape[-1] == self.c.d_head
         return ret
 
-    @abstractmethod
     def values(
-        self, resids: Float[torch.Tensor, " batch seq d_model"]
+        self, resids: Float[torch.Tensor, " batch seq model"]
     ) -> Float[torch.Tensor, " batch seq"]:
-        pass
+        # Project residuals using the value vector
+        return einsum("batch seq model, model -> batch seq", resids, self.value_vector)
 
     def forward(
         self,
@@ -141,28 +143,16 @@ class AbstractAttnProbeModel(nn.Module, ABC):
         return torch.sigmoid(z + self.z_bias)
 
 
-@dataclass(kw_only=True)
-class MinimalAttnProbeConfig(AbstractAttnProbeConfig):
-    use_temperature: bool
-
-    def __post_init__(self):
-        assert self.d_head == self.d_model
-
-
 class MinimalAttnProbeModel(AbstractAttnProbeModel):
-    def __init__(self, c: MinimalAttnProbeConfig):
+    def __init__(self, c: AttnProbeModelConfig):
+        assert c.d_head == c.d_model
         super().__init__(c)
-        setup_determinism(c.weight_init_seed)
-        # Initialize a single vector for both query and value
-        self.probe_vector = nn.Parameter(torch.randn(c.d_model) * c.weight_init_range)
-        # Optional temperature parameter for scaling attention
-        self.temperature = (
-            nn.Parameter(torch.ones(1)) if c.use_temperature else torch.ones(1)
-        )
+        # Use value_vector as probe_vector
+        self.temperature = nn.Parameter(torch.ones(1))
 
     def _query(self) -> Float[torch.Tensor, " head"]:
-        # Scale the probe vector by temperature for query
-        return self.probe_vector * self.temperature
+        # Scale the value vector by temperature for query
+        return self.value_vector * self.temperature
 
     def _keys(
         self, resids: Float[torch.Tensor, " batch seq model"]
@@ -170,26 +160,13 @@ class MinimalAttnProbeModel(AbstractAttnProbeModel):
         # Use residuals directly as keys since d_model == d_head
         return resids
 
-    def values(
-        self, resids: Float[torch.Tensor, " batch seq model"]
-    ) -> Float[torch.Tensor, " batch seq"]:
-        # Project residuals using the same probe vector
-        return einsum("batch seq model, model -> batch seq", resids, self.probe_vector)
-
-
-@dataclass(kw_only=True)
-class MediumAttnProbeConfig(AbstractAttnProbeConfig):
-    def __post_init__(self):
-        assert self.d_head == self.d_model
-
 
 class MediumAttnProbeModel(AbstractAttnProbeModel):
-    def __init__(self, c: MediumAttnProbeConfig):
+    def __init__(self, c: AttnProbeModelConfig):
+        assert c.d_head == c.d_model
         super().__init__(c)
-        setup_determinism(c.weight_init_seed)
-        # Separate vectors for query and value projections
+        # Only need query vector since value vector is in parent
         self.query_vector = nn.Parameter(torch.randn(c.d_model) * c.weight_init_range)
-        self.value_vector = nn.Parameter(torch.randn(c.d_model) * c.weight_init_range)
 
     def _query(self) -> Float[torch.Tensor, " head"]:
         return self.query_vector
@@ -200,11 +177,18 @@ class MediumAttnProbeModel(AbstractAttnProbeModel):
         # Use residuals directly as keys since d_model == d_head
         return resids
 
-    def values(
+
+class FullAttnProbeModel(MediumAttnProbeModel):
+    def __init__(self, c: AttnProbeModelConfig):
+        super().__init__(c)
+        # Key projection matrix from model space to attention head space
+        self.W_K = nn.Parameter(torch.randn(c.d_model, c.d_head) * c.weight_init_range)
+
+    def _keys(
         self, resids: Float[torch.Tensor, " batch seq model"]
-    ) -> Float[torch.Tensor, " batch seq"]:
-        # Project residuals using the value vector
-        return einsum("batch seq model, model -> batch seq", resids, self.value_vector)
+    ) -> Float[torch.Tensor, " batch seq head"]:
+        # Project residuals to key space using W_K
+        return einsum("batch seq model, model head -> batch seq head", resids, self.W_K)
 
 
 class ProbeTrainer:
@@ -273,7 +257,7 @@ class ProbeTrainer:
         )
 
         # Initialize model and optimizer
-        model = globals()[self.c.probe_class_name](self.c.probe_config)
+        model = globals()[self.c.probe_model_class_name](self.c.probe_model_config)
         optimizer = torch.optim.Adam(model.parameters(), lr=self.c.lr)
         criterion = nn.BCELoss()
 
