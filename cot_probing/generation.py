@@ -5,14 +5,7 @@ import torch
 import tqdm
 
 from cot_probing.typing import *
-
-
-def setup_determinism(seed: int):
-    torch.manual_seed(seed)
-    torch.random.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    random.seed(seed)
-    np.random.seed(seed)
+from cot_probing.utils import setup_determinism
 
 
 def hf_generate_many(

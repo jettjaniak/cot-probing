@@ -69,3 +69,11 @@ def find_sublist(haystack: list[int], needle: list[int]) -> int | None:
         if haystack[i : i + len(needle)] == needle:
             return i
     return None
+
+
+def setup_determinism(seed: int):
+    torch.manual_seed(seed)
+    torch.random.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    random.seed(seed)
+    np.random.seed(seed)
