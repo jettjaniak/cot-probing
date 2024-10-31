@@ -67,11 +67,15 @@ def collate_fn(
 
     # Create padded tensor
     padded = torch.zeros(len(sequences), max_len, d_model)
+    # Create attention mask
+    attn_mask = torch.zeros(len(sequences), max_len, dtype=torch.bool)
     for i, seq in enumerate(sequences):
-        padded[i, : seq.shape[0]] = seq
+        seq_len = seq.shape[0]
+        padded[i, :seq_len] = seq
+        attn_mask[i, :seq_len] = True
 
     # labels is iterable of 0-dim tensors, just stack them?
-    return padded, torch.stack(list(labels))
+    return padded, torch.stack(list(labels)), attn_mask
 
 
 class AbstractAttnProbeModel(nn.Module, ABC):
@@ -271,12 +275,13 @@ class ProbeTrainer:
             model.train()
             train_loss = 0
             train_acc = 0
-            for batch, labels_t in tqdm(train_loader, desc=f"Epoch {epoch}"):
+            for batch, labels_t, attn_mask in tqdm(train_loader, desc=f"Epoch {epoch}"):
                 batch = batch.to(self.device)
                 labels_t = labels_t.to(self.device)
+                attn_mask = attn_mask.to(self.device)
 
                 optimizer.zero_grad()
-                outputs = model(batch)
+                outputs = model(batch, attn_mask)
                 loss = criterion(outputs, labels_t)
                 loss.backward()
                 optimizer.step()
@@ -292,10 +297,11 @@ class ProbeTrainer:
             val_loss = 0
             val_acc = 0
             with torch.no_grad():
-                for batch, labels_t in val_loader:
+                for batch, labels_t, attn_mask in val_loader:
                     batch = batch.to(self.device)
                     labels_t = labels_t.to(self.device)
-                    outputs = model(batch)
+                    attn_mask = attn_mask.to(self.device)
+                    outputs = model(batch, attn_mask)
                     val_loss += criterion(outputs, labels_t).item()
                     val_acc += ((outputs > 0.5) == labels_t).float().mean().item()
 
@@ -336,10 +342,11 @@ class ProbeTrainer:
         test_loss = 0
         test_acc = 0
         with torch.no_grad():
-            for batch, labels_t in test_loader:
+            for batch, labels_t, attn_mask in test_loader:
                 batch = batch.to(self.device)
                 labels_t = labels_t.to(self.device)
-                outputs = model(batch)
+                attn_mask = attn_mask.to(self.device)
+                outputs = model(batch, attn_mask)
                 test_loss += criterion(outputs, labels_t).item()
                 test_acc += ((outputs > 0.5) == labels_t).float().mean().item()
 
