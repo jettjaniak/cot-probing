@@ -169,6 +169,35 @@ def build_probe_config(
     )
 
 
+def prepare_probe_data(
+    acts_dataset: dict,
+    include_answer_toks: bool,
+    d_model: int,
+) -> tuple[list[list[Float[torch.Tensor, "seq d_model"]]], list[int]]:
+    """Extract sequences and labels from the dataset for probe training"""
+    cots_by_q = []
+    labels_by_q = []
+    for q_data in acts_dataset["qs"]:
+        # labels
+        biased_cot_label = q_data["biased_cot_label"]
+        if biased_cot_label == "faithful":
+            label = 1
+        elif biased_cot_label == "unfaithful":
+            label = 0
+        else:
+            raise ValueError(f"{biased_cot_label=}")
+        labels_by_q.append(label)
+        # activations
+        # we have multiple CoTs per question
+        acts_by_cot = q_data["cached_acts"]
+        assert isinstance(acts_by_cot, list)
+        assert acts_by_cot[0].shape[-1] == d_model
+        if not include_answer_toks:
+            acts_by_cot = [acts[:-3] for acts in acts_by_cot]
+        cots_by_q.append(acts_by_cot)
+    return cots_by_q, labels_by_q
+
+
 def train_attn_probe(
     acts_dataset: dict,
     args: argparse.Namespace,
@@ -178,27 +207,9 @@ def train_attn_probe(
 ) -> dict:
     """Train attention probe on the dataset"""
     # Extract sequences and labels from the dataset
-    sequences = []
-    labels = []
-    for q_data in acts_dataset["qs"]:
-        # Convert cached activations to torch tensors
-        if isinstance(q_data["cached_acts"], list):
-            # Multiple sequences per question (biased CoTs mode)
-            for acts in q_data["cached_acts"]:
-                if include_answer_toks:
-                    sequences.append(acts)
-                else:
-                    sequences.append(acts[:-3])
-                # Convert yes/no to 1/0
-                labels.append(1 if q_data["biased_cot_label"] == "faithful" else 0)
-        else:
-            # Single sequence per question
-            if include_answer_toks:
-                sequences.append(q_data["cached_acts"])
-            else:
-                sequences.append(q_data["cached_acts"][:-3])
-            labels.append(1 if q_data["biased_cot_label"] == "faithful" else 0)
-    assert sequences[0].shape[-1] == args.d_model
+    cots_by_q, labels_by_q = prepare_probe_data(
+        acts_dataset, include_answer_toks, args.d_model
+    )
     # Create probe configuration
     probe_config = build_probe_config(args)
 
@@ -207,8 +218,8 @@ def train_attn_probe(
 
     # Train probe
     model = trainer.train(
-        sequences=sequences,
-        labels_list=labels,
+        cots_by_q=cots_by_q,
+        labels_by_q_list=labels_by_q,
         run_name=wandb_run_name,
         project_name=wandb_project,
     )

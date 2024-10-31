@@ -284,8 +284,8 @@ class ProbeTrainer:
 
     def train(
         self,
-        sequences: list[Float[torch.Tensor, "seq d_model"]],
-        labels_list: list[int],
+        cots_by_q: list[list[Float[torch.Tensor, " seq model"]]],
+        labels_by_q_list: list[int],
         run_name: str,
         project_name: str,
     ) -> AbstractAttnProbeModel:
@@ -295,7 +295,7 @@ class ProbeTrainer:
 
         # Prepare data
         train_loader, val_loader, test_loader = self.prepare_data(
-            sequences, labels_list
+            cots_by_q, labels_by_q_list
         )
 
         # Initialize model and optimizer
