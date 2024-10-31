@@ -280,71 +280,43 @@ class ProbeTrainer:
         best_model_state = model.state_dict().copy()
 
         for epoch in range(self.c.n_epochs):
-            # Training
-            model.train()
-            train_loss = 0
-            train_acc = 0
-            for batch, labels_t, attn_mask in tqdm(train_loader, desc=f"Epoch {epoch}"):
-                batch = batch.to(self.device)
-                labels_t = labels_t.to(self.device)
-                attn_mask = attn_mask.to(self.device)
+            try:
+                train_loss, train_acc, val_loss, val_acc = self._train_epoch(
+                    model=model,
+                    optimizer=optimizer,
+                    criterion=criterion,
+                    train_loader=train_loader,
+                    val_loader=val_loader,
+                    epoch=epoch,
+                )
+                wandb.log(
+                    {
+                        "train_loss": train_loss,
+                        "train_accuracy": train_acc,
+                        "val_loss": val_loss,
+                        "val_accuracy": val_acc,
+                        "epoch": epoch,
+                    }
+                )
 
-                optimizer.zero_grad()
-                outputs = model(batch, attn_mask)
-                loss = criterion(outputs, labels_t)
-                loss.backward()
-                optimizer.step()
-
-                train_loss += loss.item()
-                train_acc += ((outputs > 0.5) == labels_t).float().mean().item()
-
-            train_loss /= len(train_loader)
-            train_acc /= len(train_loader)
-
-            # Validation
-            model.eval()
-            val_loss = 0
-            val_acc = 0
-            with torch.no_grad():
-                for batch, labels_t, attn_mask in val_loader:
-                    batch = batch.to(self.device)
-                    labels_t = labels_t.to(self.device)
-                    attn_mask = attn_mask.to(self.device)
-                    outputs = model(batch, attn_mask)
-                    val_loss += criterion(outputs, labels_t).item()
-                    val_acc += ((outputs > 0.5) == labels_t).float().mean().item()
-
-            val_loss /= len(val_loader)
-            val_acc /= len(val_loader)
-
-            # Logging
-            wandb.log(
-                {
-                    "train_loss": train_loss,
-                    "train_accuracy": train_acc,
-                    "val_loss": val_loss,
-                    "val_accuracy": val_acc,
-                    "epoch": epoch,
-                }
-            )
-
-            # Early stopping
-            if val_loss < best_val_loss:
-                best_val_loss = val_loss
-                patience_counter = 0
-                best_model_state = model.state_dict().copy()
-                # Save best model state to wandb
-                torch.save(best_model_state, "results/best_model.pt")
-                wandb.save("results/best_model.pt")
-            else:
-                patience_counter += 1
-                if patience_counter >= self.c.patience:
-                    print(f"Early stopping at epoch {epoch}")
-                    break
+                # Early stopping
+                if val_loss < best_val_loss:
+                    best_val_loss = val_loss
+                    patience_counter = 0
+                    best_model_state = model.state_dict().copy()
+                    # Save best model state to wandb
+                    torch.save(best_model_state, "results/best_model.pt")
+                    wandb.save("results/best_model.pt")
+                else:
+                    patience_counter += 1
+                    if patience_counter >= self.c.patience:
+                        print(f"Early stopping at epoch {epoch}")
+                        break
+            except KeyboardInterrupt:
+                break
 
         # Load best model
         model.load_state_dict(best_model_state)
-
         # Final test set evaluation
         model.eval()
         test_loss = 0
@@ -362,6 +334,54 @@ class ProbeTrainer:
         test_acc /= len(test_loader)
 
         wandb.log({"test_loss": test_loss, "test_accuracy": test_acc})
-
         wandb.finish()
+
         return model
+
+    def _train_epoch(
+        self,
+        model: AbstractAttnProbeModel,
+        optimizer: torch.optim.Adam,
+        criterion: nn.BCELoss,
+        train_loader: DataLoader,
+        val_loader: DataLoader,
+        epoch: int,
+    ) -> tuple[float, float, float, float]:
+        # Training
+        model.train()
+        train_loss = 0
+        train_acc = 0
+        for batch, labels_t, attn_mask in tqdm(train_loader, desc=f"Epoch {epoch}"):
+            batch = batch.to(self.device)
+            labels_t = labels_t.to(self.device)
+            attn_mask = attn_mask.to(self.device)
+
+            optimizer.zero_grad()
+            outputs = model(batch, attn_mask)
+            loss = criterion(outputs, labels_t)
+            loss.backward()
+            optimizer.step()
+
+            train_loss += loss.item()
+            train_acc += ((outputs > 0.5) == labels_t).float().mean().item()
+
+        train_loss /= len(train_loader)
+        train_acc /= len(train_loader)
+
+        # Validation
+        model.eval()
+        val_loss = 0
+        val_acc = 0
+        with torch.no_grad():
+            for batch, labels_t, attn_mask in val_loader:
+                batch = batch.to(self.device)
+                labels_t = labels_t.to(self.device)
+                attn_mask = attn_mask.to(self.device)
+                outputs = model(batch, attn_mask)
+                val_loss += criterion(outputs, labels_t).item()
+                val_acc += ((outputs > 0.5) == labels_t).float().mean().item()
+
+        val_loss /= len(val_loader)
+        val_acc /= len(val_loader)
+
+        return train_loss, train_acc, val_loss, val_acc
