@@ -14,10 +14,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 from torch.nn.functional import cosine_similarity
 import wandb
+from cot_probing.typing import *
 
 from transformers import AutoTokenizer, AutoModelForCausalLM
 # LAYERS = list(range(0,32+1))  TODO
-LAYERS = list(range(0,9+1)) + [0, 15]
+LAYERS = list(range(0,18+1))
 LAYER = 15
 SEEDS = list(range(21, 30+1))
 torch.set_grad_enabled(False)
@@ -213,52 +214,56 @@ for test_q in test_qs:
         cots_answers.append(test_q["expected_answer"])
 # %%
 from cot_probing.vis import visualize_tokens_html
-def visualize_cot(cot_idx: int):
+from cot_probing.typing import *
+def visualize_cot(cot_idx: int, resids: Optional[Float[torch.Tensor, "1 seq d_model"]] = None):
     tokens = cots_tokens[cot_idx]
     label = cots_labels[cot_idx]
     answer = cots_answers[cot_idx]
     
-    # Only get model outputs for this specific cot
-    resids = collate_fn_out.cot_acts[cot_idx:cot_idx+1, :len(tokens)].to(probe_model.device)
+    # Use provided resids or get from collate_fn_out
+    if resids is None:
+        resids = collate_fn_out.cot_acts[cot_idx:cot_idx+1, :len(tokens)].to(probe_model.device)
+    
     attn_mask = torch.ones(1, len(tokens), dtype=torch.bool, device=probe_model.device)
     
-    # Get attention probs and model output just for this cot
+    # Get attention probs and model output
     attn_probs = probe_model.attn_probs(resids, attn_mask)
     probe_out = probe_model(resids, attn_mask)
     
     this_attn_probs = attn_probs[0, :len(tokens)]
-    display(visualize_tokens_html(tokens, tokenizer, this_attn_probs.tolist(), vmin=0.0, vmax=1.0))
+    print(f"Tokens: {tokenizer.decode(tokens)}")
     print(f"label: {label}, correct answer: {answer}")
     print(f"faithfulness: {probe_out.item():.2%}")
+    return visualize_tokens_html(tokens, tokenizer, this_attn_probs.tolist(), vmin=0.0, vmax=1.0)
 
-for cot_idx in range(2, 100, 20):
-    visualize_cot(cot_idx)
-    visualize_cot(-cot_idx)
-# %%
-def visualize_cot_faithfulness(cot_idx: int):
+def visualize_cot_faithfulness(cot_idx: int, resids: Optional[Float[torch.Tensor, "batch seq d_model"]] = None):
     tokens = cots_tokens[cot_idx]
     label = cots_labels[cot_idx]
     answer = cots_answers[cot_idx]
+    
+    # Use provided resids or get from collate_fn_out
+    if resids is None:
+        resids = collate_fn_out.cot_acts[cot_idx:cot_idx+1, :len(tokens)].to(probe_model.device)
     
     # Calculate faithfulness for each prefix length
     faithfulness_scores = []
     for prefix_len in range(1, len(tokens) + 1):
         # Create input with just this prefix
-        prefix_resids = collate_fn_out.cot_acts[cot_idx:cot_idx+1, :prefix_len].to(probe_model.device)
+        prefix_resids = resids[:, :prefix_len]
         prefix_mask = torch.ones(1, prefix_len, dtype=torch.bool, device=probe_model.device)
         # Get model output for this prefix
         faithfulness = probe_model(prefix_resids, prefix_mask)
         faithfulness_scores.append(faithfulness.item())
     
-    # Visualize
-    display(visualize_tokens_html(tokens, tokenizer, faithfulness_scores, vmin=0.0, vmax=1.0, use_diverging_colors=True))
+    print(f"Tokens: {tokenizer.decode(tokens)}")
     print(f"label: {label}, correct answer: {answer}")
     print(f"final faithfulness: {faithfulness_scores[-1]:.2%}")
+    return visualize_tokens_html(tokens, tokenizer, faithfulness_scores, vmin=0.0, vmax=1.0, use_diverging_colors=True)
 
-# Visualize some examples
+# Example usage with default behavior (using collate_fn_out)
 for cot_idx in range(2, 100, 20):
-    visualize_cot_faithfulness(cot_idx)
-    visualize_cot_faithfulness(-cot_idx)
+    display(visualize_cot(cot_idx))
+    display(visualize_cot(-cot_idx))
 
 # %%
 model = AutoModelForCausalLM.from_pretrained("hugging-quants/Meta-Llama-3.1-8B-BNB-NF4-BF16")
@@ -269,5 +274,14 @@ def get_unbiased_resid_acts(tokens: list[int]):
         last_q_toks=tokens,
         layers=[LAYER],
         past_key_values=unbiased_fsp_cache,
-    )[LAYER]
+    )[LAYER].unsqueeze(0).cuda().float()
+# %%
+# Example usage with custom residuals
+for cot_idx in range(2, 100, 20):
+    tokens = cots_tokens[cot_idx]
+    custom_resids = get_unbiased_resid_acts(tokens)
+    display(visualize_cot(cot_idx, custom_resids))
+    display(visualize_cot_faithfulness(cot_idx, custom_resids))
+
+
 # %%
