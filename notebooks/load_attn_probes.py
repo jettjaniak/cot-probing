@@ -196,17 +196,9 @@ test_qs = [raw_acts_qs[i] for i in test_idxs]
 trainer = probe["trainer"]
 probe_model = trainer.model
 collate_fn_out = list(trainer.test_loader)[0]
-probe_model_out = collate_fn_out_to_model_out(probe_model, collate_fn_out)
-probe_model_out.shape
-
 
 # %%
-resids = collate_fn_out.cot_acts.to(probe_model.device)
-attn_mask = collate_fn_out.attn_mask.to(probe_model.device)
-attn_probs = probe_model.attn_probs(resids, attn_mask)
-attn_probs.shape
 tokenizer = AutoTokenizer.from_pretrained("hugging-quants/Meta-Llama-3.1-8B-BNB-NF4-BF16")
-
 
 # %%
 cots_tokens = []
@@ -225,10 +217,20 @@ def visualize_cot(cot_idx: int):
     tokens = cots_tokens[cot_idx]
     label = cots_labels[cot_idx]
     answer = cots_answers[cot_idx]
-    this_attn_probs = attn_probs[cot_idx, :len(tokens)]
+    
+    # Only get model outputs for this specific cot
+    resids = collate_fn_out.cot_acts[cot_idx:cot_idx+1, :len(tokens)].to(probe_model.device)
+    attn_mask = torch.ones(1, len(tokens), dtype=torch.bool, device=probe_model.device)
+    
+    # Get attention probs and model output just for this cot
+    attn_probs = probe_model.attn_probs(resids, attn_mask)
+    probe_out = probe_model(resids, attn_mask)
+    
+    this_attn_probs = attn_probs[0, :len(tokens)]
     display(visualize_tokens_html(tokens, tokenizer, this_attn_probs.tolist(), vmin=0.0, vmax=1.0))
     print(f"label: {label}, correct answer: {answer}")
-    print(f"faithfulness: {probe_model_out[cot_idx].item():.2%}")
+    print(f"faithfulness: {probe_out.item():.2%}")
+
 for cot_idx in range(2, 100, 20):
     visualize_cot(cot_idx)
     visualize_cot(-cot_idx)
@@ -241,7 +243,6 @@ def visualize_cot_faithfulness(cot_idx: int):
     # Calculate faithfulness for each prefix length
     faithfulness_scores = []
     for prefix_len in range(1, len(tokens) + 1):
-        prefix_tokens = tokens[:prefix_len]
         # Create input with just this prefix
         prefix_resids = collate_fn_out.cot_acts[cot_idx:cot_idx+1, :prefix_len].to(probe_model.device)
         prefix_mask = torch.ones(1, prefix_len, dtype=torch.bool, device=probe_model.device)
