@@ -30,7 +30,7 @@ def search_questions(questions, keywords):
 def main(args: argparse.Namespace):
     logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING)
 
-    questions_dataset_path = DATA_DIR / "generated_questions_dataset.json"
+    questions_dataset_path = DATA_DIR / "generated_qs_oct28-1156.json"
 
     if questions_dataset_path.exists():
         with open(questions_dataset_path, "r") as f:
@@ -46,7 +46,7 @@ def main(args: argparse.Namespace):
         print(f"Found {len(matching_questions)} questions containing all keywords:")
         for idx, question in matching_questions:
             print(f"\nIndex: {idx}")
-            print(f"Question: {question}")
+            print(f"{question}")
     else:
         print("No questions found containing all specified keywords.")
 
