@@ -353,8 +353,8 @@ class AttnProbeTrainer:
 
         # Download and load model weights
         with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir) / "results" / "best_model.pt"
-            best_model_file = run.file("results/best_model.pt")
+            tmp_path = Path(tmp_dir) / "best_model.pt"
+            best_model_file = run.file("best_model.pt")
             best_model_file.download(root=tmp_dir, replace=True)
             model_state_dict = torch.load(tmp_path, map_location="cpu")
 
@@ -410,8 +410,10 @@ class AttnProbeTrainer:
                     patience_counter = 0
                     best_model_state = self.model.state_dict().copy()
                     # Save best model state to wandb
-                    torch.save(best_model_state, "results/best_model.pt")
-                    wandb.save("results/best_model.pt")
+                    with tempfile.TemporaryDirectory() as tmp_dir:
+                        tmp_path = Path(tmp_dir) / "best_model.pt"
+                        torch.save(best_model_state, tmp_path)
+                        wandb.save(tmp_path, base_path=tmp_dir)
                 else:
                     patience_counter += 1
                     if patience_counter >= self.c.patience:
