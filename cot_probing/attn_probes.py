@@ -13,6 +13,7 @@ from torch import nn
 from torch.optim.adam import Adam
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
+from wandb.apis.public.runs import Run
 
 import wandb
 from cot_probing.attn_probes_data_proc import CollateFnOutput, preprocess_and_split_data
@@ -265,7 +266,7 @@ class AttnProbeTrainer:
         project: str = "attn-probes",
         run_id: str | None = None,
         config_filters: dict[str, Any] | None = None,
-    ) -> "AttnProbeTrainer":
+    ) -> tuple["AttnProbeTrainer", Run]:
         """Load a model from W&B.
 
         Args:
@@ -323,7 +324,7 @@ class AttnProbeTrainer:
         config = ProbingConfig(
             probe_model_class=probe_model_class,
             probe_model_config=probe_model_config,
-            data_device=w_config["args_data_device"],
+            data_device="cpu",
             **{
                 k: w_config[k]
                 for k in [
@@ -357,13 +358,17 @@ class AttnProbeTrainer:
             tmp_path = Path(tmp_dir) / "best_model.pt"
             best_model_file = run.file("best_model.pt")
             best_model_file.download(root=tmp_dir, replace=True)
-            model_state_dict = torch.load(tmp_path, map_location="cpu")
-
-        return cls(
-            c=config,
-            raw_acts_dataset=raw_acts_dataset,
-            data_loading_kwargs=data_loading_kwargs,
-            model_state_dict=model_state_dict,
+            model_state_dict = torch.load(
+                tmp_path, map_location="cpu", weights_only=True
+            )
+        return (
+            cls(
+                c=config,
+                raw_acts_dataset=raw_acts_dataset,
+                data_loading_kwargs=data_loading_kwargs,
+                model_state_dict=model_state_dict,
+            ),
+            run,
         )
 
     def train(
