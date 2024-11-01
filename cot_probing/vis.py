@@ -9,6 +9,7 @@ def visualize_tokens_html(
     token_values: list[float] | None = None,
     vmin: float | None = None,
     vmax: float | None = None,
+    use_diverging_colors: bool = False,
 ) -> HTML:
     if token_values and len(token_ids) != len(token_values):
         raise ValueError(
@@ -24,9 +25,22 @@ def visualize_tokens_html(
         else:
             value = token_values[i]
             norm_value = (value - vmin) / (vmax - vmin)
-            bg_color = (
-                f"rgb(255, {int(255 * (1-norm_value))}, {int(255 * (1-norm_value))})"
-            )
+            if use_diverging_colors:
+                # Red (-1) through white (0) to green (1)
+                if norm_value < 0.5:
+                    # Red to white
+                    red = 255
+                    green = int(255 * (2 * norm_value))
+                    blue = green
+                else:
+                    # White to green
+                    red = int(255 * (2 * (1 - norm_value)))
+                    green = 255
+                    blue = red
+                bg_color = f"rgb({red}, {green}, {blue})"
+            else:
+                # White to red
+                bg_color = f"rgb(255, {int(255 * (1-norm_value))}, {int(255 * (1-norm_value))})"
             title_str = f" title='{value:.2f}'"
         style = {
             "display": "inline-block",

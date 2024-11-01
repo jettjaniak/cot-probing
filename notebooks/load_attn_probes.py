@@ -6,16 +6,107 @@
 from pathlib import Path
 import pandas as pd
 from cot_probing.attn_probes import AttnProbeTrainer, collate_fn_out_to_model_out
+from cot_probing.activations import build_fsp_cache, collect_resid_acts_with_pastkv
 import pickle
 import torch
 import seaborn as sns
 import matplotlib.pyplot as plt
 import numpy as np
 from torch.nn.functional import cosine_similarity
+import wandb
 
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, AutoModelForCausalLM
+# LAYERS = list(range(0,32+1))  TODO
+LAYERS = list(range(0,9+1)) + [0, 15]
 LAYER = 15
+SEEDS = list(range(21, 30+1))
 torch.set_grad_enabled(False)
+
+# %%
+api = wandb.Api()
+entity = "cot-probing"
+project = "attn-probes"
+run_by_seed_by_layer = {}
+for layer in LAYERS:
+    run_by_seed_by_layer[layer] = {}
+    for seed in SEEDS:
+        config_filters = {
+            "args_probe_class": "minimal", 
+            "args_data_seed": seed,
+            "args_weight_init_seed": seed,
+            "layer": layer,
+        }
+        filters = []
+        for k, v in config_filters.items():
+            filters.append({f"config.{k}": v})
+        runs = list(api.runs(f"{entity}/{project}", {"$and": filters}))
+        assert len(runs) == 1, f"Expected 1 run, got {len(runs)}"
+        run = runs[0]
+        run_by_seed_by_layer[layer][seed] = run
+
+# %%
+def get_metric_by_layer(run_by_seed_by_layer: dict, metric: str) -> dict[int, list[float]]:
+    """Extract metric values for each layer from runs."""
+    layer_metrics = {}
+    for layer in sorted(run_by_seed_by_layer.keys()):
+        values = []
+        for seed in run_by_seed_by_layer[layer]:
+            run = run_by_seed_by_layer[layer][seed]
+            value = run.summary.get(metric)
+            if value is not None:
+                values.append(value)
+        layer_metrics[layer] = values
+    return layer_metrics
+
+def plot_metric_distribution(layer_metrics: dict[int, list[float]], 
+                           title: str,
+                           ylabel: str,
+                           figsize=(9, 6)):
+    """Plot distribution of metrics across layers."""
+    plt.figure(figsize=figsize)
+
+    # Get statistics for each layer
+    layers = sorted(layer_metrics.keys())
+    medians = [np.median(layer_metrics[l]) for l in layers]
+    q1s = [np.percentile(layer_metrics[l], 25) for l in layers]
+    q3s = [np.percentile(layer_metrics[l], 75) for l in layers]
+
+    # Plot lines
+    plt.plot(layers, medians, '-', color='black', linewidth=2, label='Median')
+    plt.plot(layers, q1s, '-', color='gray', alpha=0.5, linewidth=1, label='Quartiles')
+    plt.plot(layers, q3s, '-', color='gray', alpha=0.5, linewidth=1)
+
+    # Customize the plot
+    plt.title(title)
+    plt.xlabel("layer")
+    plt.ylabel(ylabel)
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+    plt.xticks(layers)
+    plt.tight_layout()
+    plt.show()
+
+# Set larger font size globally
+plt.rcParams.update({
+    'font.size': 16,
+    'axes.labelsize': 16, 
+    'axes.titlesize': 18,
+    'xtick.labelsize': 14,
+    'ytick.labelsize': 14,
+    'legend.fontsize': 14
+})
+
+# Get metrics and create plots
+layer_losses = get_metric_by_layer(run_by_seed_by_layer, "test_loss")
+layer_accs = get_metric_by_layer(run_by_seed_by_layer, "test_accuracy")
+
+plot_metric_distribution(layer_losses, 
+                        "minimal attention probe, 10 seeds",
+                        "test loss")
+plot_metric_distribution(layer_accs,
+                        "minimal attention probe, 10 seeds", 
+                        "test accuracy")
+
 
 # %% Load dataset for layer 10 (needed for trainer initialization)
 acts_path = Path(f"../activations/acts_L{LAYER:02d}_with-unbiased-cots-oct28-1156.pkl")
@@ -25,7 +116,7 @@ raw_acts_qs = raw_acts_dataset["qs"]
 # %% Load all minimal probes for layer 10 with matching seeds 1-10
 probes = []
 
-for seed in range(21, 30+1):
+for seed in SEEDS:
     config_filters = {
         "args_probe_class": "minimal",
         "args_data_seed": seed,
@@ -129,15 +220,53 @@ for test_q in test_qs:
         cots_labels.append(test_q["biased_cot_label"])
         cots_answers.append(test_q["expected_answer"])
 # %%
-cot_idx = 80
-tokens = cots_tokens[cot_idx]
-label = cots_labels[cot_idx]
-answer = cots_answers[cot_idx]
-print(tokenizer.decode(tokens))
-print(f"label: {label}, answer: {answer}")
-this_attn_probs = attn_probs[cot_idx, :len(tokens)]
-print(this_attn_probs.sum())
 from cot_probing.vis import visualize_tokens_html
-display(visualize_tokens_html(tokens, tokenizer, this_attn_probs.tolist(), vmin=0.0, vmax=1.0))
-probe_model_out[cot_idx]
+def visualize_cot(cot_idx: int):
+    tokens = cots_tokens[cot_idx]
+    label = cots_labels[cot_idx]
+    answer = cots_answers[cot_idx]
+    this_attn_probs = attn_probs[cot_idx, :len(tokens)]
+    display(visualize_tokens_html(tokens, tokenizer, this_attn_probs.tolist(), vmin=0.0, vmax=1.0))
+    print(f"label: {label}, correct answer: {answer}")
+    print(f"faithfulness: {probe_model_out[cot_idx].item():.2%}")
+for cot_idx in range(2, 100, 20):
+    visualize_cot(cot_idx)
+    visualize_cot(-cot_idx)
+# %%
+def visualize_cot_faithfulness(cot_idx: int):
+    tokens = cots_tokens[cot_idx]
+    label = cots_labels[cot_idx]
+    answer = cots_answers[cot_idx]
+    
+    # Calculate faithfulness for each prefix length
+    faithfulness_scores = []
+    for prefix_len in range(1, len(tokens) + 1):
+        prefix_tokens = tokens[:prefix_len]
+        # Create input with just this prefix
+        prefix_resids = collate_fn_out.cot_acts[cot_idx:cot_idx+1, :prefix_len].to(probe_model.device)
+        prefix_mask = torch.ones(1, prefix_len, dtype=torch.bool, device=probe_model.device)
+        # Get model output for this prefix
+        faithfulness = probe_model(prefix_resids, prefix_mask)
+        faithfulness_scores.append(faithfulness.item())
+    
+    # Visualize
+    display(visualize_tokens_html(tokens, tokenizer, faithfulness_scores, vmin=0.0, vmax=1.0, use_diverging_colors=True))
+    print(f"label: {label}, correct answer: {answer}")
+    print(f"final faithfulness: {faithfulness_scores[-1]:.2%}")
+
+# Visualize some examples
+for cot_idx in range(2, 100, 20):
+    visualize_cot_faithfulness(cot_idx)
+    visualize_cot_faithfulness(-cot_idx)
+
+# %%
+model = AutoModelForCausalLM.from_pretrained("hugging-quants/Meta-Llama-3.1-8B-BNB-NF4-BF16")
+unbiased_fsp_cache = build_fsp_cache(model, tokenizer, raw_acts_dataset["unbiased_fsp"])
+def get_unbiased_resid_acts(tokens: list[int]):
+    return collect_resid_acts_with_pastkv(
+        model=model,
+        last_q_toks=tokens,
+        layers=[LAYER],
+        past_key_values=unbiased_fsp_cache,
+    )[LAYER]
 # %%
