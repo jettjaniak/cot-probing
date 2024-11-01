@@ -11,10 +11,10 @@ from beartype import beartype
 from cot_probing.attn_probes import (
     AbstractAttnProbeModel,
     AttnProbeModelConfig,
+    AttnProbeTrainer,
     FullAttnProbeModel,
     MediumAttnProbeModel,
     MinimalAttnProbeModel,
-    ProbeTrainer,
     ProbingConfig,
 )
 from cot_probing.typing import *
@@ -31,13 +31,13 @@ def parse_args() -> argparse.Namespace:
         help="Path to the dataset of activations",
     )
     parser.add_argument(
-        "--test-split-size",
+        "--test-split",
         type=float,
         default=0.1,
         help="Size of the test set split.",
     )
     parser.add_argument(
-        "--validation-split-size",
+        "--validation-split",
         type=float,
         default=0.1,
         help="Size of the validation set split.",
@@ -173,70 +173,38 @@ def build_probe_config(
         batch_size=args.batch_size,
         patience=args.patience,
         n_epochs=args.epochs,
-        validation_split=args.validation_split_size,
-        test_split=args.test_split_size,
+        validation_split=args.validation_split,
+        test_split=args.test_split,
         model_device=args.model_device,
+        data_device=args.data_device,
         layer=layer,
     )
 
 
 @beartype
-def prepare_probe_data(
-    acts_dataset: dict,
-    include_answer_toks: bool,
-    d_model: int,
-    data_device: str,
-) -> tuple[list[list[Float[torch.Tensor, "seq d_model"]]], list[int]]:
-    """Extract sequences and labels from the dataset for probe training"""
-    cots_by_q = []
-    labels_by_q = []
-    for q_data in acts_dataset["qs"]:
-        # labels
-        biased_cot_label = q_data["biased_cot_label"]
-        if biased_cot_label == "faithful":
-            label = 1
-        elif biased_cot_label == "unfaithful":
-            label = 0
-        else:
-            raise ValueError(f"{biased_cot_label=}")
-        labels_by_q.append(label)
-        # activations
-        # we have multiple CoTs per question
-        acts_by_cot = [acts.to(data_device) for acts in q_data["cached_acts"]]
-        assert isinstance(acts_by_cot, list)
-        assert acts_by_cot[0].shape[-1] == d_model
-        if not include_answer_toks:
-            acts_by_cot = [acts[:-3] for acts in acts_by_cot]
-        cots_by_q.append(acts_by_cot)
-    return cots_by_q, labels_by_q
-
-
-@beartype
 def train_attn_probe(
-    acts_dataset: dict,
+    raw_acts_dataset: dict,
     layer: int,
     args: argparse.Namespace,
     wandb_run_name: str,
     wandb_project: str,
 ) -> dict:
     """Train attention probe on the dataset"""
-    # Extract sequences and labels from the dataset
-    cots_by_q, labels_by_q = prepare_probe_data(
-        acts_dataset, args.include_answer_toks, args.d_model, args.data_device
-    )
     # Create probe configuration
     probe_config = build_probe_config(args, layer)
 
     # Initialize trainer
-    trainer = ProbeTrainer(probe_config)
+    trainer = AttnProbeTrainer(
+        c=probe_config,
+        raw_acts_dataset=raw_acts_dataset,
+        data_loading_kwargs=vars(args),
+    )
 
     # Train probe
     model = trainer.train(
-        cots_by_q=cots_by_q,
-        labels_by_q_list=labels_by_q,
         run_name=wandb_run_name,
         project_name=wandb_project,
-        args_dict=vars(args),
+        args=args,
     )
 
     return {
@@ -263,7 +231,7 @@ def main(args: argparse.Namespace):
         with_answer_str = "WITH_ANSWER_" if args.include_answer_toks else ""
         wandb_run_name = f"{with_answer_str}{layer_str}_{args.probe_class}_ds{args.data_seed}_ws{args.weight_init_seed}_{uuid.uuid4().hex[:8]}"
     probing_results = train_attn_probe(
-        acts_dataset=acts_dataset,
+        raw_acts_dataset=acts_dataset,
         layer=layer_int,
         args=args,
         wandb_project=args.wandb_project,
