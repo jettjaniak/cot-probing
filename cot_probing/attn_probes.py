@@ -91,12 +91,11 @@ class AbstractAttnProbeModel(nn.Module, ABC):
         # Project residuals using the value vector
         return einsum("batch seq model, model -> batch seq", resids, self.value_vector)
 
-    def forward(
+    def attn_probs(
         self,
         resids: Float[torch.Tensor, "batch seq model"],
         attn_mask: Bool[torch.Tensor, "batch seq"],
-    ) -> Float[torch.Tensor, "batch"]:
-        # sometimes d_head will be equal to d_model (i.e. in simple probes)
+    ) -> Float[torch.Tensor, "batch seq"]:
         # Compute attention scores (before softmax)
         # shape (batch, seq, d_head)
         keys = self.keys(resids)
@@ -111,7 +110,15 @@ class AbstractAttnProbeModel(nn.Module, ABC):
         )
         # shape (batch, seq)
         # after softmax
-        attn_probs = torch.softmax(attn_scores, dim=-1)
+        return torch.softmax(attn_scores, dim=-1)
+
+    def forward(
+        self,
+        resids: Float[torch.Tensor, "batch seq model"],
+        attn_mask: Bool[torch.Tensor, "batch seq"],
+    ) -> Float[torch.Tensor, "batch"]:
+        # sometimes d_head will be equal to d_model (i.e. in simple probes)
+        attn_probs = self.attn_probs(resids, attn_mask)
         # shape (batch, seq)
         # unlike normal attention, these are 1-dimensional
         values = self.values(resids)
@@ -167,16 +174,23 @@ class FullAttnProbeModel(MediumAttnProbeModel):
         return einsum("batch seq model, model head -> batch seq head", resids, self.W_K)
 
 
+def collate_fn_out_to_model_out(
+    model: AbstractAttnProbeModel,
+    collate_fn_output: CollateFnOutput,
+) -> Float[torch.Tensor, "batch"]:
+    cot_acts = collate_fn_output.cot_acts.to(model.device)
+    attn_mask = collate_fn_output.attn_mask.to(model.device)
+    return model(cot_acts, attn_mask)
+
+
 def compute_loss_and_acc_single_batch(
     model: AbstractAttnProbeModel,
     criterion: nn.BCELoss,
     collate_fn_output: CollateFnOutput,
 ) -> tuple[Float[torch.Tensor, ""], float]:
-    cot_acts = collate_fn_output.cot_acts.to(model.device)
-    attn_mask = collate_fn_output.attn_mask.to(model.device)
+    outputs = collate_fn_out_to_model_out(model, collate_fn_output)
     labels = collate_fn_output.labels.to(model.device)
     q_idxs = collate_fn_output.q_idxs
-    outputs = model(cot_acts, attn_mask)
 
     def compute_class_metrics(
         target_label: int,
@@ -251,11 +265,17 @@ class AttnProbeTrainer:
             self.model.load_state_dict(model_state_dict)
 
         # Create data loaders
-        self.train_loader, self.val_loader, self.test_loader = (
-            preprocess_and_split_data(
-                raw_acts_dataset,
-                data_loading_kwargs,
-            )
+        (
+            self.train_loader,
+            self.val_loader,
+            self.test_loader,
+        ), (
+            self.train_idxs,
+            self.val_idxs,
+            self.test_idxs,
+        ) = preprocess_and_split_data(
+            raw_acts_dataset,
+            data_loading_kwargs,
         )
 
     @classmethod
@@ -266,7 +286,7 @@ class AttnProbeTrainer:
         project: str = "attn-probes",
         run_id: str | None = None,
         config_filters: dict[str, Any] | None = None,
-    ) -> tuple["AttnProbeTrainer", Run]:
+    ) -> tuple["AttnProbeTrainer", Run, list[int]]:
         """Load a model from W&B.
 
         Args:
@@ -280,6 +300,9 @@ class AttnProbeTrainer:
         Raises:
             ValueError: If neither run_id nor config_filters is specified, or if both are specified
             ValueError: If config_filters matches zero or multiple runs
+
+        Returns:
+            Trainer, run, and test indices
         """
         api = wandb.Api()
 
@@ -305,6 +328,7 @@ class AttnProbeTrainer:
                 )
 
             run = runs[0]
+        assert run.state == "finished"
 
         # Get config from W&B
         w_config = run.config
@@ -361,15 +385,13 @@ class AttnProbeTrainer:
             model_state_dict = torch.load(
                 tmp_path, map_location="cpu", weights_only=True
             )
-        return (
-            cls(
-                c=config,
-                raw_acts_dataset=raw_acts_dataset,
-                data_loading_kwargs=data_loading_kwargs,
-                model_state_dict=model_state_dict,
-            ),
-            run,
+        instance = cls(
+            c=config,
+            raw_acts_dataset=raw_acts_dataset,
+            data_loading_kwargs=data_loading_kwargs,
+            model_state_dict=model_state_dict,
         )
+        return instance, run, instance.test_idxs
 
     def train(
         self,

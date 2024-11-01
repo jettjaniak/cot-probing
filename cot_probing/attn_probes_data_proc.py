@@ -103,7 +103,7 @@ def preprocess_data(
         assert isinstance(acts_by_cot, list)
         assert acts_by_cot[0].shape[-1] == d_model
         if not include_answer_toks:
-            acts_by_cot = [acts[:-3] for acts in acts_by_cot]
+            acts_by_cot = [acts[:-4] for acts in acts_by_cot]
         cots_by_q.append(acts_by_cot)
     return cots_by_q, labels_by_q
 
@@ -112,7 +112,9 @@ def split_data(
     cots_by_q: list[list[Float[torch.Tensor, " seq model"]]],
     labels_by_q_list: list[int],
     data_loading_kwargs: dict[str, Any],
-) -> tuple[DataLoader, DataLoader, DataLoader]:
+) -> tuple[
+    tuple[DataLoader, DataLoader, DataLoader], tuple[list[int], list[int], list[int]]
+]:
     data_seed = data_loading_kwargs["data_seed"]
     assert isinstance(data_seed, int)
     test_split = data_loading_kwargs["test_split"]
@@ -179,12 +181,15 @@ def split_data(
         collate_fn=collate_fn,
     )
 
-    return train_loader, val_loader, test_loader
+    return (train_loader, val_loader, test_loader), (train_idxs, val_idxs, test_idxs)
 
 
 def preprocess_and_split_data(
     raw_acts_dataset: dict,
     data_loading_kwargs: dict[str, Any],
-) -> tuple[DataLoader, DataLoader, DataLoader]:
+) -> tuple[
+    tuple[DataLoader, DataLoader, DataLoader],
+    tuple[list[int], list[int], list[int]],
+]:
     cots_by_q, labels_by_q_list = preprocess_data(raw_acts_dataset, data_loading_kwargs)
     return split_data(cots_by_q, labels_by_q_list, data_loading_kwargs)
