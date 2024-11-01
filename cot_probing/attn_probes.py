@@ -384,48 +384,49 @@ class AttnProbeTrainer:
         patience_counter = 0
         best_model_state = self.model.state_dict().copy()
 
-        for epoch in range(self.c.n_epochs):
-            try:
-                train_loss, train_acc, val_loss, val_acc = train_epoch(
-                    model=self.model,
-                    optimizer=optimizer,
-                    criterion=self.criterion,
-                    train_loader=self.train_loader,
-                    val_loader=self.val_loader,
-                    epoch=epoch,
-                )
-                wandb.log(
-                    {
-                        "train_loss": train_loss,
-                        "train_accuracy": train_acc,
-                        "val_loss": val_loss,
-                        "val_accuracy": val_acc,
-                        "epoch": epoch,
-                    }
-                )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            for epoch in range(self.c.n_epochs):
+                try:
+                    train_loss, train_acc, val_loss, val_acc = train_epoch(
+                        model=self.model,
+                        optimizer=optimizer,
+                        criterion=self.criterion,
+                        train_loader=self.train_loader,
+                        val_loader=self.val_loader,
+                        epoch=epoch,
+                    )
+                    wandb.log(
+                        {
+                            "train_loss": train_loss,
+                            "train_accuracy": train_acc,
+                            "val_loss": val_loss,
+                            "val_accuracy": val_acc,
+                            "epoch": epoch,
+                        }
+                    )
 
-                # Early stopping
-                if val_loss < best_val_loss:
-                    best_val_loss = val_loss
-                    patience_counter = 0
-                    best_model_state = self.model.state_dict().copy()
-                    # Save best model state to wandb
-                    with tempfile.TemporaryDirectory() as tmp_dir:
+                    # Early stopping
+                    if val_loss < best_val_loss:
+                        best_val_loss = val_loss
+                        patience_counter = 0
+                        best_model_state = self.model.state_dict().copy()
+                        # Save best model state to wandb
                         tmp_path = Path(tmp_dir) / "best_model.pt"
                         torch.save(best_model_state, tmp_path)
                         wandb.save(tmp_path, base_path=tmp_dir)
-                else:
-                    patience_counter += 1
-                    if patience_counter >= self.c.patience:
-                        print(f"Early stopping at epoch {epoch}")
-                        break
-            except KeyboardInterrupt:
-                break
 
-        self.model.load_state_dict(best_model_state)
-        test_loss, test_acc = self.compute_test_loss_acc()
-        wandb.log({"test_loss": test_loss, "test_accuracy": test_acc})
-        wandb.finish()
+                    else:
+                        patience_counter += 1
+                        if patience_counter >= self.c.patience:
+                            print(f"Early stopping at epoch {epoch}")
+                            break
+                except KeyboardInterrupt:
+                    break
+
+            self.model.load_state_dict(best_model_state)
+            test_loss, test_acc = self.compute_test_loss_acc()
+            wandb.log({"test_loss": test_loss, "test_accuracy": test_acc})
+            wandb.finish()
 
         return self.model
 
