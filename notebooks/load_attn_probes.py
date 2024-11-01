@@ -25,7 +25,7 @@ raw_acts_qs = raw_acts_dataset["qs"]
 # %% Load all minimal probes for layer 10 with matching seeds 1-10
 probes = []
 
-for seed in range(11, 20+1):
+for seed in range(21, 30+1):
     config_filters = {
         "args_probe_class": "minimal",
         "args_data_seed": seed,
