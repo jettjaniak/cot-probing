@@ -3,6 +3,7 @@
 import argparse
 import tempfile
 from abc import ABC, abstractmethod
+from copy import deepcopy
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -16,7 +17,7 @@ from tqdm.auto import tqdm
 import wandb
 from cot_probing.attn_probes_data_proc import CollateFnOutput, preprocess_and_split_data
 from cot_probing.typing import *
-from cot_probing.utils import get_git_commit_hash, setup_determinism
+from cot_probing.utils import get_git_commit_hash, safe_torch_save, setup_determinism
 
 torch.set_grad_enabled(True)
 
@@ -382,9 +383,10 @@ class AttnProbeTrainer:
         # Training loop
         best_val_loss = float("inf")
         patience_counter = 0
-        best_model_state = self.model.state_dict().copy()
+        best_model_state = deepcopy(self.model.state_dict())
 
         with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_dir_path = Path(tmp_dir)
             for epoch in range(self.c.n_epochs):
                 try:
                     train_loss, train_acc, val_loss, val_acc = train_epoch(
@@ -409,11 +411,15 @@ class AttnProbeTrainer:
                     if val_loss < best_val_loss:
                         best_val_loss = val_loss
                         patience_counter = 0
-                        best_model_state = self.model.state_dict().copy()
-                        # Save best model state to wandb
-                        tmp_path = Path(tmp_dir) / "best_model.pt"
-                        torch.save(best_model_state, tmp_path)
-                        wandb.save(tmp_path, base_path=tmp_dir)
+                        best_model_state = deepcopy(self.model.state_dict())
+                        # Create subdirectory for this save
+                        save_subdir = tmp_dir_path / f"save_{epoch}"
+                        save_subdir.mkdir(exist_ok=True)
+                        tmp_path = save_subdir / "best_model.pt"
+                        # Save model state to the new subdirectory
+                        safe_torch_save(best_model_state, tmp_path)
+                        # Always upload to the same path in wandb
+                        wandb.save(str(tmp_path), base_path=str(save_subdir))
 
                     else:
                         patience_counter += 1

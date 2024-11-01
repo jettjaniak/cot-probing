@@ -1,7 +1,9 @@
 import json
+import os
 import random
-from typing import Tuple
+import time
 
+import torch
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
@@ -27,7 +29,7 @@ def load_task_data(task_name: str) -> tuple[str, str, list[dict]]:
 
 def load_model_and_tokenizer(
     model_size: int,
-) -> Tuple[PreTrainedModel, PreTrainedTokenizerBase]:
+) -> tuple[PreTrainedModel, PreTrainedTokenizerBase]:
     assert model_size in [8, 70]
     model_id = f"hugging-quants/Meta-Llama-3.1-{model_size}B-BNB-NF4-BF16"
     tokenizer = AutoTokenizer.from_pretrained(model_id)
@@ -91,3 +93,37 @@ def get_git_commit_hash() -> str:
         )
     except:
         return "git_hash_not_found"
+
+
+def safe_torch_save(obj, filepath, timeout=10):
+    """
+    Safely save a PyTorch object and verify it exists before proceeding.
+
+    Args:
+        obj: The PyTorch object to save
+        filepath: Path where the file should be saved
+        timeout: Maximum time in seconds to wait for file to appear
+
+    Returns:
+        bool: True if save was successful and verified, False otherwise
+    """
+    # Save the object
+    torch.save(obj, filepath)
+
+    # Force sync to filesystem
+    os.sync()
+
+    # Wait for file to appear and be non-empty
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        if os.path.exists(filepath) and os.path.getsize(filepath) > 0:
+            # Verify we can load it
+            try:
+                torch.load(filepath, weights_only=True)
+                return True
+            except Exception:
+                time.sleep(0.1)
+                continue
+        time.sleep(0.1)
+
+    return False
