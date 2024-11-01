@@ -12,7 +12,7 @@ import torch
 from tqdm.auto import tqdm
 from transformers import PreTrainedModel, PreTrainedTokenizerBase
 
-from cot_probing.activations import collect_resid_acts_with_pastkv
+from cot_probing.activations import build_fsp_cache, collect_resid_acts_with_pastkv
 from cot_probing.typing import *
 from cot_probing.utils import load_model_and_tokenizer
 
@@ -48,16 +48,6 @@ def parse_args():
         help="Save results to disk every N questions.",
     )
     return parser.parse_args()
-
-
-def build_fsp_cache(
-    model: PreTrainedModel,
-    tokenizer: PreTrainedTokenizerBase,
-    fsp: str,
-):
-    fsp_input_ids = torch.tensor([tokenizer.encode(fsp)]).to("cuda")
-    with torch.inference_mode():
-        return model(fsp_input_ids).past_key_values
 
 
 def get_last_q_toks_to_cache(
