@@ -48,7 +48,7 @@ def get_category_name(values: list[float], thresholds: GroupingThresholds) -> st
     ):
         return "both"
 
-    return "other"
+    return "in_between"
 
 
 def main(args):
