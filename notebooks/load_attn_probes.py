@@ -6,7 +6,8 @@
 from pathlib import Path
 import pandas as pd
 from cot_probing.attn_probes import AttnProbeTrainer, collate_fn_out_to_model_out
-from cot_probing.activations import build_fsp_cache, collect_resid_acts_with_pastkv
+from cot_probing.activations import build_fsp_cache, collect_resid_acts_with_pastkv, collect_resid_acts_no_pastkv
+from cot_probing.utils import load_model_and_tokenizer
 import pickle
 import torch
 import seaborn as sns
@@ -199,7 +200,7 @@ probe_model = trainer.model
 collate_fn_out = list(trainer.test_loader)[0]
 
 # %%
-tokenizer = AutoTokenizer.from_pretrained("hugging-quants/Meta-Llama-3.1-8B-BNB-NF4-BF16")
+model, tokenizer = load_model_and_tokenizer(8)
 
 # %%
 cots_tokens = []
@@ -267,7 +268,11 @@ for cot_idx in range(2, 100, 20):
 
 # %%
 model = AutoModelForCausalLM.from_pretrained("hugging-quants/Meta-Llama-3.1-8B-BNB-NF4-BF16")
-unbiased_fsp_cache = build_fsp_cache(model, tokenizer, raw_acts_dataset["unbiased_fsp"])
+unbiased_fsp_str = raw_acts_dataset["unbiased_fsp"]
+unbiased_fsp_cache = build_fsp_cache(model, tokenizer, unbiased_fsp_str)
+unbiased_fsp_tokens = tokenizer.encode(unbiased_fsp_str)
+
+# %%
 def get_unbiased_resid_acts(tokens: list[int]):
     return collect_resid_acts_with_pastkv(
         model=model,
@@ -275,13 +280,22 @@ def get_unbiased_resid_acts(tokens: list[int]):
         layers=[LAYER],
         past_key_values=unbiased_fsp_cache,
     )[LAYER].unsqueeze(0).cuda().float()
+
+def get_no_ctx_resid_acts(tokens: list[int]):
+    assert tokenizer.bos_token_id is not None
+    return collect_resid_acts_no_pastkv(
+        model=model,
+        all_input_ids=[tokenizer.bos_token_id] + tokens,
+        layers=[LAYER],
+    )[LAYER][1:].unsqueeze(0).cuda().float()
 # %%
 # Example usage with custom residuals
 for cot_idx in range(2, 100, 20):
+    cot_idx = cot_idx
     tokens = cots_tokens[cot_idx]
-    custom_resids = get_unbiased_resid_acts(tokens)
+    # custom_resids = get_unbiased_resid_acts(tokens)
+    custom_resids = get_no_ctx_resid_acts(tokens)
     display(visualize_cot(cot_idx, custom_resids))
     display(visualize_cot_faithfulness(cot_idx, custom_resids))
-
 
 # %%
