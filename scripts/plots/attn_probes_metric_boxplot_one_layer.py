@@ -102,7 +102,10 @@ def main(args: argparse.Namespace):
 
     # Add labels and title
     plt.ylabel(metric.replace("_", " ").title())
-    plt.title(f"V Probes Performance Across Layers")
+    if probe_class == "minimal":
+        plt.title(f"V Probes Performance Across Layers")
+    else:
+        plt.title(f"QV Probes Performance Across Layers")
 
     # Rotate x-axis labels if there are many layers
     plt.xticks(rotation=45 if max_layer - min_layer > 10 else 0)
