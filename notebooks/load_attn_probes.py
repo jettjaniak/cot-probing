@@ -7,6 +7,7 @@ from pathlib import Path
 import pandas as pd
 from cot_probing.attn_probes import AttnProbeTrainer, collate_fn_out_to_model_out
 from cot_probing.activations import build_fsp_cache, collect_resid_acts_with_pastkv, collect_resid_acts_no_pastkv
+from cot_probing.attn_probes_data_proc import CollateFnOutput
 from cot_probing.utils import load_model_and_tokenizer
 import pickle
 import torch
@@ -18,10 +19,10 @@ import wandb
 from cot_probing.typing import *
 
 from transformers import AutoTokenizer, AutoModelForCausalLM
-# LAYERS = list(range(0,32+1))  TODO
-LAYERS = list(range(0,18+1))
+LAYERS = list(range(0,32+1))  
+# LAYERS = list(range(0,18+1))
 LAYER = 15
-SEEDS = list(range(21, 30+1))
+SEEDS = list(range(21, 40+1))
 torch.set_grad_enabled(False)
 
 # %%
@@ -197,7 +198,7 @@ test_idxs = probe["test_idxs"]
 test_qs = [raw_acts_qs[i] for i in test_idxs]
 trainer = probe["trainer"]
 probe_model = trainer.model
-collate_fn_out = list(trainer.test_loader)[0]
+collate_fn_out: CollateFnOutput = list(trainer.test_loader)[0]
 
 # %%
 model, tokenizer = load_model_and_tokenizer(8)
