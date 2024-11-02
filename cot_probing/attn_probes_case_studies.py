@@ -2,9 +2,9 @@
 import pickle
 
 import matplotlib.pyplot as plt
+import wandb
 from tqdm.auto import tqdm
 
-import wandb
 from cot_probing import DATA_DIR
 from cot_probing.activations import (
     collect_resid_acts_no_pastkv,
@@ -85,7 +85,7 @@ def plot_patching_heatmap(combined_values, title):
         vmin=-max(abs(np.min(v)), abs(np.max(v))),
         vmax=max(abs(np.min(v)), abs(np.max(v))),
     )
-    plt.title(title)
+    plt.title(title, fontsize=14)
     plt.colorbar()
     first_ytick = "all"
     # TODO: show only some
@@ -96,10 +96,10 @@ def plot_patching_heatmap(combined_values, title):
     else:
         other_yticks = [str(i - 1) for i in range(len(combined_values) - 1)]
         other_yticks[0] = "emb"
-    plt.yticks(range(len(combined_values)), [first_ytick] + other_yticks)
-    plt.xticks(range(len(TOK_GROUPS)), TOK_GROUPS, rotation=90)
-    plt.ylabel("layers")
-    plt.xlabel("token groups")
+    plt.yticks(range(len(combined_values)), [first_ytick] + other_yticks, fontsize=10)
+    plt.xticks(range(len(TOK_GROUPS)), TOK_GROUPS, rotation=90, fontsize=10)
+    plt.ylabel("layers", fontsize=12)
+    plt.xlabel("token groups", fontsize=12)
     plt.axhline(y=0.5, color="black", linewidth=1)
     plt.tight_layout()  # Adjust layout to prevent clipping
     plt.show()
