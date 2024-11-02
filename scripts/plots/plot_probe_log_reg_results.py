@@ -62,27 +62,31 @@ def plot_accuracy_by_layer_and_loc_type(df_results: pd.DataFrame, images_dir: Pa
         "loc_second_step_tok",
         "loc_colon_new_line_tok",
     ]
-    
+
     # Add the step locations in order
     for i in range(8):  # max_steps = 8
-        ordered_columns.extend([
-            f"loc_cot_step_{i}_dash",
-            f"loc_cot_step_{i}_reasoning",
-            f"loc_cot_step_{i}_newline_tok",
-        ])
-    
+        ordered_columns.extend(
+            [
+                f"loc_cot_step_{i}_dash",
+                f"loc_cot_step_{i}_reasoning",
+                f"loc_cot_step_{i}_newline_tok",
+            ]
+        )
+
     # Add the final answer locations
-    ordered_columns.extend([
-        "loc_answer_tok",
-        "loc_answer_colon_tok",
-        "loc_actual_answer_tok",
-    ])
+    ordered_columns.extend(
+        [
+            "loc_answer_tok",
+            "loc_answer_colon_tok",
+            "loc_actual_answer_tok",
+        ]
+    )
 
     # Pivot the DataFrame to create a 2D matrix of accuracy_test values
     pivot_df = df_results.pivot(
         index="layer", columns="loc_type", values="accuracy_test"
     )
-    
+
     # Reorder the columns according to our defined order
     # Only include columns that exist in the pivot_df
     ordered_columns = [col for col in ordered_columns if col in pivot_df.columns]

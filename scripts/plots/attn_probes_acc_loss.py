@@ -2,15 +2,13 @@
 
 import argparse
 from pathlib import Path
-from typing import Sequence
 
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.ticker import FuncFormatter
-from wandb.apis.public.api import Api
-from wandb.apis.public.runs import Run
 
 import wandb
+from cot_probing.utils import fetch_runs
 
 
 def get_metric_by_layer(
@@ -152,63 +150,6 @@ def plot_both_distributions(
     plt.close()
 
 
-def fetch_runs(
-    api: Api,
-    entity: str,
-    project: str,
-    probe_class: str,
-    min_layer: int,
-    max_layer: int,
-    min_seed: int,
-    max_seed: int,
-) -> dict[int, dict[int, Run]]:
-    """Fetch all runs matching criteria in a single query."""
-    # Construct query filters
-    filters = {
-        "$and": [
-            {"config.args_probe_class": probe_class},
-            {
-                "$and": [
-                    {"config.args_data_seed": {"$gte": min_seed}},
-                    {"config.args_data_seed": {"$lte": max_seed}},
-                ]
-            },
-            {
-                "$and": [
-                    {"config.args_weight_init_seed": {"$gte": min_seed}},
-                    {"config.args_weight_init_seed": {"$lte": max_seed}},
-                ]
-            },
-            {
-                "$and": [
-                    {"config.layer": {"$gte": min_layer}},
-                    {"config.layer": {"$lte": max_layer}},
-                ]
-            },
-        ]
-    }
-
-    # Fetch all matching runs at once
-    runs = list(api.runs(f"{entity}/{project}", filters))
-    print(f"Fetched {len(runs)} runs")
-
-    # Organize runs by layer and seed
-    layers = range(min_layer, max_layer + 1)
-    run_by_seed_by_layer = {layer: {} for layer in layers}
-    for run in runs:
-        layer = run.config["layer"]
-        seed = run.config["args_data_seed"]
-        run_by_seed_by_layer[layer][seed] = run
-
-    # Verify we got all expected runs
-    expected_count = (max_layer - min_layer + 1) * (max_seed - min_seed + 1)
-    actual_count = sum(len(seeds_dict) for seeds_dict in run_by_seed_by_layer.values())
-    if actual_count != expected_count:
-        print(f"Warning: Expected {expected_count} runs, got {actual_count}")
-
-    return run_by_seed_by_layer
-
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -242,16 +183,14 @@ def main():
 
     # Configure wandb
     api = wandb.Api()
-    entity = "cot-probing"
-    project = "attn-probes"
 
     if args.probe_class == "both":
         print(f"Fetching runs for both probe classes...")
         minimal_runs = fetch_runs(
-            api, entity, project, "minimal", min_layer, max_layer, min_seed, max_seed
+            api, "minimal", min_layer, max_layer, min_seed, max_seed
         )
         medium_runs = fetch_runs(
-            api, entity, project, "medium", min_layer, max_layer, min_seed, max_seed
+            api, "medium", min_layer, max_layer, min_seed, max_seed
         )
 
         print("\nCreating plots...")
@@ -285,8 +224,6 @@ def main():
 
         run_by_seed_by_layer = fetch_runs(
             api,
-            entity,
-            project,
             args.probe_class,
             min_layer,
             max_layer,

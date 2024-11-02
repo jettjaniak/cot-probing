@@ -10,6 +10,8 @@ from transformers import (
     PreTrainedModel,
     PreTrainedTokenizerBase,
 )
+from wandb.apis.public.api import Api
+from wandb.apis.public.runs import Run
 
 from cot_probing import DATA_DIR
 from cot_probing.typing import *
@@ -127,3 +129,60 @@ def safe_torch_save(obj, filepath, timeout=10):
         time.sleep(0.1)
 
     return False
+
+
+def fetch_runs(
+    api: Api,
+    probe_class: str,
+    min_layer: int,
+    max_layer: int,
+    min_seed: int,
+    max_seed: int,
+    entity: str = "cot-probing",
+    project: str = "attn-probes",
+) -> dict[int, dict[int, Run]]:
+    """Fetch all runs matching criteria in a single query."""
+    # Construct query filters
+    filters = {
+        "$and": [
+            {"config.args_probe_class": probe_class},
+            {
+                "$and": [
+                    {"config.args_data_seed": {"$gte": min_seed}},
+                    {"config.args_data_seed": {"$lte": max_seed}},
+                ]
+            },
+            {
+                "$and": [
+                    {"config.args_weight_init_seed": {"$gte": min_seed}},
+                    {"config.args_weight_init_seed": {"$lte": max_seed}},
+                ]
+            },
+            {
+                "$and": [
+                    {"config.layer": {"$gte": min_layer}},
+                    {"config.layer": {"$lte": max_layer}},
+                ]
+            },
+        ]
+    }
+
+    # Fetch all matching runs at once
+    runs = list(api.runs(f"{entity}/{project}", filters))
+    print(f"Fetched {len(runs)} runs")
+
+    # Organize runs by layer and seed
+    layers = range(min_layer, max_layer + 1)
+    run_by_seed_by_layer = {layer: {} for layer in layers}
+    for run in runs:
+        layer = run.config["layer"]
+        seed = run.config["args_data_seed"]
+        run_by_seed_by_layer[layer][seed] = run
+
+    # Verify we got all expected runs
+    expected_count = (max_layer - min_layer + 1) * (max_seed - min_seed + 1)
+    actual_count = sum(len(seeds_dict) for seeds_dict in run_by_seed_by_layer.values())
+    if actual_count != expected_count:
+        print(f"Warning: Expected {expected_count} runs, got {actual_count}")
+
+    return run_by_seed_by_layer
