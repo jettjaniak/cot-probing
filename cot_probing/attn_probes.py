@@ -8,6 +8,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import torch
+import wandb
 from fancy_einsum import einsum
 from torch import nn
 from torch.optim.adam import Adam
@@ -15,7 +16,6 @@ from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 from wandb.apis.public.runs import Run
 
-import wandb
 from cot_probing.attn_probes_data_proc import CollateFnOutput, preprocess_and_split_data
 from cot_probing.typing import *
 from cot_probing.utils import get_git_commit_hash, safe_torch_save, setup_determinism
@@ -112,6 +112,13 @@ class AbstractAttnProbeModel(nn.Module, ABC):
         # after softmax
         return torch.softmax(attn_scores, dim=-1)
 
+    def z(
+        self,
+        attn_probs: Float[torch.Tensor, "batch seq"],
+        values: Float[torch.Tensor, "batch seq"],
+    ) -> Float[torch.Tensor, "batch"]:
+        return einsum("batch seq, batch seq -> batch", attn_probs, values)
+
     def forward(
         self,
         resids: Float[torch.Tensor, "batch seq model"],
@@ -122,7 +129,7 @@ class AbstractAttnProbeModel(nn.Module, ABC):
         # shape (batch, seq)
         # unlike normal attention, these are 1-dimensional
         values = self.values(resids)
-        z = einsum("batch seq, batch seq -> batch", attn_probs, values)
+        z = self.z(attn_probs, values)
         return torch.sigmoid(z + self.z_bias)
 
 
