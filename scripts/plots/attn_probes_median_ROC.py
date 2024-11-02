@@ -69,7 +69,15 @@ def load_median_probe_test_data(
         runs_by_seed.items(), key=lambda s_r: s_r[1].summary.get(metric)
     )
 
+    # Print metric of all runs
+    # for seed, run in seed_run_sorted:
+    #     print(f"{seed}: {run.summary.get(metric)}")
+
     _median_seed, median_run = seed_run_sorted[len(seed_run_sorted) // 2]
+
+    print(f"Median run: {median_run.id}")
+    print(f"Median {metric}: {median_run.summary.get(metric)}")
+
     # median_acc = median_run.summary.get(metric)
     raw_acts_path = (
         f"../activations/acts_L{layer:02d}_with-unbiased-cots-oct28-1156.pkl"
