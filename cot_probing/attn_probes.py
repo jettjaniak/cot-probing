@@ -119,7 +119,7 @@ class AbstractAttnProbeModel(nn.Module, ABC):
     ) -> Float[torch.Tensor, "batch"]:
         return einsum("batch seq, batch seq -> batch", attn_probs, values)
 
-    def forward(
+    def get_pred_scores(
         self,
         resids: Float[torch.Tensor, "batch seq model"],
         attn_mask: Bool[torch.Tensor, "batch seq"],
@@ -130,6 +130,14 @@ class AbstractAttnProbeModel(nn.Module, ABC):
         # unlike normal attention, these are 1-dimensional
         values = self.values(resids)
         z = self.z(attn_probs, values)
+        return z
+
+    def forward(
+        self,
+        resids: Float[torch.Tensor, "batch seq model"],
+        attn_mask: Bool[torch.Tensor, "batch seq"],
+    ) -> Float[torch.Tensor, "batch"]:
+        z = self.get_pred_scores(resids, attn_mask)
         return torch.sigmoid(z + self.z_bias)
 
 
