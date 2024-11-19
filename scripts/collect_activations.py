@@ -69,11 +69,12 @@ def get_last_q_toks_to_cache(
     biased_cots: list[dict],
     biased_cot_label: Literal["faithful", "unfaithful"],
     biased_cots_collection_mode: Literal["none", "one", "all"],
+    fsp_context: Literal["biased-fsp", "unbiased-fsp", "no-fsp"],
 ):
     """May or may not include the CoT tokens"""
-    question_toks = tokenizer.encode(question, add_special_tokens=False)
     if biased_cots_collection_mode == "none":
         # Don't collect activations for biased COTs
+        question_toks = tokenizer.encode(question, add_special_tokens=False)
         return [question_toks]
 
     biased_cot_answer = None
@@ -120,7 +121,10 @@ def get_last_q_toks_to_cache(
     input_ids_to_cache = [
         # Don't include the question tokens since they are already in the biased CoT due to a bug in the measure_qs script
         # question_toks +
-        tokenizer.encode(biased_cots[i]["cot"], add_special_tokens=False) + answer_tok
+        tokenizer.encode(
+            biased_cots[i]["cot"], add_special_tokens=fsp_context == "no-fsp"
+        )
+        + answer_tok
         for i in biased_cot_indexes_to_cache
     ]
 
@@ -151,6 +155,7 @@ def collect_activations_for_question(
         biased_cots=biased_cots,
         biased_cot_label=biased_cot_label,
         biased_cots_collection_mode=biased_cots_collection_mode,
+        fsp_context=fsp_context,
     )
 
     if fsp_context == "biased-fsp":
