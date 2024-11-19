@@ -37,6 +37,8 @@ class ProbingConfig:
     probe_model_config: AttnProbeModelConfig
     data_seed: int
     lr: float
+    beta1: float
+    beta2: float
     batch_size: int
     patience: int
     n_epochs: int
@@ -420,7 +422,9 @@ class AttnProbeTrainer:
         wandb.config.update({f"args_{k}": v for k, v in vars(args).items()})
         wandb.config.update({"git_commit": get_git_commit_hash()})
 
-        optimizer = Adam(self.model.parameters(), lr=self.c.lr)
+        optimizer = Adam(
+            self.model.parameters(), lr=self.c.lr, betas=(self.c.beta1, self.c.beta2)
+        )
 
         # Training loop
         best_val_loss = float("inf")

@@ -74,6 +74,18 @@ def parse_args() -> argparse.Namespace:
         help="Learning rate for training",
     )
     parser.add_argument(
+        "--beta1",
+        type=float,
+        default=0.9,
+        help="Beta1 for Adam optimizer",
+    )
+    parser.add_argument(
+        "--beta2",
+        type=float,
+        default=0.999,
+        help="Beta2 for Adam optimizer",
+    )
+    parser.add_argument(
         "--batch-size",
         type=int,
         default=4,
@@ -170,6 +182,8 @@ def build_probe_config(
         probe_model_config=probe_config,
         data_seed=args.data_seed,
         lr=args.learning_rate,
+        beta1=args.beta1,
+        beta2=args.beta2,
         batch_size=args.batch_size,
         patience=args.patience,
         n_epochs=args.epochs,
