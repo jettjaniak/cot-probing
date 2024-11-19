@@ -12,7 +12,11 @@ import torch
 from tqdm.auto import tqdm
 from transformers import PreTrainedModel, PreTrainedTokenizerBase
 
-from cot_probing.activations import build_fsp_cache, collect_resid_acts_with_pastkv
+from cot_probing.activations import (
+    build_fsp_cache,
+    collect_resid_acts_no_pastkv,
+    collect_resid_acts_with_pastkv,
+)
 from cot_probing.typing import *
 from cot_probing.utils import load_model_and_tokenizer
 
@@ -40,11 +44,19 @@ def parse_args():
         default="all",
         help="Mode for collecting biased COTs. If one or all is selected, we filter first the biased COTs by the biased_cot_label.",
     )
+    parser.add_argument(
+        "-c",
+        "--context",
+        type=str,
+        choices=["biased-fsp", "unbiased-fsp", "no-fsp"],
+        default="biased-fsp",
+        help="FSP context for the activations to collect.",
+    )
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
     parser.add_argument(
         "--save-frequency",
         type=int,
-        default=10,
+        default=50,
         help="Save results to disk every N questions.",
     )
     return parser.parse_args()
@@ -120,9 +132,11 @@ def collect_activations_for_question(
     tokenizer: PreTrainedTokenizerBase,
     q_data: dict,
     layers: list[int],
+    unbiased_fsp_cache: tuple,
     biased_no_fsp_cache: tuple,
     biased_yes_fsp_cache: tuple,
     biased_cots_collection_mode: Literal["none", "one", "all"],
+    fsp_context: Literal["biased-fsp", "unbiased-fsp", "no-fsp"],
 ):
     question = q_data["question"]
     assert question.endswith("by step:\n-"), question
@@ -139,22 +153,32 @@ def collect_activations_for_question(
         biased_cots_collection_mode=biased_cots_collection_mode,
     )
 
-    # Choose the biased FSP based on the expected answer
-    if expected_answer == "yes":
-        biased_fsp_cache = biased_no_fsp_cache
-    else:
-        biased_fsp_cache = biased_yes_fsp_cache
+    if fsp_context == "biased-fsp":
+        # Choose the biased FSP based on the expected answer
+        if expected_answer == "yes":
+            fsp_cache = biased_no_fsp_cache
+        else:
+            fsp_cache = biased_yes_fsp_cache
+    elif fsp_context == "unbiased-fsp":
+        fsp_cache = unbiased_fsp_cache
+    elif fsp_context == "no-fsp":
+        fsp_cache = None
 
     resid_acts_by_layer_by_cot = []
     for last_q_toks in last_q_toks_to_cache:
-        resid_acts_by_layer: dict[int, Float[torch.Tensor, " seq model"]] = (
-            collect_resid_acts_with_pastkv(
+        if fsp_cache is None:
+            resid_acts_by_layer = collect_resid_acts_no_pastkv(
+                model=model,
+                all_input_ids=last_q_toks,
+                layers=layers,
+            )
+        else:
+            resid_acts_by_layer = collect_resid_acts_with_pastkv(
                 model=model,
                 last_q_toks=last_q_toks,
                 layers=layers,
-                past_key_values=biased_fsp_cache,
+                past_key_values=fsp_cache,
             )
-        )
         resid_acts_by_layer_by_cot.append(resid_acts_by_layer)
     if biased_cots_collection_mode == "none":
         assert len(resid_acts_by_layer_by_cot) == 1
@@ -213,12 +237,14 @@ def collect_activations(
     biased_cots_collection_mode: Literal["none", "one", "all"],
     args: argparse.Namespace,
 ):
+    unbiased_fsp = dataset["unbiased_fsp"] + "\n\n"
     biased_no_fsp = dataset["biased_no_fsp"] + "\n\n"
     biased_yes_fsp = dataset["biased_yes_fsp"] + "\n\n"
 
     # Pre-cache FSP activations
     biased_no_fsp_cache = build_fsp_cache(model, tokenizer, biased_no_fsp)
     biased_yes_fsp_cache = build_fsp_cache(model, tokenizer, biased_yes_fsp)
+    unbiased_fsp_cache = build_fsp_cache(model, tokenizer, unbiased_fsp)
 
     # Create output directory if it doesn't exist
     os.makedirs("activations", exist_ok=True)
@@ -246,9 +272,11 @@ def collect_activations(
             tokenizer=tokenizer,
             q_data=q_data,
             layers=layers,
+            unbiased_fsp_cache=unbiased_fsp_cache,
             biased_no_fsp_cache=biased_no_fsp_cache,
             biased_yes_fsp_cache=biased_yes_fsp_cache,
             biased_cots_collection_mode=biased_cots_collection_mode,
+            fsp_context=args.context,
         )
 
         # Split result by layer and append to corresponding lists
@@ -307,7 +335,15 @@ def main(args: argparse.Namespace):
     else:
         layers = list(range(model.config.num_hidden_layers + 1))
 
-    output_file_stem = input_file_path.stem.replace("labeled_qs_", "")
+    output_file_stem = input_file_path.stem.replace("labeled_qs_", "").replace(
+        "with-unbiased-cots-", ""
+    )
+    if args.context == "no-fsp":
+        output_file_stem = "no-fsp-" + output_file_stem
+    elif args.context == "unbiased-fsp":
+        output_file_stem = "unbiased-fsp-" + output_file_stem
+    elif args.context == "biased-fsp":
+        output_file_stem = "biased-fsp-" + output_file_stem
 
     collect_activations(
         model=model,
