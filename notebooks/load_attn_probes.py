@@ -112,7 +112,7 @@ plot_metric_distribution(layer_accs,
 
 
 # %% Load dataset for layer 10 (needed for trainer initialization)
-acts_path = Path(f"../activations/acts_L{LAYER:02d}_with-unbiased-cots-oct28-1156.pkl")
+acts_path = Path(f"../activations/acts_L{LAYER:02d}_biased-fsp-oct28-1156.pkl")
 with open(acts_path, "rb") as f:
     raw_acts_dataset = pickle.load(f)
 raw_acts_qs = raw_acts_dataset["qs"]

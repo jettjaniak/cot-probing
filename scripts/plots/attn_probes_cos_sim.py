@@ -109,7 +109,7 @@ def main(args: argparse.Namespace):
 
     # median_seed, median_run = seed_run_sorted[len(seed_run_sorted) // 2]
     # median_acc = median_run.summary.get(metric)
-    # raw_acts_path = f"../activations/acts_L{layer:02d}_with-unbiased-cots-oct28-1156.pkl"
+    # raw_acts_path = f"../activations/acts_L{layer:02d}_biased-fsp-oct28-1156.pkl"
     # with open(raw_acts_path, "rb") as f:
     #     raw_acts_dataset = pickle.load(f)
     # trainer, _, test_idxs = AttnProbeTrainer.from_wandb(
