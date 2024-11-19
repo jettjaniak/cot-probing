@@ -302,7 +302,7 @@ def collect_activations(
         if (idx + 1) % args.save_frequency == 0 or idx == len(remaining_qs) - 1:
             for layer in layers:
                 # Save updated layer results
-                skip_args = ["verbose", "file"]
+                skip_args = ["verbose", "file", "layers"]
                 layer_output = {
                     "unbiased_fsp": dataset["unbiased_fsp"],
                     "biased_no_fsp": dataset["biased_no_fsp"],
