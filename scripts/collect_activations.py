@@ -74,7 +74,9 @@ def get_last_q_toks_to_cache(
     """May or may not include the CoT tokens"""
     if biased_cots_collection_mode == "none":
         # Don't collect activations for biased COTs
-        question_toks = tokenizer.encode(question, add_special_tokens=False)
+        question_toks = tokenizer.encode(
+            question, add_special_tokens=fsp_context == "no-fsp"
+        )
         return [question_toks]
 
     biased_cot_answer = None
@@ -168,6 +170,8 @@ def collect_activations_for_question(
         fsp_cache = unbiased_fsp_cache
     elif fsp_context == "no-fsp":
         fsp_cache = None
+    else:
+        raise ValueError(f"Invalid FSP context: {fsp_context}")
 
     resid_acts_by_layer_by_cot = []
     for last_q_toks in last_q_toks_to_cache:
