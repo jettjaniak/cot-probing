@@ -14,3 +14,17 @@
 1. install pre-commit hooks `pre-commit install`
 1. run `pytest`
 
+## runs in W&B
+
+ - attn-probes project
+   - training only on full CoT
+   - using biased FSPs 
+   - seeds 1-10
+     - wrong evaluation
+     - using last instead of best model
+   - seeds 11-20
+     - last \n included
+   - seeds 21-40
+     - using activations from 676 questions
+     - inconsistent with labeled_qs file
+   - seeds 41-50
