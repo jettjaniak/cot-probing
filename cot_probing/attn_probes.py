@@ -50,6 +50,13 @@ class ProbingConfig:
     layer: int
 
 
+@dataclass
+class EvalMetrics:
+    loss: float
+    acc: float
+    auc: float
+
+
 class AbstractAttnProbeModel(nn.Module, ABC):
     def __init__(self, c: AttnProbeModelConfig):
         super().__init__()
@@ -179,19 +186,6 @@ class MediumAttnProbeModel(AbstractAttnProbeModel):
         return resids
 
 
-class FullAttnProbeModel(MediumAttnProbeModel):
-    def __init__(self, c: AttnProbeModelConfig):
-        super().__init__(c)
-        # Key projection matrix from model space to attention head space
-        self.W_K = nn.Parameter(torch.randn(c.d_model, c.d_head) * c.weight_init_range)
-
-    def _keys(
-        self, resids: Float[torch.Tensor, " batch seq model"]
-    ) -> Float[torch.Tensor, " batch seq head"]:
-        # Project residuals to key space using W_K
-        return einsum("batch seq model, model head -> batch seq head", resids, self.W_K)
-
-
 def collate_fn_out_to_model_out(
     model: AbstractAttnProbeModel,
     collate_fn_output: CollateFnOutput,
@@ -210,9 +204,9 @@ def compute_loss_and_acc_single_batch(
     labels = collate_fn_output.labels.to(model.device)
     q_idxs = collate_fn_output.q_idxs
 
-    def compute_class_metrics(
+    def compute_class_loss_acc(
         target_label: int,
-    ) -> tuple[Float[torch.Tensor, ""], float]:
+    ) -> tuple[Float[torch.Tensor, ""], float] | None:
         target_q_idxs = list(
             {q_idx for i, q_idx in enumerate(q_idxs) if labels[i] == target_label}
         )
@@ -230,23 +224,32 @@ def compute_loss_and_acc_single_batch(
             q_accs.append(q_acc)
 
         if not q_losses:
-            return torch.tensor(0.0).to(model.device), 0.0
+            return None
         return torch.stack(q_losses).mean(), sum(q_accs) / len(q_accs)
 
-    pos_loss, pos_acc = compute_class_metrics(target_label=1)
-    neg_loss, neg_acc = compute_class_metrics(target_label=0)
+    pos_loss_acc = compute_class_loss_acc(target_label=1)
+    neg_loss_acc = compute_class_loss_acc(target_label=0)
 
-    balanced_loss = (pos_loss + neg_loss) / 2
-    balanced_acc = (pos_acc + neg_acc) / 2
+    if pos_loss_acc is None:
+        assert neg_loss_acc is not None
+        balanced_loss, balanced_acc = neg_loss_acc
+    elif neg_loss_acc is None:
+        assert pos_loss_acc is not None
+        balanced_loss, balanced_acc = pos_loss_acc
+    else:
+        pos_loss, pos_acc = pos_loss_acc
+        neg_loss, neg_acc = neg_loss_acc
+        balanced_loss = (pos_loss + neg_loss) / 2
+        balanced_acc = (pos_acc + neg_acc) / 2
 
     return balanced_loss, balanced_acc
 
 
-def compute_loss_acc_auc(
+def compute_eval_metrics(
     model: AbstractAttnProbeModel,
     criterion: nn.BCELoss,
     data_loader: DataLoader,
-) -> tuple[float, float, float]:
+) -> EvalMetrics:
     assert (
         len(data_loader) == 1
     ), "This function should only run on validation or test set, with a single batch"
@@ -259,7 +262,7 @@ def compute_loss_acc_auc(
         labels = collate_fn_output.labels.cpu()
         roc_auc = float(sklearn.metrics.roc_auc_score(labels, outputs))
 
-    return loss.item(), acc, roc_auc
+    return EvalMetrics(loss=loss.item(), acc=acc, auc=roc_auc)
 
 
 class AttnProbeTrainer:
@@ -358,7 +361,6 @@ class AttnProbeTrainer:
         model_class_map = {
             "minimal": MinimalAttnProbeModel,
             "medium": MediumAttnProbeModel,
-            "full": FullAttnProbeModel,
         }
         probe_model_class = model_class_map[w_config["args_probe_class"]]
 
@@ -436,7 +438,7 @@ class AttnProbeTrainer:
             tmp_dir_path = Path(tmp_dir)
             for epoch in range(self.c.n_epochs):
                 try:
-                    train_loss, train_acc, val_loss, val_acc, val_auc = train_epoch(
+                    train_loss, train_acc, val_metrics = train_epoch(
                         model=self.model,
                         optimizer=optimizer,
                         criterion=self.criterion,
@@ -448,16 +450,16 @@ class AttnProbeTrainer:
                         {
                             "train_loss": train_loss,
                             "train_accuracy": train_acc,
-                            "val_loss": val_loss,
-                            "val_accuracy": val_acc,
-                            "val_auc": val_auc,
+                            "val_loss": val_metrics.loss,
+                            "val_accuracy": val_metrics.acc,
+                            "val_auc": val_metrics.auc,
                             "epoch": epoch,
                         }
                     )
 
                     # Early stopping
-                    if val_loss < best_val_loss:
-                        best_val_loss = val_loss
+                    if val_metrics.loss < best_val_loss:
+                        best_val_loss = val_metrics.loss
                         patience_counter = 0
                         best_model_state = deepcopy(self.model.state_dict())
                         # Create subdirectory for this save
@@ -478,26 +480,26 @@ class AttnProbeTrainer:
                     break
 
             self.model.load_state_dict(best_model_state)
-            test_loss, test_acc, test_auc = self.compute_test_loss_acc_auc()
+            test_metrics = self.compute_test_metrics()
             wandb.log(
                 {
-                    "test_loss": test_loss,
-                    "test_accuracy": test_acc,
-                    "test_auc": test_auc,
+                    "test_loss": test_metrics.loss,
+                    "test_accuracy": test_metrics.acc,
+                    "test_auc": test_metrics.auc,
                 }
             )
             wandb.finish()
 
         return self.model
 
-    def compute_test_loss_acc_auc(self) -> tuple[float, float, float]:
+    def compute_test_metrics(self) -> EvalMetrics:
         """Compute loss, accuracy, and AUC on the test set.
 
         Returns:
-            tuple[float, float, float]: Test loss, accuracy, and AUC
+            EvalMetrics: Test loss, accuracy, and AUC
         """
         self.model.eval()
-        return compute_loss_acc_auc(self.model, self.criterion, self.test_loader)
+        return compute_eval_metrics(self.model, self.criterion, self.test_loader)
 
 
 def train_epoch(
@@ -507,7 +509,7 @@ def train_epoch(
     train_loader: DataLoader,
     val_loader: DataLoader,
     epoch: int,
-) -> tuple[float, float, float, float, float]:
+) -> tuple[float, float, EvalMetrics]:
     model.train()
     train_loss = 0
     train_acc = 0
@@ -523,5 +525,5 @@ def train_epoch(
     train_loss /= len(train_loader)
     train_acc /= len(train_loader)
     model.eval()
-    val_loss, val_acc, val_auc = compute_loss_acc_auc(model, criterion, val_loader)
-    return train_loss, train_acc, val_loss, val_acc, val_auc
+    val_metrics = compute_eval_metrics(model, criterion, val_loader)
+    return train_loss, train_acc, val_metrics
