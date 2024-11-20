@@ -37,4 +37,3 @@
      - small batch size
    - seeds 111-120
      - no-fsp activations
-  
