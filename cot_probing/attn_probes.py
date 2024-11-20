@@ -10,7 +10,6 @@ from pathlib import Path
 import torch
 import wandb
 from fancy_einsum import einsum
-from sklearn.metrics import roc_auc_score
 from torch import nn
 from torch.optim.adam import Adam
 from torch.utils.data import DataLoader
@@ -201,11 +200,11 @@ def collate_fn_out_to_model_out(
     return model(cot_acts, attn_mask)
 
 
-def compute_metrics_single_batch(
+def compute_loss_and_acc_single_batch(
     model: AbstractAttnProbeModel,
     criterion: nn.BCELoss,
     collate_fn_output: CollateFnOutput,
-) -> dict[str, Float[torch.Tensor, ""] | float]:
+) -> tuple[Float[torch.Tensor, ""], float]:
     outputs = collate_fn_out_to_model_out(model, collate_fn_output)
     labels = collate_fn_output.labels.to(model.device)
     q_idxs = collate_fn_output.q_idxs
@@ -238,37 +237,28 @@ def compute_metrics_single_batch(
 
     balanced_loss = (pos_loss + neg_loss) / 2
     balanced_acc = (pos_acc + neg_acc) / 2
-    auc = roc_auc_score(labels.cpu(), outputs.detach().cpu())
 
-    return {
-        "loss": balanced_loss,
-        "acc": balanced_acc,
-        "auc": auc,
-    }
+    return balanced_loss, balanced_acc
 
 
-def compute_metrics(
+def compute_loss_and_acc(
     model: AbstractAttnProbeModel,
     criterion: nn.BCELoss,
     data_loader: DataLoader,
-) -> dict[str, Float[torch.Tensor, ""] | float]:
-    total_metrics: dict[str, Float[torch.Tensor, ""] | float] = {
-        "loss": 0.0,
-        "acc": 0.0,
-        "auc": 0.0,
-    }
+) -> tuple[float, float]:
+    total_loss = 0
+    total_acc = 0
     with torch.no_grad():
         for collate_fn_output in data_loader:
-            batch_metrics = compute_metrics_single_batch(
+            loss, acc = compute_loss_and_acc_single_batch(
                 model, criterion, collate_fn_output
             )
-            for k in total_metrics:
-                if isinstance(batch_metrics[k], torch.Tensor):
-                    total_metrics[k] += batch_metrics[k].item()
-                else:
-                    total_metrics[k] += batch_metrics[k]
+            total_loss += loss.item()
+            total_acc += acc
 
-    return {k: v / len(data_loader) for k, v in total_metrics.items()}
+    avg_loss = total_loss / len(data_loader)
+    avg_acc = total_acc / len(data_loader)
+    return avg_loss, avg_acc
 
 
 class AttnProbeTrainer:
@@ -445,7 +435,7 @@ class AttnProbeTrainer:
             tmp_dir_path = Path(tmp_dir)
             for epoch in range(self.c.n_epochs):
                 try:
-                    train_metrics, val_metrics = train_epoch(
+                    train_loss, train_acc, val_loss, val_acc = train_epoch(
                         model=self.model,
                         optimizer=optimizer,
                         criterion=self.criterion,
@@ -455,19 +445,17 @@ class AttnProbeTrainer:
                     )
                     wandb.log(
                         {
-                            "train_loss": train_metrics["loss"],
-                            "train_accuracy": train_metrics["acc"],
-                            "train_auc": train_metrics["auc"],
-                            "val_loss": val_metrics["loss"],
-                            "val_accuracy": val_metrics["acc"],
-                            "val_auc": val_metrics["auc"],
+                            "train_loss": train_loss,
+                            "train_accuracy": train_acc,
+                            "val_loss": val_loss,
+                            "val_accuracy": val_acc,
                             "epoch": epoch,
                         }
                     )
 
                     # Early stopping
-                    if val_metrics["loss"] < best_val_loss:
-                        best_val_loss = val_metrics["loss"]
+                    if val_loss < best_val_loss:
+                        best_val_loss = val_loss
                         patience_counter = 0
                         best_model_state = deepcopy(self.model.state_dict())
                         # Create subdirectory for this save
@@ -488,35 +476,29 @@ class AttnProbeTrainer:
                     break
 
             self.model.load_state_dict(best_model_state)
-            test_metrics = self.compute_test_metrics()
-            wandb.log(
-                {
-                    "test_loss": test_metrics["loss"],
-                    "test_accuracy": test_metrics["acc"],
-                    "test_auc": test_metrics["auc"],
-                }
-            )
+            test_loss, test_acc = self.compute_test_loss_acc()
+            wandb.log({"test_loss": test_loss, "test_accuracy": test_acc})
             wandb.finish()
 
         return self.model
 
-    def compute_validation_metrics(self) -> dict[str, Float[torch.Tensor, ""] | float]:
+    def compute_validation_loss_acc(self) -> tuple[float, float]:
         """Compute loss and accuracy on the validation set.
 
         Returns:
-            dict[str, Float[torch.Tensor, ""] | float]: Validation metrics
+            tuple[float, float]: Validation loss and accuracy
         """
         self.model.eval()
-        return compute_metrics(self.model, self.criterion, self.val_loader)
+        return compute_loss_and_acc(self.model, self.criterion, self.val_loader)
 
-    def compute_test_metrics(self) -> dict[str, Float[torch.Tensor, ""] | float]:
+    def compute_test_loss_acc(self) -> tuple[float, float]:
         """Compute loss and accuracy on the test set.
 
         Returns:
-            dict[str, Float[torch.Tensor, ""] | float]: Test metrics
+            tuple[float, float]: Test loss and accuracy
         """
         self.model.eval()
-        return compute_metrics(self.model, self.criterion, self.test_loader)
+        return compute_loss_and_acc(self.model, self.criterion, self.test_loader)
 
 
 def train_epoch(
@@ -526,33 +508,21 @@ def train_epoch(
     train_loader: DataLoader,
     val_loader: DataLoader,
     epoch: int,
-) -> tuple[
-    dict[str, Float[torch.Tensor, ""] | float],
-    dict[str, Float[torch.Tensor, ""] | float],
-]:
+) -> tuple[float, float, float, float]:
     model.train()
-    train_metrics: dict[str, Float[torch.Tensor, ""] | float] = {
-        "loss": 0.0,
-        "acc": 0.0,
-        "auc": 0.0,
-    }
+    train_loss = 0
+    train_acc = 0
     for collate_fn_output in tqdm(train_loader, desc=f"Epoch {epoch}"):
         optimizer.zero_grad()
-        batch_metrics = compute_metrics_single_batch(
+        loss, acc = compute_loss_and_acc_single_batch(
             model, criterion, collate_fn_output
         )
-
-        assert isinstance(batch_metrics["loss"], torch.Tensor)
-        batch_metrics["loss"].backward()
-
+        loss.backward()
         optimizer.step()
-        for k in train_metrics:
-            if isinstance(batch_metrics[k], torch.Tensor):
-                train_metrics[k] += batch_metrics[k].item()
-            else:
-                train_metrics[k] += batch_metrics[k]
-
-    train_metrics = {k: v / len(train_loader) for k, v in train_metrics.items()}
+        train_loss += loss.item()
+        train_acc += acc
+    train_loss /= len(train_loader)
+    train_acc /= len(train_loader)
     model.eval()
-    val_metrics = compute_metrics(model, criterion, val_loader)
-    return train_metrics, val_metrics
+    val_loss, val_acc = compute_loss_and_acc(model, criterion, val_loader)
+    return train_loss, train_acc, val_loss, val_acc
