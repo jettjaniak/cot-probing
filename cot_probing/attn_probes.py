@@ -7,8 +7,8 @@ from copy import deepcopy
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+import sklearn.metrics
 import torch
-import wandb
 from fancy_einsum import einsum
 from torch import nn
 from torch.optim.adam import Adam
@@ -16,6 +16,7 @@ from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 from wandb.apis.public.runs import Run
 
+import wandb
 from cot_probing.attn_probes_data_proc import CollateFnOutput, preprocess_and_split_data
 from cot_probing.typing import *
 from cot_probing.utils import get_git_commit_hash, safe_torch_save, setup_determinism
@@ -241,24 +242,24 @@ def compute_loss_and_acc_single_batch(
     return balanced_loss, balanced_acc
 
 
-def compute_loss_and_acc(
+def compute_loss_acc_auc(
     model: AbstractAttnProbeModel,
     criterion: nn.BCELoss,
     data_loader: DataLoader,
-) -> tuple[float, float]:
-    total_loss = 0
-    total_acc = 0
+) -> tuple[float, float, float]:
+    assert (
+        len(data_loader) == 1
+    ), "This function should only run on validation or test set, with a single batch"
+    collate_fn_output = next(iter(data_loader))
     with torch.no_grad():
-        for collate_fn_output in data_loader:
-            loss, acc = compute_loss_and_acc_single_batch(
-                model, criterion, collate_fn_output
-            )
-            total_loss += loss.item()
-            total_acc += acc
+        loss, acc = compute_loss_and_acc_single_batch(
+            model, criterion, collate_fn_output
+        )
+        outputs = collate_fn_out_to_model_out(model, collate_fn_output).cpu()
+        labels = collate_fn_output.labels.cpu()
+        roc_auc = float(sklearn.metrics.roc_auc_score(labels, outputs))
 
-    avg_loss = total_loss / len(data_loader)
-    avg_acc = total_acc / len(data_loader)
-    return avg_loss, avg_acc
+    return loss.item(), acc, roc_auc
 
 
 class AttnProbeTrainer:
@@ -435,7 +436,7 @@ class AttnProbeTrainer:
             tmp_dir_path = Path(tmp_dir)
             for epoch in range(self.c.n_epochs):
                 try:
-                    train_loss, train_acc, val_loss, val_acc = train_epoch(
+                    train_loss, train_acc, val_loss, val_acc, val_auc = train_epoch(
                         model=self.model,
                         optimizer=optimizer,
                         criterion=self.criterion,
@@ -449,6 +450,7 @@ class AttnProbeTrainer:
                             "train_accuracy": train_acc,
                             "val_loss": val_loss,
                             "val_accuracy": val_acc,
+                            "val_auc": val_auc,
                             "epoch": epoch,
                         }
                     )
@@ -476,29 +478,26 @@ class AttnProbeTrainer:
                     break
 
             self.model.load_state_dict(best_model_state)
-            test_loss, test_acc = self.compute_test_loss_acc()
-            wandb.log({"test_loss": test_loss, "test_accuracy": test_acc})
+            test_loss, test_acc, test_auc = self.compute_test_loss_acc_auc()
+            wandb.log(
+                {
+                    "test_loss": test_loss,
+                    "test_accuracy": test_acc,
+                    "test_auc": test_auc,
+                }
+            )
             wandb.finish()
 
         return self.model
 
-    def compute_validation_loss_acc(self) -> tuple[float, float]:
-        """Compute loss and accuracy on the validation set.
+    def compute_test_loss_acc_auc(self) -> tuple[float, float, float]:
+        """Compute loss, accuracy, and AUC on the test set.
 
         Returns:
-            tuple[float, float]: Validation loss and accuracy
+            tuple[float, float, float]: Test loss, accuracy, and AUC
         """
         self.model.eval()
-        return compute_loss_and_acc(self.model, self.criterion, self.val_loader)
-
-    def compute_test_loss_acc(self) -> tuple[float, float]:
-        """Compute loss and accuracy on the test set.
-
-        Returns:
-            tuple[float, float]: Test loss and accuracy
-        """
-        self.model.eval()
-        return compute_loss_and_acc(self.model, self.criterion, self.test_loader)
+        return compute_loss_acc_auc(self.model, self.criterion, self.test_loader)
 
 
 def train_epoch(
@@ -508,7 +507,7 @@ def train_epoch(
     train_loader: DataLoader,
     val_loader: DataLoader,
     epoch: int,
-) -> tuple[float, float, float, float]:
+) -> tuple[float, float, float, float, float]:
     model.train()
     train_loss = 0
     train_acc = 0
@@ -524,5 +523,5 @@ def train_epoch(
     train_loss /= len(train_loader)
     train_acc /= len(train_loader)
     model.eval()
-    val_loss, val_acc = compute_loss_and_acc(model, criterion, val_loader)
-    return train_loss, train_acc, val_loss, val_acc
+    val_loss, val_acc, val_auc = compute_loss_acc_auc(model, criterion, val_loader)
+    return train_loss, train_acc, val_loss, val_acc, val_auc
