@@ -138,6 +138,7 @@ def fetch_runs(
     max_layer: int,
     min_seed: int,
     max_seed: int,
+    context: Literal["biased-fsp", "unbiased-fsp", "no-fsp"],
     entity: str = "cot-probing",
     project: str = "attn-probes",
 ) -> dict[int, dict[int, Run]]:
@@ -164,6 +165,7 @@ def fetch_runs(
                     {"config.layer": {"$lte": max_layer}},
                 ]
             },
+            {"config.dataset_context": context},
         ]
     }
 
