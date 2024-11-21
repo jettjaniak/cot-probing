@@ -12,6 +12,7 @@ from cot_probing.attn_probes import (
     AbstractAttnProbeModel,
     AttnProbeModelConfig,
     AttnProbeTrainer,
+    DatasetConfig,
     FullAttnProbeModel,
     MediumAttnProbeModel,
     MinimalAttnProbeModel,
@@ -196,8 +197,28 @@ def build_probe_config(
 
 
 @beartype
+def build_dataset_config(file: Path) -> DatasetConfig:
+    parts = file.stem.split("_")
+    assert parts[0] == "acts"
+    layer_str = parts[1]
+    assert layer_str[0] == "L"
+
+    context = parts[2]
+    assert context in ["biased-fsp", "unbiased-fsp", "no-fsp"]
+
+    dataset_id = parts[3]
+
+    return DatasetConfig(
+        id=dataset_id,
+        seq_len="full",
+        context=context,
+    )
+
+
+@beartype
 def train_attn_probe(
     raw_acts_dataset: dict,
+    dataset_config: DatasetConfig,
     layer: int,
     args: argparse.Namespace,
     wandb_run_name: str,
@@ -210,6 +231,7 @@ def train_attn_probe(
     # Initialize trainer
     trainer = AttnProbeTrainer(
         c=probe_config,
+        dataset_config=dataset_config,
         raw_acts_dataset=raw_acts_dataset,
         data_loading_kwargs=vars(args),
     )
@@ -240,12 +262,16 @@ def main(args: argparse.Namespace):
     with open(args.file, "rb") as f:
         acts_dataset = pickle.load(f)
 
+    dataset_config = build_dataset_config(args.file)
+
     # Create default wandb run name if none provided
     if args.wandb_run_name is None:
         with_answer_str = "WITH_ANSWER_" if args.include_answer_toks else ""
-        wandb_run_name = f"{with_answer_str}{layer_str}_{args.probe_class}_ds{args.data_seed}_ws{args.weight_init_seed}_{uuid.uuid4().hex[:8]}"
+        wandb_run_name = f"{with_answer_str}{layer_str}_{args.probe_class}_ds{args.data_seed}_ws{args.weight_init_seed}_{dataset_config.context}_{dataset_config.seq_len}_{dataset_config.id}_{uuid.uuid4().hex[:8]}"
+
     probing_results = train_attn_probe(
         raw_acts_dataset=acts_dataset,
+        dataset_config=dataset_config,
         layer=layer_int,
         args=args,
         wandb_project=args.wandb_project,

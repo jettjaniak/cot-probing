@@ -9,6 +9,7 @@ from pathlib import Path
 
 import sklearn.metrics
 import torch
+import wandb
 from fancy_einsum import einsum
 from torch import nn
 from torch.optim.adam import Adam
@@ -16,7 +17,6 @@ from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 from wandb.apis.public.runs import Run
 
-import wandb
 from cot_probing.attn_probes_data_proc import CollateFnOutput, preprocess_and_split_data
 from cot_probing.typing import *
 from cot_probing.utils import get_git_commit_hash, safe_torch_save, setup_determinism
@@ -55,6 +55,13 @@ class EvalMetrics:
     loss: float
     acc: float
     auc: float
+
+
+@dataclass
+class DatasetConfig:
+    id: str
+    seq_len: Literal["full", "partial"]
+    context: Literal["biased-fsp", "unbiased-fsp", "no-fsp"]
 
 
 class AbstractAttnProbeModel(nn.Module, ABC):
@@ -272,9 +279,11 @@ class AttnProbeTrainer:
         c: ProbingConfig,
         raw_acts_dataset: dict,
         data_loading_kwargs: dict[str, Any],
+        dataset_config: DatasetConfig,
         model_state_dict: dict[str, Any] | None = None,
     ):
         self.c = c
+        self.dataset_config = dataset_config
         self.model_device = torch.device(c.model_device)
         self.criterion = nn.BCELoss()
 
@@ -422,6 +431,9 @@ class AttnProbeTrainer:
         # Initialize W&B
         wandb.init(entity="cot-probing", project=project_name, name=run_name)
         wandb.config.update(asdict(self.c))
+        wandb.config.update(
+            {f"dataset_{k}": v for k, v in asdict(self.dataset_config).items()}
+        )
         wandb.config.update({f"args_{k}": v for k, v in vars(args).items()})
         wandb.config.update({"git_commit": get_git_commit_hash()})
 
