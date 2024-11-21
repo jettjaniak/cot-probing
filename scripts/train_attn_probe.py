@@ -4,6 +4,7 @@ import logging
 import pickle
 import uuid
 from pathlib import Path
+from typing import cast
 
 import torch
 from beartype import beartype
@@ -146,6 +147,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Include answer tokens in the probe training",
     )
+    parser.add_argument(
+        "--partial-seq",
+        action="store_true",
+        help="Use partial sequences for training",
+    )
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
     return parser.parse_args()
 
@@ -174,6 +180,7 @@ def build_probe_config(
         d_head=d_head,
         weight_init_range=args.weight_init_range,
         weight_init_seed=args.weight_init_seed,
+        partial_seq=args.partial_seq,
     )
 
     return ProbingConfig(
@@ -200,16 +207,20 @@ def build_dataset_config(file: Path) -> DatasetConfig:
     assert parts[0] == "acts"
     layer_str = parts[1]
     assert layer_str[0] == "L"
+    layer = int(layer_str[1:])
 
     context = parts[2]
     assert context in ["biased-fsp", "unbiased-fsp", "no-fsp"]
+    context_literal: Literal["biased-fsp", "unbiased-fsp", "no-fsp"] = cast(
+        Literal["biased-fsp", "unbiased-fsp", "no-fsp"], context
+    )
 
     dataset_id = parts[3]
 
     return DatasetConfig(
         id=dataset_id,
-        seq_len="full",
-        context=context,
+        context=context_literal,
+        layer=layer,
     )
 
 

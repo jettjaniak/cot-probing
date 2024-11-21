@@ -30,6 +30,7 @@ class AttnProbeModelConfig:
     d_head: int
     weight_init_range: float
     weight_init_seed: int
+    partial_seq: bool
 
 
 @dataclass
@@ -60,7 +61,7 @@ class EvalMetrics:
 @dataclass
 class DatasetConfig:
     id: str
-    seq_len: Literal["full", "partial"]
+    layer: int
     context: Literal["biased-fsp", "unbiased-fsp", "no-fsp"]
 
 
@@ -394,6 +395,13 @@ class AttnProbeTrainer:
             },
         )
 
+        # Create dataset config
+        dataset_config = DatasetConfig(
+            id=w_config["dataset_id"],
+            layer=w_config["dataset_layer"],
+            context=w_config["dataset_context"],
+        )
+
         # Construct data loading kwargs from config
         data_loading_kwargs = {
             "batch_size": config.batch_size,
@@ -418,6 +426,7 @@ class AttnProbeTrainer:
             c=config,
             raw_acts_dataset=raw_acts_dataset,
             data_loading_kwargs=data_loading_kwargs,
+            dataset_config=dataset_config,
             model_state_dict=model_state_dict,
         )
         return instance, run, instance.test_idxs
