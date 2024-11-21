@@ -57,12 +57,6 @@ def parse_args() -> argparse.Namespace:
         help="Model dimension (should match the model being probed)",
     )
     parser.add_argument(
-        "--d-head",
-        type=int,
-        default=None,
-        help="Head dimension",
-    )
-    parser.add_argument(
         "--weight-init-range",
         type=float,
         default=0.02,
@@ -170,14 +164,9 @@ def build_probe_config(
     layer: int,
 ) -> ProbingConfig:
     probe_class_arg = args.probe_class
-    d_head = args.d_head
-    if d_head is None:
-        assert args.probe_class != "full"
-        d_head = args.d_model
 
     probe_config = AttnProbeModelConfig(
         d_model=args.d_model,
-        d_head=d_head,
         weight_init_range=args.weight_init_range,
         weight_init_seed=args.weight_init_seed,
         partial_seq=args.partial_seq,

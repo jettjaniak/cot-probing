@@ -27,7 +27,6 @@ torch.set_grad_enabled(True)
 @dataclass(kw_only=True)
 class AttnProbeModelConfig:
     d_model: int
-    d_head: int
     weight_init_range: float
     weight_init_seed: int
     partial_seq: bool
@@ -80,27 +79,14 @@ class AbstractAttnProbeModel(nn.Module, ABC):
     @abstractmethod
     def _query(
         self,
-    ) -> Float[torch.Tensor, " head"]:
+    ) -> Float[torch.Tensor, " model"]:
         pass
 
     def query(
         self,
-    ) -> Float[torch.Tensor, " head"]:
+    ) -> Float[torch.Tensor, " model"]:
         ret = self._query()
-        assert ret.shape[-1] == self.c.d_head
-        return ret
-
-    @abstractmethod
-    def _keys(
-        self, resids: Float[torch.Tensor, " batch seq d_model"]
-    ) -> Float[torch.Tensor, " batch seq head"]:
-        pass
-
-    def keys(
-        self, resids: Float[torch.Tensor, " batch seq d_model"]
-    ) -> Float[torch.Tensor, " batch seq head"]:
-        ret = self._keys(resids)
-        assert ret.shape[-1] == self.c.d_head
+        assert ret.shape[-1] == self.c.d_model
         return ret
 
     def values(
@@ -111,38 +97,34 @@ class AbstractAttnProbeModel(nn.Module, ABC):
 
     def attn_probs(
         self,
-        resids: Float[torch.Tensor, "batch seq model"],
-        attn_mask: Bool[torch.Tensor, "batch seq"],
-    ) -> Float[torch.Tensor, "batch seq"]:
+        resids: Float[torch.Tensor, " batch seq model"],
+        attn_mask: Bool[torch.Tensor, " batch seq"],
+    ) -> Float[torch.Tensor, " batch seq"]:
         # Compute attention scores (before softmax)
-        # shape (batch, seq, d_head)
-        keys = self.keys(resids)
-        # shape (d_head,)
+        # shape (model,)
         query_not_expanded = self.query()
-        # shape (batch, d_head)
+        # shape (batch, model)
         query = query_not_expanded.expand(resids.shape[0], -1)
         # shape (batch, seq)
-        attn_scores = einsum("batch seq head, batch head -> batch seq", keys, query)
+        attn_scores = einsum("batch seq model, batch model -> batch seq", resids, query)
         attn_scores = attn_scores.masked_fill(
             ~attn_mask, torch.finfo(attn_scores.dtype).min
         )
         # shape (batch, seq)
-        # after softmax
         return torch.softmax(attn_scores, dim=-1)
 
     def z(
         self,
-        attn_probs: Float[torch.Tensor, "batch seq"],
-        values: Float[torch.Tensor, "batch seq"],
-    ) -> Float[torch.Tensor, "batch"]:
+        attn_probs: Float[torch.Tensor, " batch seq"],
+        values: Float[torch.Tensor, " batch seq"],
+    ) -> Float[torch.Tensor, " batch"]:
         return einsum("batch seq, batch seq -> batch", attn_probs, values)
 
     def get_pred_scores(
         self,
-        resids: Float[torch.Tensor, "batch seq model"],
-        attn_mask: Bool[torch.Tensor, "batch seq"],
-    ) -> Float[torch.Tensor, "batch"]:
-        # sometimes d_head will be equal to d_model (i.e. in simple probes)
+        resids: Float[torch.Tensor, " batch seq model"],
+        attn_mask: Bool[torch.Tensor, " batch seq"],
+    ) -> Float[torch.Tensor, " batch"]:
         attn_probs = self.attn_probs(resids, attn_mask)
         # shape (batch, seq)
         # unlike normal attention, these are 1-dimensional
@@ -152,52 +134,38 @@ class AbstractAttnProbeModel(nn.Module, ABC):
 
     def forward(
         self,
-        resids: Float[torch.Tensor, "batch seq model"],
-        attn_mask: Bool[torch.Tensor, "batch seq"],
-    ) -> Float[torch.Tensor, "batch"]:
+        resids: Float[torch.Tensor, " batch seq model"],
+        attn_mask: Bool[torch.Tensor, " batch seq"],
+    ) -> Float[torch.Tensor, " batch"]:
         z = self.get_pred_scores(resids, attn_mask)
         return torch.sigmoid(z + self.z_bias)
 
 
 class MinimalAttnProbeModel(AbstractAttnProbeModel):
     def __init__(self, c: AttnProbeModelConfig):
-        assert c.d_head == c.d_model
         super().__init__(c)
         # Use value_vector as probe_vector
         self.temperature = nn.Parameter(torch.ones(1))
 
-    def _query(self) -> Float[torch.Tensor, " head"]:
+    def _query(self) -> Float[torch.Tensor, " model"]:
         # Scale the value vector by temperature for query
         return self.value_vector * self.temperature
-
-    def _keys(
-        self, resids: Float[torch.Tensor, " batch seq model"]
-    ) -> Float[torch.Tensor, " batch seq head"]:
-        # Use residuals directly as keys since d_model == d_head
-        return resids
 
 
 class MediumAttnProbeModel(AbstractAttnProbeModel):
     def __init__(self, c: AttnProbeModelConfig):
         super().__init__(c)
         # Only need query vector since value vector is in parent
-        self.query_vector = nn.Parameter(torch.randn(c.d_head) * c.weight_init_range)
+        self.query_vector = nn.Parameter(torch.randn(c.d_model) * c.weight_init_range)
 
-    def _query(self) -> Float[torch.Tensor, " head"]:
+    def _query(self) -> Float[torch.Tensor, " model"]:
         return self.query_vector
-
-    def _keys(
-        self, resids: Float[torch.Tensor, " batch seq model"]
-    ) -> Float[torch.Tensor, " batch seq head"]:
-        # Use residuals directly as keys since d_model == d_head
-        assert self.c.d_head == self.c.d_model
-        return resids
 
 
 def collate_fn_out_to_model_out(
     model: AbstractAttnProbeModel,
     collate_fn_output: CollateFnOutput,
-) -> Float[torch.Tensor, "batch"]:
+) -> Float[torch.Tensor, " batch"]:
     cot_acts = collate_fn_output.cot_acts.to(model.device)
     attn_mask = collate_fn_output.attn_mask.to(model.device)
     return model(cot_acts, attn_mask)
