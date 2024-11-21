@@ -13,7 +13,6 @@ from cot_probing.attn_probes import (
     AttnProbeModelConfig,
     AttnProbeTrainer,
     DatasetConfig,
-    FullAttnProbeModel,
     MediumAttnProbeModel,
     MinimalAttnProbeModel,
     ProbingConfig,
@@ -156,7 +155,6 @@ def get_probe_model_class(probe_class_arg: str) -> type[AbstractAttnProbeModel]:
     return {
         "minimal": MinimalAttnProbeModel,
         "medium": MediumAttnProbeModel,
-        "full": FullAttnProbeModel,
     }[probe_class_arg]
 
 
