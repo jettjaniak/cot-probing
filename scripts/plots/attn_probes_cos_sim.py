@@ -5,11 +5,11 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import torch
+import wandb
 from beartype import beartype
 from torch.nn.functional import cosine_similarity
 from wandb.apis.public.runs import Run
 
-import wandb
 from cot_probing.typing import *
 from cot_probing.utils import fetch_runs
 

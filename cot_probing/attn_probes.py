@@ -9,6 +9,7 @@ from pathlib import Path
 
 import sklearn.metrics
 import torch
+import wandb
 from fancy_einsum import einsum
 from torch import nn
 from torch.optim.adam import Adam
@@ -16,7 +17,6 @@ from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 from wandb.apis.public.runs import Run
 
-import wandb
 from cot_probing.attn_probes_data_proc import CollateFnOutput, preprocess_and_split_data
 from cot_probing.typing import *
 from cot_probing.utils import get_git_commit_hash, safe_torch_save, setup_determinism
