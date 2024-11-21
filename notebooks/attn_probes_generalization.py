@@ -41,11 +41,11 @@ n_seeds = max_seed - min_seed + 1
 probe_class = "minimal"
 metric = "test_accuracy"
 
-trainer, test_idxs, raw_acts_qs, unbiased_fsp_str = load_median_probe_test_data(
+trainer, test_acts_dataset = load_median_probe_test_data(
     probe_class, layer, min_seed, max_seed, metric
 )
 collate_fn_out: CollateFnOutput = list(trainer.test_loader)[0]
-unbiased_fsp_cache = build_fsp_cache(model, tokenizer, unbiased_fsp_str)
+unbiased_fsp_cache = build_fsp_cache(model, tokenizer, test_acts_dataset["unbiased_fsp"])
 
 trainer.model.eval()
 trainer.model.requires_grad_(False)
@@ -56,7 +56,7 @@ cots_labels = []
 cots_answers = []
 questions = []
 biased_resid_acts = []
-for test_q in raw_acts_qs:
+for test_q in test_acts_dataset["qs"]:
     for cot, cached_act in zip(
         test_q["biased_cots_tokens_to_cache"], test_q["cached_acts"]
     ):
