@@ -20,6 +20,8 @@ def steer_generation_with_attn_probe(
     temp: float = 0.7,
 ) -> list[list[int]]:
     prompt_len = len(input_ids)
+    input_toks = torch.tensor([input_ids]).to(model.device)
+    print(input_toks.shape)
 
     def steering_hook_fn(module, input, output_tuple, layer_idx):
         output = output_tuple[0]
@@ -56,20 +58,21 @@ def steer_generation_with_attn_probe(
     )
 
     try:
-        # Generate text with steering
-        with torch.no_grad():
-            output = model.generate(
-                torch.tensor([input_ids]).cuda(),
-                max_new_tokens=max_new_tokens,
-                do_sample=True,
-                temperature=temp,
-                use_cache=True,
-                num_return_sequences=n_gen,
-                tokenizer=tokenizer,
-                past_key_values=copy.deepcopy(fsp_cache),
-                stop_strings=["Answer: Yes", "Answer: No"],
-            )
-            responses_tensor = output[:, prompt_len:]
+        responses_tensor = []
+        for _ in range(n_gen):
+            # Generate text with steering
+            with torch.no_grad():
+                output = model.generate(
+                    input_toks,
+                    max_new_tokens=max_new_tokens,
+                    do_sample=True,
+                    temperature=temp,
+                    use_cache=True,
+                    tokenizer=tokenizer,
+                    past_key_values=copy.deepcopy(fsp_cache),
+                    stop_strings=["Answer: Yes", "Answer: No"],
+                )
+                responses_tensor.append(output[:, prompt_len:])
     finally:
         # Remove the hooks
         layer_hook.remove()
