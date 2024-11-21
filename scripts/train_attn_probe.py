@@ -81,7 +81,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=4,
+        default=12,
         help="Batch size for training",
     )
     parser.add_argument(
