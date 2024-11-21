@@ -142,9 +142,9 @@ def run_steering_experiment(
         if verbose:
             print(f"Running steering on test prompt index: {test_prompt_idx}")
 
-        data_point = test_acts_dataset[test_prompt_idx]
+        data_point = test_acts_dataset["qs"][test_prompt_idx]
 
-        question_to_answer = data_point["question_to_answer"]
+        question_to_answer = data_point["question"]
         expected_answer = data_point["expected_answer"]
 
         if verbose:
@@ -168,7 +168,11 @@ def run_steering_experiment(
         )
 
         steered_responses = []
-        steering_magnitudes = [0, pos_steer_magnitude, neg_steer_magnitude]
+        steering_magnitudes: list[float] = [
+            0.0,
+            pos_steer_magnitude,
+            neg_steer_magnitude,
+        ]
         for steer_magnitude in steering_magnitudes:
             if verbose:
                 print(
