@@ -25,6 +25,16 @@
    - seeds 11-20
      - last \n included
    - seeds 21-40
-     - using activations from 676 questions
-     - inconsistent with labeled_qs file
+     - using activations from ~150 duplicated questions
+     - out of 676
    - seeds 41-50
+     - deduplicated
+     - small run with just layer 15
+     - bug with balancing
+   - seeds 101-110
+     - added AUC
+     - biased-fsp activations
+     - small batch size
+   - seeds 111-120
+     - no-fsp activations
+  
