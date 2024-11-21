@@ -344,6 +344,8 @@ class AttnProbeTrainer:
                 for k in [
                     "data_seed",
                     "lr",
+                    "beta1",
+                    "beta2",
                     "batch_size",
                     "patience",
                     "n_epochs",
