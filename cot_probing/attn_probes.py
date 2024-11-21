@@ -9,7 +9,6 @@ from pathlib import Path
 
 import sklearn.metrics
 import torch
-import wandb
 from fancy_einsum import einsum
 from torch import nn
 from torch.optim.adam import Adam
@@ -17,6 +16,7 @@ from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 from wandb.apis.public.runs import Run
 
+import wandb
 from cot_probing.attn_probes_data_proc import CollateFnOutput, preprocess_and_split_data
 from cot_probing.typing import *
 from cot_probing.utils import get_git_commit_hash, safe_torch_save, setup_determinism
@@ -77,17 +77,8 @@ class AbstractAttnProbeModel(nn.Module, ABC):
         return self.value_vector.device
 
     @abstractmethod
-    def _query(
-        self,
-    ) -> Float[torch.Tensor, " model"]:
+    def query(self) -> Float[torch.Tensor, " model"]:
         pass
-
-    def query(
-        self,
-    ) -> Float[torch.Tensor, " model"]:
-        ret = self._query()
-        assert ret.shape[-1] == self.c.d_model
-        return ret
 
     def values(
         self, resids: Float[torch.Tensor, " batch seq model"]
@@ -141,25 +132,32 @@ class AbstractAttnProbeModel(nn.Module, ABC):
         return torch.sigmoid(z + self.z_bias)
 
 
-class MinimalAttnProbeModel(AbstractAttnProbeModel):
+class VAttnProbeModel(AbstractAttnProbeModel):
     def __init__(self, c: AttnProbeModelConfig):
         super().__init__(c)
         # Use value_vector as probe_vector
-        self.temperature = nn.Parameter(torch.ones(1))
+        self.query_scale = nn.Parameter(torch.ones(1))
 
-    def _query(self) -> Float[torch.Tensor, " model"]:
+    def query(self) -> Float[torch.Tensor, " model"]:
         # Scale the value vector by temperature for query
-        return self.value_vector * self.temperature
+        return self.value_vector * self.query_scale
 
 
-class MediumAttnProbeModel(AbstractAttnProbeModel):
+class QVAttnProbeModel(AbstractAttnProbeModel):
     def __init__(self, c: AttnProbeModelConfig):
         super().__init__(c)
         # Only need query vector since value vector is in parent
         self.query_vector = nn.Parameter(torch.randn(c.d_model) * c.weight_init_range)
 
-    def _query(self) -> Float[torch.Tensor, " model"]:
+    def query(self) -> Float[torch.Tensor, " model"]:
         return self.query_vector
+
+
+def get_probe_model_class(probe_class_arg: str) -> type[AbstractAttnProbeModel]:
+    return {
+        "V": VAttnProbeModel,
+        "QV": QVAttnProbeModel,
+    }[probe_class_arg]
 
 
 def collate_fn_out_to_model_out(
@@ -334,13 +332,7 @@ class AttnProbeTrainer:
 
         # Create probe model config
         probe_model_config = AttnProbeModelConfig(**w_config["probe_model_config"])
-
-        # Map model class name to actual class
-        model_class_map = {
-            "minimal": MinimalAttnProbeModel,
-            "medium": MediumAttnProbeModel,
-        }
-        probe_model_class = model_class_map[w_config["args_probe_class"]]
+        probe_model_class = get_probe_model_class(w_config["args_probe_class"])
 
         # Create probing config
         config = ProbingConfig(
