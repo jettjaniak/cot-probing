@@ -5,9 +5,9 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+import wandb
 from matplotlib.ticker import FuncFormatter
 
-import wandb
 from cot_probing.utils import fetch_runs
 
 

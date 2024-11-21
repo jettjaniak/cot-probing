@@ -10,13 +10,11 @@ import torch
 from beartype import beartype
 
 from cot_probing.attn_probes import (
-    AbstractAttnProbeModel,
     AttnProbeModelConfig,
     AttnProbeTrainer,
     DatasetConfig,
-    MediumAttnProbeModel,
-    MinimalAttnProbeModel,
     ProbingConfig,
+    get_probe_model_class,
 )
 from cot_probing.typing import *
 
@@ -47,7 +45,7 @@ def parse_args() -> argparse.Namespace:
         "--probe-class",
         type=str,
         required=True,
-        choices=["minimal", "medium", "full"],
+        choices=["V", "QV"],
         help="Type of attention probe to use",
     )
     parser.add_argument(
@@ -55,12 +53,6 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=4096,
         help="Model dimension (should match the model being probed)",
-    )
-    parser.add_argument(
-        "--d-head",
-        type=int,
-        default=None,
-        help="Head dimension",
     )
     parser.add_argument(
         "--weight-init-range",
@@ -157,27 +149,14 @@ def parse_args() -> argparse.Namespace:
 
 
 @beartype
-def get_probe_model_class(probe_class_arg: str) -> type[AbstractAttnProbeModel]:
-    return {
-        "minimal": MinimalAttnProbeModel,
-        "medium": MediumAttnProbeModel,
-    }[probe_class_arg]
-
-
-@beartype
 def build_probe_config(
     args: argparse.Namespace,
     layer: int,
 ) -> ProbingConfig:
     probe_class_arg = args.probe_class
-    d_head = args.d_head
-    if d_head is None:
-        assert args.probe_class != "full"
-        d_head = args.d_model
 
     probe_config = AttnProbeModelConfig(
         d_model=args.d_model,
-        d_head=d_head,
         weight_init_range=args.weight_init_range,
         weight_init_seed=args.weight_init_seed,
         partial_seq=args.partial_seq,
@@ -276,7 +255,7 @@ def main(args: argparse.Namespace):
     # Create default wandb run name if none provided
     if args.wandb_run_name is None:
         with_answer_str = "WITH_ANSWER_" if args.include_answer_toks else ""
-        wandb_run_name = f"{with_answer_str}{layer_str}_{args.probe_class}_ds{args.data_seed}_ws{args.weight_init_seed}_{dataset_config.context}_{dataset_config.seq_len}_{dataset_config.id}_{uuid.uuid4().hex[:8]}"
+        wandb_run_name = f"{with_answer_str}{layer_str}_{args.probe_class}_ds{args.data_seed}_ws{args.weight_init_seed}_{dataset_config.context}_{dataset_config.id}_{uuid.uuid4().hex[:8]}"
 
     probing_results = train_attn_probe(
         raw_acts_dataset=acts_dataset,
