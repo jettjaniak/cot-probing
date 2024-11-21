@@ -41,6 +41,7 @@ version = {attr = "cot_probing.__version__"}
 [tool.isort]
 profile = "black"
 skip = ["notebooks"]
+known_third_party = ["wandb"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
