@@ -339,6 +339,7 @@ class AttnProbeTrainer:
             probe_model_class=probe_model_class,
             probe_model_config=probe_model_config,
             data_device="cpu",
+            # FIXME: this is terrible
             **{
                 k: w_config[k]
                 for k in [
@@ -353,6 +354,8 @@ class AttnProbeTrainer:
                     "test_split",
                     "model_device",
                     "layer",
+                    "beta1",
+                    "beta2",
                 ]
             },
         )
