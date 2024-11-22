@@ -12,7 +12,6 @@ def steer_generation_with_attn_probe(
     tokenizer: PreTrainedTokenizerBase,
     attn_probe_model: AbstractAttnProbeModel,
     input_ids: list[int],
-    fsp_cache: tuple | None,
     layer_to_steer: int,
     steer_magnitude: float,
     max_new_tokens: int = 200,
@@ -33,18 +32,9 @@ def steer_generation_with_attn_probe(
         # Get probe direction
         probe_dir = attn_probe_model.value_vector.to(model.device)
 
-        # if output.shape[1] >= last_question_first_token_pos:
-        #     # First pass, cache is empty
-        #     activations = output[:, last_question_first_token_pos:, :]
-        #     output[:, last_question_first_token_pos:, :] = (
-        #         activations + steer_magnitude * mean_probe_dir
-        #     )
-        # else:
-
-        # We are processing a new token
-        assert output.shape[1] == 1
-        activations = output[:, 0, :]
-        output[:, 0, :] = activations + steer_magnitude * probe_dir
+        # Steer the last token
+        activations = output[:, -1, :]
+        output[:, -1, :] = activations + steer_magnitude * probe_dir
 
         if cache is not None:
             return (output, cache)
@@ -58,21 +48,19 @@ def steer_generation_with_attn_probe(
     )
 
     try:
-        responses_tensor = []
-        for _ in range(n_gen):
-            # Generate text with steering
-            with torch.no_grad():
-                output = model.generate(
-                    input_toks,
-                    max_new_tokens=max_new_tokens,
-                    do_sample=True,
-                    temperature=temp,
-                    use_cache=True,
-                    tokenizer=tokenizer,
-                    past_key_values=copy.deepcopy(fsp_cache),
-                    stop_strings=["Answer: Yes", "Answer: No"],
-                )
-                responses_tensor.append(output[:, prompt_len:])
+        # Generate text with steering
+        with torch.no_grad():
+            output = model.generate(
+                input_toks,
+                max_new_tokens=max_new_tokens,
+                do_sample=True,
+                temperature=temp,
+                use_cache=True,
+                num_return_sequences=n_gen,
+                tokenizer=tokenizer,
+                stop_strings=["Answer: Yes", "Answer: No"],
+            )
+            responses_tensor = output[:, prompt_len:]
     finally:
         # Remove the hooks
         layer_hook.remove()

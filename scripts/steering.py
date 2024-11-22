@@ -68,12 +68,14 @@ def parse_args():
         help="Number of generations to run for each question",
     )
     parser.add_argument(
+        "-ps",
         "--pos-steer-magnitude",
         type=float,
         default=0.4,
         help="Magnitude of the positive steering",
     )
     parser.add_argument(
+        "-ns",
         "--neg-steer-magnitude",
         type=float,
         default=-0.4,
@@ -81,39 +83,6 @@ def parse_args():
     )
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
     return parser.parse_args()
-
-
-def categorize_responses(responses):
-    yes_responses = []
-    no_responses = []
-    other_responses = []
-
-    answer_yes_tok = tokenizer.encode("Answer: Yes", add_special_tokens=False)
-    assert len(answer_yes_tok) == 3
-    answer_no_tok = tokenizer.encode("Answer: No", add_special_tokens=False)
-    assert len(answer_no_tok) == 3
-    end_of_text_tok = tokenizer.eos_token_id
-
-    for response in responses:
-        response = response.tolist()
-
-        # right strip as many end_of_text_tok as possible from each response
-        # This is necessary because model.generate adds this when using cache
-        while response[-1] == end_of_text_tok:
-            response = response[:-1]
-
-        if response[-3:] == answer_yes_tok:
-            yes_responses.append(response)
-        elif response[-3:] == answer_no_tok:
-            no_responses.append(response)
-        else:
-            other_responses.append(response)
-
-    return {
-        "yes": yes_responses,
-        "no": no_responses,
-        "other": other_responses,
-    }
 
 
 def run_steering_experiment(
@@ -133,10 +102,6 @@ def run_steering_experiment(
     biased_no_fsp = test_acts_dataset["biased_no_fsp"] + "\n\n"
     biased_yes_fsp = test_acts_dataset["biased_yes_fsp"] + "\n\n"
 
-    biased_no_fsp_cache = build_fsp_cache(model, tokenizer, biased_no_fsp)
-    biased_yes_fsp_cache = build_fsp_cache(model, tokenizer, biased_yes_fsp)
-    unbiased_fsp_cache = build_fsp_cache(model, tokenizer, unbiased_fsp)
-
     results = []
     for test_prompt_idx in tqdm(range(len(test_acts_dataset["qs"]))):
         if verbose:
@@ -154,18 +119,21 @@ def run_steering_experiment(
         if fsp_context == "biased-fsp":
             # Choose the biased FSP based on the expected answer
             if expected_answer == "yes":
-                fsp_cache = biased_no_fsp_cache
+                fsp = biased_no_fsp
             else:
-                fsp_cache = biased_yes_fsp_cache
+                fsp = biased_yes_fsp
         elif fsp_context == "unbiased-fsp":
-            fsp_cache = unbiased_fsp_cache
+            fsp = unbiased_fsp
         elif fsp_context == "no-fsp":
-            fsp_cache = None
+            fsp = None
+
+        if fsp is not None:
+            prompt = f"{fsp}\n\n{question_to_answer}"
+        else:
+            prompt = question_to_answer
 
         # Build the prompt
-        question_toks = tokenizer.encode(
-            question_to_answer, add_special_tokens=fsp_context == "no-fsp"
-        )
+        input_ids = tokenizer.encode(prompt)
 
         steered_responses = []
         steering_magnitudes: list[float] = [
@@ -182,8 +150,7 @@ def run_steering_experiment(
                 model=model,
                 tokenizer=tokenizer,
                 attn_probe_model=attn_probe_model,
-                input_ids=question_toks,
-                fsp_cache=fsp_cache,
+                input_ids=input_ids,
                 layer_to_steer=layer_to_steer,
                 steer_magnitude=steer_magnitude,
                 n_gen=n_gen,
@@ -209,7 +176,7 @@ def run_steering_experiment(
                 "other": [],
             }
             for cot in responses:
-                cot_without_answer = cot.tolist()[:-1]
+                cot_without_answer = cot[:-1]
                 answer = categorize_response_unbiased(
                     model=model,
                     tokenizer=tokenizer,
