@@ -210,6 +210,8 @@ def run_steering_experiment(
                     print(f"- {key}: {len(unbiased_answers[key])}")
 
         res = {
+            "question": question_to_answer,
+            "expected_answer": expected_answer,
             "unsteered_cots": steered_responses[0],
             "unsteered_answers": answers[0],
             "unsteered_accuracy": accuracies[0],
