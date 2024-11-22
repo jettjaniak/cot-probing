@@ -11,7 +11,7 @@ from transformers import PreTrainedModel, PreTrainedTokenizerBase
 
 from cot_probing import DATA_DIR
 from cot_probing.attn_probes import AbstractAttnProbeModel
-from cot_probing.attn_probes_case_studies import load_median_probe_test_data
+from cot_probing.attn_probes_utils import load_median_probe_test_data
 from cot_probing.generation import categorize_response as categorize_response_unbiased
 from cot_probing.steering import steer_generation_with_attn_probe
 from cot_probing.utils import load_model_and_tokenizer
@@ -233,9 +233,15 @@ def main(args: argparse.Namespace):
     min_seed, max_seed = map(int, args.seeds.split("-"))
     n_seeds = max_seed - min_seed + 1
     probe_class = args.probe_class
+    fsp_context = args.context
     metric = args.metric
     trainer, test_acts_dataset = load_median_probe_test_data(
-        probe_class, layer, min_seed, max_seed, metric
+        probe_class=probe_class,
+        fsp_context=fsp_context,
+        layer=layer,
+        min_seed=min_seed,
+        max_seed=max_seed,
+        metric=metric,
     )
     trainer.model.eval()
     trainer.model.requires_grad_(False)
@@ -250,7 +256,7 @@ def main(args: argparse.Namespace):
         attn_probe_model=trainer.model,
         test_acts_dataset=test_acts_dataset,
         layer_to_steer=layer,
-        fsp_context=args.context,
+        fsp_context=fsp_context,
         data_size=args.data_size,
         n_gen=args.n_gen,
         pos_steer_magnitude=args.pos_steer_magnitude,

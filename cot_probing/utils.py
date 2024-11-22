@@ -134,6 +134,7 @@ def safe_torch_save(obj, filepath, timeout=10):
 def fetch_runs(
     api: Api,
     probe_class: str,
+    fsp_context: Literal["biased-fsp", "unbiased-fsp", "no-fsp"],
     min_layer: int,
     max_layer: int,
     min_seed: int,
@@ -146,6 +147,7 @@ def fetch_runs(
     filters = {
         "$and": [
             {"config.args_probe_class": probe_class},
+            {"config.dataset_context": fsp_context},
             {
                 "$and": [
                     {"config.args_data_seed": {"$gte": min_seed}},
