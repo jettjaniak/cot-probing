@@ -1,288 +1,286 @@
 #!/usr/bin/env python3
 import argparse
-import json
 import logging
 import pickle
 import random
-from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Literal
 
 import numpy as np
-import pandas as pd
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score
-from sklearn.model_selection import train_test_split
+from tqdm.auto import tqdm
 from transformers import PreTrainedModel, PreTrainedTokenizerBase
 
 from cot_probing import DATA_DIR
-from cot_probing.probing import get_locs_to_probe, get_probe_data, split_dataset
+from cot_probing.attn_probes import AbstractAttnProbeModel
+from cot_probing.attn_probes_utils import load_median_probe_test_data
+from cot_probing.generation import categorize_response as categorize_response_unbiased
+from cot_probing.steering import steer_generation_with_attn_probe
 from cot_probing.utils import load_model_and_tokenizer
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Train logistic regression probes")
-    parser.add_argument(
-        "-f",
-        "--file",
-        type=Path,
-        help="Path to the probing results",
-    )
+    parser = argparse.ArgumentParser(description="Steer attn probes")
     parser.add_argument(
         "-l",
-        "--layers",
-        type=str,
-        default=None,
-        help="List of comma separated layers to steer. Defaults to all layers.",
+        "--layer",
+        type=int,
+        default=15,
+        help="Layer on which to steer (and which the probe was trained on)",
     )
     parser.add_argument(
-        "--seed",
+        "--data-size",
+        "-d",
         type=int,
-        default=42,
-        help="Random seed",
+        default=None,
+        help="Number of data points to run steering on. If None, all data points are run.",
+    )
+    parser.add_argument(
+        "--seeds",
+        "-s",
+        type=str,
+        default="1-10",
+        help="Seed range for trained probes (inclusive)",
+    )
+    parser.add_argument(
+        "--probe-class",
+        type=str,
+        choices=["V", "QV"],
+        default="V",
+        help="Type of attention probe to use",
+    )
+    parser.add_argument(
+        "--metric",
+        "-m",
+        type=str,
+        default="test_accuracy",
+        help="Metric to select the median probe",
+    )
+    parser.add_argument(
+        "--wandb-project",
+        type=str,
+        default="attn-probes",
+        help="Wandb project name",
+    )
+    parser.add_argument(
+        "-c",
+        "--context",
+        type=str,
+        choices=["biased-fsp", "unbiased-fsp", "no-fsp"],
+        default="biased-fsp",
+        help="FSP context for the steered generation.",
+    )
+    parser.add_argument(
+        "-n",
+        "--n-gen",
+        type=int,
+        default=10,
+        help="Number of generations to run for each question",
+    )
+    parser.add_argument(
+        "-ps",
+        "--pos-steer-magnitude",
+        type=float,
+        default=0.4,
+        help="Magnitude of the positive steering",
+    )
+    parser.add_argument(
+        "-ns",
+        "--neg-steer-magnitude",
+        type=float,
+        default=-0.4,
+        help="Magnitude of the negative steering",
     )
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
     return parser.parse_args()
 
 
-answer_yes_tok = tokenizer.encode("Answer: Yes", add_special_tokens=False)
-assert len(answer_yes_tok) == 3
-answer_no_tok = tokenizer.encode("Answer: No", add_special_tokens=False)
-assert len(answer_no_tok) == 3
-end_of_text_tok = tokenizer.eos_token_id
-
-
-def categorize_responses(responses):
-    yes_responses = []
-    no_responses = []
-    other_responses = []
-    for response in responses:
-        response = response.tolist()
-
-        # right strip as many end_of_text_tok as possible from each response
-        # This is necessary because model.generate adds this when using cache
-        while response[-1] == end_of_text_tok:
-            response = response[:-1]
-
-        if response[-3:] == answer_yes_tok:
-            yes_responses.append(response)
-        elif response[-3:] == answer_no_tok:
-            no_responses.append(response)
-        else:
-            other_responses.append(response)
-
-    return {
-        "yes": yes_responses,
-        "no": no_responses,
-        "other": other_responses,
-    }
-
-
 def run_steering_experiment(
-    probing_df_results: pd.DataFrame,
-    locs_to_steer: Dict,
-    layers_to_steer: List[int],
-    seed: int = 42,
+    model: PreTrainedModel,
+    tokenizer: PreTrainedTokenizerBase,
+    attn_probe_model: AbstractAttnProbeModel,
+    test_acts_dataset: dict,
+    layer_to_steer: int,
+    fsp_context: Literal["biased-fsp", "unbiased-fsp", "no-fsp"],
+    data_size: int | None = None,
+    n_gen: int = 10,
+    pos_steer_magnitude: float = 0.4,
+    neg_steer_magnitude: float = -0.4,
     verbose: bool = False,
 ):
+    # Pre-cache FSP activations
+    unbiased_fsp = test_acts_dataset["unbiased_fsp"] + "\n\n"
+    biased_no_fsp = test_acts_dataset["biased_no_fsp"] + "\n\n"
+    biased_yes_fsp = test_acts_dataset["biased_yes_fsp"] + "\n\n"
+
+    questions = test_acts_dataset["qs"]
+    if data_size is not None:
+        # Randomly sample data points
+        questions = random.sample(questions, data_size)
+
     results = []
-    for test_prompt_idx in tqdm.tqdm(range(len(probe_test_data))):
-        # print(f"Running steering on test prompt index: {test_prompt_idx}")
-        data_point = probe_test_data[test_prompt_idx]
+    for test_prompt_idx in tqdm(range(len(questions))):
+        if verbose:
+            print(f"Running steering on test prompt index: {test_prompt_idx}")
 
-        question_to_answer = data_point["question_to_answer"]
+        data_point = test_acts_dataset["qs"][test_prompt_idx]
+
+        question_to_answer = data_point["question"]
         expected_answer = data_point["expected_answer"]
-        # print(f"Question to answer: {question_to_answer}")
-        # print(f"Expected answer: {expected_answer}")
 
-        unbiased_fsp = data_point["unbiased_fsp"]
-        biased_fsp = data_point["biased_fsp"]
-        prompt = biased_fsp + "\n\n" + question_to_answer
+        if verbose:
+            print(f"Question to answer: {question_to_answer}")
+            print(f"Expected answer: {expected_answer}")
+
+        if fsp_context == "biased-fsp":
+            # Choose the biased FSP based on the expected answer
+            if expected_answer == "yes":
+                fsp = biased_no_fsp
+            else:
+                fsp = biased_yes_fsp
+        elif fsp_context == "unbiased-fsp":
+            fsp = unbiased_fsp
+        elif fsp_context == "no-fsp":
+            fsp = None
+
+        if fsp is not None:
+            prompt = f"{fsp}\n\n{question_to_answer}"
+        else:
+            prompt = question_to_answer
 
         # Build the prompt
-        input_ids = tokenizer.encode(prompt, return_tensors="pt").to(model.device)
+        input_ids = tokenizer.encode(prompt)
 
-        # Find the position of the last "Question" token
-        question_token_id = tokenizer.encode("Question", add_special_tokens=False)[0]
-        last_question_first_token_pos = [
-            i for i, t in enumerate(input_ids[0]) if t == question_token_id
-        ][-1]
-        # print(f"Last question position first token pos: {last_question_first_token_pos}")
-
-        n_gen = 10
-
-        # print("\nUnsteered generation:")
-        unsteered_responses = steer_generation(
-            input_ids, [], n_layers, last_question_first_token_pos, 0, n_gen=n_gen
-        )
-        # for response in unsteered_responses:
-        #     print(f"Response: {tokenizer.decode(response)}")
-        #     print()
-
-        loc_probe_keys = list(locs_to_probe.keys())
-        loc_keys_to_steer = [
-            # loc_probe_keys[0],
-            loc_probe_keys[1],
-            loc_probe_keys[2],
-            # loc_probe_keys[5],
-            # loc_probe_keys[8]
-        ]
-        # print(f"Location keys to steer: {loc_keys_to_steer}")
-
-        layers_to_steer = list(range(13, 26))
-        # print(f"Layers to steer: {layers_to_steer}")
-
-        pos_steer_magnitude = 0.4
-        # print(f"\nPositive steered generation: {pos_steer_magnitude}")
-        positive_steered_responses = steer_generation(
-            input_ids,
-            loc_keys_to_steer,
-            layers_to_steer,
-            last_question_first_token_pos,
+        steered_responses = []
+        steering_magnitudes: list[float] = [
+            0.0,
             pos_steer_magnitude,
-            n_gen=n_gen,
-        )
-        # for i, response in enumerate(positive_steered_responses):
-        #     print(f"Response {i}: {tokenizer.decode(response)}")
-        #     print()
-
-        neg_steer_magnitude = -0.4
-        # print(f"\nNegative steered generation: {neg_steer_magnitude}")
-        negative_steered_responses = steer_generation(
-            input_ids,
-            loc_keys_to_steer,
-            layers_to_steer,
-            last_question_first_token_pos,
             neg_steer_magnitude,
-            n_gen=n_gen,
-        )
-        # for i, response in enumerate(negative_steered_responses):
-        #     print(f"Response {i}: {tokenizer.decode(response)}")
-        #     print()
+        ]
+        for steer_magnitude in steering_magnitudes:
+            if verbose:
+                print(
+                    f"\nGenerating responses with steering magnitude: {steer_magnitude}"
+                )
+            responses = steer_generation_with_attn_probe(
+                model=model,
+                tokenizer=tokenizer,
+                attn_probe_model=attn_probe_model,
+                input_ids=input_ids,
+                layer_to_steer=layer_to_steer,
+                steer_magnitude=steer_magnitude,
+                n_gen=n_gen,
+            )
+            steered_responses.append(responses)
+            if verbose:
+                for response in responses:
+                    print(f"Response: {tokenizer.decode(response)}")
+                    print()
 
         # Measure unbiased accuracy of the CoT's produced
-
         unbiased_fsp_with_question = f"{unbiased_fsp}\n\n{question_to_answer}"
         tokenized_unbiased_fsp_with_question = tokenizer.encode(
             unbiased_fsp_with_question
         )
 
-        unsteered_unbiased_answers = {
-            "yes": [],
-            "no": [],
-            "other": [],
-        }
-        for cot in unsteered_responses:
-            cot_without_answer = cot.tolist()[:-1]
-            answer = categorize_response_unbiased(
-                model=model,
-                tokenizer=tokenizer,
-                unbiased_context_toks=tokenized_unbiased_fsp_with_question,
-                response=cot_without_answer,
-            )
-            unsteered_unbiased_answers[answer].append(cot)
+        accuracies = []
+        answers = []
+        for responses, steer_magnitude in zip(steered_responses, steering_magnitudes):
+            unbiased_answers = {
+                "yes": [],
+                "no": [],
+                "other": [],
+            }
+            for cot in responses:
+                cot_without_answer = cot[:-1]
+                answer = categorize_response_unbiased(
+                    model=model,
+                    tokenizer=tokenizer,
+                    unbiased_context_toks=tokenized_unbiased_fsp_with_question,
+                    response=cot_without_answer,
+                )
+                unbiased_answers[answer].append(cot)
+            accuracy = len(unbiased_answers[expected_answer]) / len(responses)
+            accuracies.append(accuracy)
+            answers.append(unbiased_answers)
 
-        unsteered_accuracy = len(unsteered_unbiased_answers[expected_answer]) / len(
-            unsteered_responses
-        )
-        # print(f"Unsteered accuracy: {unsteered_accuracy:.4f}")
-
-        pos_steering_unbiased_answers = {
-            "yes": [],
-            "no": [],
-            "other": [],
-        }
-        for cot in positive_steered_responses:
-            cot_without_answer = cot.tolist()[:-1]
-            answer = categorize_response_unbiased(
-                model=model,
-                tokenizer=tokenizer,
-                unbiased_context_toks=tokenized_unbiased_fsp_with_question,
-                response=cot_without_answer,
-            )
-            pos_steering_unbiased_answers[answer].append(cot)
-
-        pos_steering_accuracy = len(
-            pos_steering_unbiased_answers[expected_answer]
-        ) / len(positive_steered_responses)
-        # print(f"Positive steering accuracy: {pos_steering_accuracy:.4f}")
-
-        neg_steering_unbiased_answers = {
-            "yes": [],
-            "no": [],
-            "other": [],
-        }
-        for cot in negative_steered_responses:
-            cot_without_answer = cot.tolist()[:-1]
-            answer = categorize_response_unbiased(
-                model=model,
-                tokenizer=tokenizer,
-                unbiased_context_toks=tokenized_unbiased_fsp_with_question,
-                response=cot_without_answer,
-            )
-            neg_steering_unbiased_answers[answer].append(cot)
-
-        neg_steering_accuracy = len(
-            neg_steering_unbiased_answers[expected_answer]
-        ) / len(negative_steered_responses)
-        # print(f"Negative steering accuracy: {neg_steering_accuracy:.4f}")
+            if verbose:
+                print(
+                    f"Steering magnitude: {steer_magnitude}, accuracy: {accuracy:.4f}"
+                )
+                for key in unbiased_answers.keys():
+                    print(f"- {key}: {len(unbiased_answers[key])}")
 
         res = {
-            "unsteered": unsteered_unbiased_answers,
-            "pos_steer": pos_steering_unbiased_answers,
-            "neg_steer": neg_steering_unbiased_answers,
-            "unsteered_accuracy": unsteered_accuracy,
-            "pos_steering_accuracy": pos_steering_accuracy,
-            "neg_steering_accuracy": neg_steering_accuracy,
+            "unsteered_cots": steered_responses[0],
+            "unsteered_answers": answers[0],
+            "unsteered_accuracy": accuracies[0],
+            "pos_steering_cots": steered_responses[1],
+            "pos_steering_answers": answers[1],
+            "pos_steering_accuracy": accuracies[1],
+            "neg_steering_cots": steered_responses[2],
+            "neg_steering_answers": answers[2],
+            "neg_steering_accuracy": accuracies[2],
         }
 
-        # for variant in res.keys():
-        #     print(f"{variant=}")
-        #     for key in ["yes", "no", "other"]:
-        #         print(f"- {key} {len(res[variant][key])}")
-
         results.append(res)
+
+    return results
 
 
 def main(args: argparse.Namespace):
     logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING)
 
-    # Set seed
-    random.seed(args.seed)
-    np.random.seed(args.seed)
+    layer = args.layer
+    min_seed, max_seed = map(int, args.seeds.split("-"))
+    n_seeds = max_seed - min_seed + 1
+    probe_class = args.probe_class
+    fsp_context = args.context
+    metric = args.metric
+    trainer, test_acts_dataset = load_median_probe_test_data(
+        probe_class=probe_class,
+        fsp_context=fsp_context,
+        layer=layer,
+        min_seed=min_seed,
+        max_seed=max_seed,
+        metric=metric,
+    )
+    trainer.model.eval()
+    trainer.model.requires_grad_(False)
 
-    input_file_path = Path(args.file)
-    if not input_file_path.exists():
-        raise FileNotFoundError(f"File not found at {input_file_path}")
-
-    with open(input_file_path, "rb") as f:
-        probing_results = pickle.load(f)
-
-    model_size = probing_results["arg_model_size"]
-    model, tokenizer = load_model_and_tokenizer(model_size)
-
-    if args.layers:
-        layers_to_steer = args.layers.split(",")
-    else:
-        layers_to_steer = list(range(model.config.num_hidden_layers))
-
-    locs_to_steer = get_locs_to_probe(tokenizer)
-
-    probing_df_results = pd.DataFrame(probing_results["probing_results"])
+    model, tokenizer = load_model_and_tokenizer(8)
+    model.eval()
+    model.requires_grad_(False)
 
     results = run_steering_experiment(
-        probing_df_results=probing_df_results,
-        locs_to_steer=locs_to_steer,
-        layers_to_steer=layers_to_steer,
-        seed=args.seed,
+        model=model,
+        tokenizer=tokenizer,
+        attn_probe_model=trainer.model,
+        test_acts_dataset=test_acts_dataset,
+        layer_to_steer=layer,
+        fsp_context=fsp_context,
+        data_size=args.data_size,
+        n_gen=args.n_gen,
+        pos_steer_magnitude=args.pos_steer_magnitude,
+        neg_steer_magnitude=args.neg_steer_magnitude,
         verbose=args.verbose,
     )
+    if args.verbose:
+        # Print averaged accuracy over all data points
+        for key in [
+            "unsteered_accuracy",
+            "pos_steering_accuracy",
+            "neg_steering_accuracy",
+        ]:
+            accuracies = [res[key] for res in results]
+            print(f"Averaged {key}: {np.mean(accuracies):.4f}")
+            print(f"Standard deviation for {key}: {np.std(accuracies):.4f}")
+
     ret = dict(
         steering_results=results,
-        **{f"arg_{k}": v for k, v in vars(args).items() if k != "file"},
+        **{f"arg_{k}": v for k, v in vars(args).items()},
     )
 
     # Save the results
-    output_file_name = input_file_path.name.replace("_results_", "steering_results_")
+    output_file_name = f"steering_results_layer-{layer}_probe-{probe_class}_context-{args.context}_seeds-{args.seeds}.pkl"
     output_file_path = DATA_DIR / output_file_name
     with open(output_file_path, "wb") as f:
         pickle.dump(ret, f)

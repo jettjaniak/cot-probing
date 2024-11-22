@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader, Dataset
 
 from cot_probing import DATA_DIR
 from cot_probing.attn_probes import AttnProbeTrainer
+from cot_probing.attn_probes_case_studies import load_median_probe_test_data
 from cot_probing.attn_probes_data_proc import (
     SequenceDataset,
     collate_fn,
@@ -52,44 +53,6 @@ def parse_args() -> argparse.Namespace:
 
 
 @beartype
-def load_median_probe_test_data(
-    probe_class: str, layer: int, min_seed: int, max_seed: int, metric: str
-):
-    runs_by_seed_by_layer = fetch_runs(
-        api=wandb.Api(),
-        probe_class=probe_class,
-        min_layer=layer,
-        max_layer=layer,
-        min_seed=min_seed,
-        max_seed=max_seed,
-    )
-    assert len(runs_by_seed_by_layer) == 1
-    runs_by_seed = runs_by_seed_by_layer[layer]
-    seed_run_sorted = sorted(
-        runs_by_seed.items(), key=lambda s_r: s_r[1].summary.get(metric)
-    )
-
-    # Print metric of all runs
-    # for seed, run in seed_run_sorted:
-    #     print(f"{seed}: {run.summary.get(metric)}")
-
-    _median_seed, median_run = seed_run_sorted[len(seed_run_sorted) // 2]
-
-    print(f"Median run: {median_run.id}")
-    print(f"Median {metric}: {median_run.summary.get(metric)}")
-
-    # median_acc = median_run.summary.get(metric)
-    raw_acts_path = f"../activations/acts_L{layer:02d}_biased-fsp-oct28-1156.pkl"
-    with open(raw_acts_path, "rb") as f:
-        raw_acts_dataset = pickle.load(f)
-    trainer, _, test_idxs = AttnProbeTrainer.from_wandb(
-        raw_acts_dataset=raw_acts_dataset,
-        run_id=median_run.id,
-    )
-    return trainer, test_idxs, raw_acts_dataset
-
-
-@beartype
 def main(args: argparse.Namespace):
     layer = args.layer
     min_seed, max_seed = map(int, args.seeds.split("-"))
@@ -97,18 +60,18 @@ def main(args: argparse.Namespace):
     probe_class = args.probe_class
     metric = args.metric
 
-    trainer, test_idxs, raw_acts_dataset = load_median_probe_test_data(
+    trainer, test_acts_dataset = load_median_probe_test_data(
         probe_class, layer, min_seed, max_seed, metric
     )
 
     cots_by_q, labels_by_q_list = preprocess_data(
-        raw_acts_dataset,
+        test_acts_dataset,
         {"include_answer_toks": False, "data_device": "cuda", "d_model": 4096},
     )
 
     test_dataset = SequenceDataset(
-        [cots_by_q[i] for i in test_idxs],
-        [labels_by_q_list[i] for i in test_idxs],
+        cots_by_q,
+        labels_by_q_list,
     )
     test_loader = DataLoader(
         test_dataset,

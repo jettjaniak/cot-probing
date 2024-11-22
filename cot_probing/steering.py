@@ -1,17 +1,26 @@
+import copy
 from functools import partial
 
+import torch
+from transformers import PreTrainedModel, PreTrainedTokenizerBase
 
-def steer_generation(
-    input_ids,
-    loc_keys_to_steer,
-    layers_to_steer,
-    last_question_first_token_pos,
-    steer_magnitude,
-    max_new_tokens=200,
-    n_gen=10,
-    temp=0.7,
-):
-    prompt_len = len(input_ids[0])
+from cot_probing.attn_probes import AbstractAttnProbeModel
+
+
+def steer_generation_with_attn_probe(
+    model: PreTrainedModel,
+    tokenizer: PreTrainedTokenizerBase,
+    attn_probe_model: AbstractAttnProbeModel,
+    input_ids: list[int],
+    layer_to_steer: int,
+    steer_magnitude: float,
+    max_new_tokens: int = 200,
+    n_gen: int = 10,
+    temp: float = 0.7,
+) -> list[list[int]]:
+    prompt_len = len(input_ids)
+    input_toks = torch.tensor([input_ids]).to(model.device)
+    print(input_toks.shape)
 
     def steering_hook_fn(module, input, output_tuple, layer_idx):
         output = output_tuple[0]
@@ -20,72 +29,48 @@ def steer_generation(
         else:
             cache = None
 
-        # Gather probe directions for the loc_keys_to_steer and this layer
-        probe_directions = []
-        for loc_key in loc_keys_to_steer:
-            # Select the correct probe for this loc_key and layer
-            probe = df_results[
-                (df_results["loc_type"] == loc_key) & (df_results["layer"] == layer_idx)
-            ]["probe"].iloc[0]
-            probe_direction = torch.tensor(probe.coef_)
-            probe_directions.append(probe_direction)
+        # Get probe direction
+        probe_dir = attn_probe_model.value_vector.to(model.device)
 
-        # Take the mean of the probe directions
-        mean_probe_dir = torch.stack(probe_directions).mean(dim=0).to(model.device)
-
-        if output.shape[1] >= last_question_first_token_pos:
-            # First pass, cache is empty
-            activations = output[:, last_question_first_token_pos:, :]
-            output[:, last_question_first_token_pos:, :] = (
-                activations + steer_magnitude * mean_probe_dir
-            )
-        else:
-            # We are processing a new token
-            assert output.shape[1] == 1
-            activations = output[:, 0, :]
-            output[:, 0, :] = activations + steer_magnitude * mean_probe_dir
+        # Steer the last token
+        activations = output[:, -1, :]
+        output[:, -1, :] = activations + steer_magnitude * probe_dir
 
         if cache is not None:
             return (output, cache)
         else:
             return (output,)
 
-    # Register hooks for the selected layers
-    hooks = []
-    if len(loc_keys_to_steer) > 0:
-        for layer_idx in layers_to_steer:
-            layer_steering_hook = partial(steering_hook_fn, layer_idx=layer_idx)
-            hook = model.model.layers[layer_idx].register_forward_hook(
-                layer_steering_hook
-            )
-            hooks.append(hook)
+    # Register a hook for the selected layer
+    layer_steering_hook = partial(steering_hook_fn, layer_idx=layer_to_steer)
+    layer_hook = model.model.layers[layer_to_steer].register_forward_hook(
+        layer_steering_hook
+    )
 
     try:
         # Generate text with steering
         with torch.no_grad():
             output = model.generate(
-                input_ids,
+                input_toks,
                 max_new_tokens=max_new_tokens,
                 do_sample=True,
                 temperature=temp,
                 use_cache=True,
                 num_return_sequences=n_gen,
                 tokenizer=tokenizer,
-                stop_strings=["Yes", "No"],
+                stop_strings=["Answer: Yes", "Answer: No"],
             )
             responses_tensor = output[:, prompt_len:]
     finally:
         # Remove the hooks
-        for hook in hooks:
-            hook.remove()
+        layer_hook.remove()
 
     cleaned_responses = []
-    end_of_text_tok = tokenizer.eos_token_id
-    for response in responses_tensor:
-        # right strip as many end_of_text_tok as possible from each response
-        # This is necessary because model.generate adds this when using cache
-        while response[-1] == end_of_text_tok:
-            response = response[:-1]
-        cleaned_responses.append(response)
+    for response_toks in responses_tensor:
+        response_toks = response_toks.tolist()
+        if tokenizer.eos_token_id in response_toks:
+            # strip trailing EOS tokens added by model.generate when using cache
+            response_toks = response_toks[: response_toks.index(tokenizer.eos_token_id)]
+        cleaned_responses.append(response_toks)
 
     return cleaned_responses
