@@ -2,13 +2,14 @@
 import argparse
 import logging
 import pickle
+import random
 from typing import Literal
 
+import numpy as np
 from tqdm.auto import tqdm
 from transformers import PreTrainedModel, PreTrainedTokenizerBase
 
 from cot_probing import DATA_DIR
-from cot_probing.activations import build_fsp_cache
 from cot_probing.attn_probes import AbstractAttnProbeModel
 from cot_probing.attn_probes_case_studies import load_median_probe_test_data
 from cot_probing.generation import categorize_response as categorize_response_unbiased
@@ -24,6 +25,13 @@ def parse_args():
         type=int,
         default=15,
         help="Layer on which to steer (and which the probe was trained on)",
+    )
+    parser.add_argument(
+        "--data-size",
+        "-d",
+        type=int,
+        default=None,
+        help="Number of data points to run steering on. If None, all data points are run.",
     )
     parser.add_argument(
         "--seeds",
@@ -92,6 +100,7 @@ def run_steering_experiment(
     test_acts_dataset: dict,
     layer_to_steer: int,
     fsp_context: Literal["biased-fsp", "unbiased-fsp", "no-fsp"],
+    data_size: int | None = None,
     n_gen: int = 10,
     pos_steer_magnitude: float = 0.4,
     neg_steer_magnitude: float = -0.4,
@@ -102,8 +111,13 @@ def run_steering_experiment(
     biased_no_fsp = test_acts_dataset["biased_no_fsp"] + "\n\n"
     biased_yes_fsp = test_acts_dataset["biased_yes_fsp"] + "\n\n"
 
+    questions = test_acts_dataset["qs"]
+    if data_size is not None:
+        # Randomly sample data points
+        questions = random.sample(questions, data_size)
+
     results = []
-    for test_prompt_idx in tqdm(range(len(test_acts_dataset["qs"]))):
+    for test_prompt_idx in tqdm(range(len(questions))):
         if verbose:
             print(f"Running steering on test prompt index: {test_prompt_idx}")
 
@@ -209,6 +223,8 @@ def run_steering_experiment(
 
         results.append(res)
 
+    return results
+
 
 def main(args: argparse.Namespace):
     logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING)
@@ -235,11 +251,23 @@ def main(args: argparse.Namespace):
         test_acts_dataset=test_acts_dataset,
         layer_to_steer=layer,
         fsp_context=args.context,
+        data_size=args.data_size,
         n_gen=args.n_gen,
         pos_steer_magnitude=args.pos_steer_magnitude,
         neg_steer_magnitude=args.neg_steer_magnitude,
         verbose=args.verbose,
     )
+    if args.verbose:
+        # Print averaged accuracy over all data points
+        for key in ["unsteered", "pos", "neg"]:
+            accuracies = [res[f"{key}_steering_accuracy"] for res in results]
+            print(
+                f"Averaged accuracy over all data points ({key} steering): {np.mean(accuracies):.4f}"
+            )
+            print(
+                f"Standard deviation over all data points ({key} steering): {np.std(accuracies):.4f}"
+            )
+
     ret = dict(
         steering_results=results,
         **{f"arg_{k}": v for k, v in vars(args).items()},
