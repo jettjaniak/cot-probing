@@ -6,7 +6,7 @@ import random
 from typing import Literal
 
 import numpy as np
-from tqdm.auto import tqdm
+import tqdm
 from transformers import PreTrainedModel, PreTrainedTokenizerBase
 
 from cot_probing import DATA_DIR
@@ -117,7 +117,7 @@ def run_steering_experiment(
         questions = random.sample(questions, data_size)
 
     results = []
-    for test_prompt_idx in tqdm(range(len(questions))):
+    for test_prompt_idx in tqdm.tqdm(range(len(questions))):
         if verbose:
             print(f"Running steering on test prompt index: {test_prompt_idx}")
 

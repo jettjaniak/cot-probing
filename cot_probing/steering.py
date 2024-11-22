@@ -20,7 +20,6 @@ def steer_generation_with_attn_probe(
 ) -> list[list[int]]:
     prompt_len = len(input_ids)
     input_toks = torch.tensor([input_ids]).to(model.device)
-    print(input_toks.shape)
 
     def steering_hook_fn(module, input, output_tuple, layer_idx):
         output = output_tuple[0]
