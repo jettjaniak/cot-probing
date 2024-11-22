@@ -265,12 +265,8 @@ def main(args: argparse.Namespace):
             "neg_steering_accuracy",
         ]:
             accuracies = [res[key] for res in results]
-            print(
-                f"Averaged accuracy over all data points ({key} steering): {np.mean(accuracies):.4f}"
-            )
-            print(
-                f"Standard deviation over all data points ({key} steering): {np.std(accuracies):.4f}"
-            )
+            print(f"Averaged {key}: {np.mean(accuracies):.4f}")
+            print(f"Standard deviation for {key}: {np.std(accuracies):.4f}")
 
     ret = dict(
         steering_results=results,
