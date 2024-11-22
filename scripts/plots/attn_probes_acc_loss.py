@@ -45,7 +45,7 @@ def plot_metric_distribution(
     q3s = [np.percentile(layer_metrics[l], 75) for l in layers]
 
     # Plot lines with consistent colors
-    color = "blue" if probe_class == "minimal" else "red"
+    color = "blue" if probe_class == "V" else "red"
     plt.plot(layers, medians, "-", color=color, linewidth=2, label="median")
     plt.plot(layers, q1s, "-", color=color, alpha=0.5, linewidth=1, label="quartiles")
     plt.plot(layers, q3s, "-", color=color, alpha=0.5, linewidth=1)
@@ -73,8 +73,7 @@ def plot_metric_distribution(
             layers_to_show.add(l)
 
     # Customize the plot
-    display_name = "V" if probe_class == "minimal" else "QV"
-    plt.title(title.replace("minimal", "V").replace("medium", "QV"))
+    plt.title(title)
     plt.xlabel("layer")
     plt.ylabel(ylabel)
     plt.grid(True, alpha=0.3)
@@ -134,7 +133,7 @@ def plot_both_distributions(
             layers_to_show.add(l)
 
     # Customize the plot
-    plt.title(title.replace("minimal", "V").replace("medium", "QV"))
+    plt.title(title)
     plt.xlabel("layer")
     plt.ylabel(f"median {ylabel}")
     plt.grid(True, alpha=0.3)
@@ -156,13 +155,13 @@ def main():
         "--layers", type=str, default="0-32", help="Layer range (inclusive)"
     )
     parser.add_argument(
-        "--seeds", type=str, default="21-40", help="Seed range (inclusive)"
+        "--seeds", type=str, default="1-10", help="Seed range (inclusive)"
     )
     parser.add_argument(
         "--probe-class",
         type=str,
-        default="minimal",
-        choices=["minimal", "medium", "both"],
+        default="V",
+        choices=["V", "QV", "both"],
     )
     args = parser.parse_args()
 
@@ -184,76 +183,80 @@ def main():
     # Configure wandb
     api = wandb.Api()
 
-    if args.probe_class == "both":
-        print(f"Fetching runs for both probe classes...")
-        minimal_runs = fetch_runs(
-            api, "minimal", min_layer, max_layer, min_seed, max_seed
-        )
-        medium_runs = fetch_runs(
-            api, "medium", min_layer, max_layer, min_seed, max_seed
-        )
+    contexts = ["no-fsp", "biased-fsp"]
+    for context in contexts:
+        if args.probe_class == "both":
+            print(f"Fetching runs for both probe classes...")
+            v_runs = fetch_runs(
+                api, "V", min_layer, max_layer, min_seed, max_seed, context=context
+            )
+            qv_runs = fetch_runs(
+                api, "QV", min_layer, max_layer, min_seed, max_seed, context=context
+            )
 
-        print("\nCreating plots...")
-        print("Plotting test losses...")
-        minimal_losses = get_metric_by_layer(minimal_runs, "test_loss")
-        medium_losses = get_metric_by_layer(medium_runs, "test_loss")
-        plot_both_distributions(
-            minimal_losses,
-            medium_losses,
-            f"attention probes V & QV, {max_seed - min_seed + 1} seeds",
-            "test loss",
-            Path("results/attn_probes_loss_acc") / "both_test_loss_by_layer.png",
-        )
+            print("\nCreating plots...")
+            print("Plotting test losses...")
+            v_losses = get_metric_by_layer(v_runs, "test_loss")
+            qv_losses = get_metric_by_layer(qv_runs, "test_loss")
+            plot_both_distributions(
+                v_losses,
+                qv_losses,
+                f"attention probes V & QV, {max_seed - min_seed + 1} seeds ({context})",
+                "test loss",
+                Path("results/attn_probes_loss_acc")
+                / f"both_test_loss_by_layer_{context}.png",
+            )
 
-        print("Plotting test accuracies...")
-        minimal_accs = get_metric_by_layer(minimal_runs, "test_accuracy")
-        medium_accs = get_metric_by_layer(medium_runs, "test_accuracy")
-        plot_both_distributions(
-            minimal_accs,
-            medium_accs,
-            f"attention probes V & QV, {max_seed - min_seed + 1} seeds",
-            "test accuracy",
-            Path("results/attn_probes_loss_acc") / "both_test_accuracy_by_layer.png",
-        )
-    else:
-        # Original single probe class plotting code
-        print(
-            f"Fetching runs for {max_layer - min_layer + 1} layers and {max_seed - min_seed + 1} seeds..."
-        )
-        print(f"Probe class: {args.probe_class}")
+            print("Plotting test accuracies...")
+            v_accs = get_metric_by_layer(v_runs, "test_accuracy")
+            qv_accs = get_metric_by_layer(qv_runs, "test_accuracy")
+            plot_both_distributions(
+                v_accs,
+                qv_accs,
+                f"attention probes V & QV, {max_seed - min_seed + 1} seeds ({context})",
+                "test accuracy",
+                Path("results/attn_probes_loss_acc")
+                / f"both_test_accuracy_by_layer_{context}.png",
+            )
+        else:
+            # Original single probe class plotting code
+            print(
+                f"Fetching runs for {max_layer - min_layer + 1} layers and {max_seed - min_seed + 1} seeds..."
+            )
+            print(f"Probe class: {args.probe_class}")
 
-        run_by_seed_by_layer = fetch_runs(
-            api,
-            args.probe_class,
-            min_layer,
-            max_layer,
-            min_seed,
-            max_seed,
-        )
+            run_by_seed_by_layer = fetch_runs(
+                api,
+                args.probe_class,
+                min_layer,
+                max_layer,
+                min_seed,
+                max_seed,
+                context=context,
+            )
 
-        print("\nCreating plots...")
-        print("Plotting test losses...")
-        layer_losses = get_metric_by_layer(run_by_seed_by_layer, "test_loss")
-        display_name = "V" if args.probe_class == "minimal" else "QV"
-        plot_metric_distribution(
-            layer_losses,
-            f"{display_name} attention probe, {max_seed - min_seed + 1} seeds",
-            "test loss",
-            Path("results/attn_probes_loss_acc")
-            / f"{args.probe_class}_test_loss_by_layer.png",
-            args.probe_class,
-        )
+            print("\nCreating plots...")
+            print("Plotting test losses...")
+            layer_losses = get_metric_by_layer(run_by_seed_by_layer, "test_loss")
+            plot_metric_distribution(
+                layer_losses,
+                f"{args.probe_class} attention probe, {max_seed - min_seed + 1} seeds ({context})",
+                "test loss",
+                Path("results/attn_probes_loss_acc")
+                / f"{args.probe_class}_test_loss_by_layer_{context}.png",
+                args.probe_class,
+            )
 
-        print("Plotting test accuracies...")
-        layer_accs = get_metric_by_layer(run_by_seed_by_layer, "test_accuracy")
-        plot_metric_distribution(
-            layer_accs,
-            f"{display_name} attention probe, {max_seed - min_seed + 1} seeds",
-            "test accuracy",
-            Path("results/attn_probes_loss_acc")
-            / f"{args.probe_class}_test_accuracy_by_layer.png",
-            args.probe_class,
-        )
+            print("Plotting test accuracies...")
+            layer_accs = get_metric_by_layer(run_by_seed_by_layer, "test_accuracy")
+            plot_metric_distribution(
+                layer_accs,
+                f"{args.probe_class} attention probe, {max_seed - min_seed + 1} seeds ({context})",
+                "test accuracy",
+                Path("results/attn_probes_loss_acc")
+                / f"{args.probe_class}_test_accuracy_by_layer_{context}.png",
+                args.probe_class,
+            )
 
     print(f"\nPlots saved to results/attn_probes_loss_acc")
 
