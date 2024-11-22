@@ -21,7 +21,7 @@ def load_median_probe_test_data(
     runs_by_seed_by_layer = fetch_runs(
         api=wandb.Api(),
         probe_class=probe_class,
-        fsp_context=fsp_context,
+        context=fsp_context,
         min_layer=layer,
         max_layer=layer,
         min_seed=min_seed,
