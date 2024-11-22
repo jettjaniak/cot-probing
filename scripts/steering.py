@@ -259,8 +259,12 @@ def main(args: argparse.Namespace):
     )
     if args.verbose:
         # Print averaged accuracy over all data points
-        for key in ["unsteered", "pos", "neg"]:
-            accuracies = [res[f"{key}_steering_accuracy"] for res in results]
+        for key in [
+            "unsteered_accuracy",
+            "pos_steering_accuracy",
+            "neg_steering_accuracy",
+        ]:
+            accuracies = [res[key] for res in results]
             print(
                 f"Averaged accuracy over all data points ({key} steering): {np.mean(accuracies):.4f}"
             )
