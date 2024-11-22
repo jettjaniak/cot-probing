@@ -38,10 +38,10 @@ def get_value_vector(run: Run) -> Float[torch.Tensor, " model"]:
 
 @beartype
 def plot_sim_matrix(
-    sim_matrix: torch.Tensor, n_seeds: int, probe_class: str, layer: int
+    sim_matrix: torch.Tensor, n_seeds: int, probe_class: str, layer: int, context: str
 ):
     plt.figure(figsize=(9, 7))
-    plt.imshow(
+    im = plt.imshow(
         sim_matrix,
         cmap="viridis",
     )
@@ -52,16 +52,21 @@ def plot_sim_matrix(
     ticks = list(ticks)
     plt.xticks(ticks)
     plt.yticks(ticks)
-    plt.colorbar()
-    assert probe_class in ["minimal", "medium"], probe_class
-    probe_class_label = "V" if probe_class == "minimal" else "QV"
+
+    # Add text annotations with values
+    for i in range(sim_matrix.shape[0]):
+        for j in range(i + 1):
+            plt.text(j, i, f"{sim_matrix[i, j]:.2f}", ha="center", va="center")
+
+    plt.colorbar(im)
+    assert probe_class in ["V", "QV"], probe_class
     plt.title(
-        f"pairwise cosine similarity of value vectors;\nlayer {layer}, {probe_class_label} probes sorted by test accuracy"
+        f"pairwise cosine similarity of value vectors;\nlayer {layer}, {probe_class} probes sorted by test accuracy ({context})"
     )
     plt.tight_layout()
     save_dir = Path("results/attn_probes_cos_sim")
     save_dir.mkdir(parents=True, exist_ok=True)
-    plt.savefig(save_dir / f"L{layer:02d}_{probe_class}.png")
+    plt.savefig(save_dir / f"L{layer:02d}_{probe_class}_{context}.png")
     plt.close()
 
 
@@ -70,14 +75,14 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--layer", "-l", type=int, default=15, help="Layer")
     parser.add_argument(
-        "--seeds", "-s", type=str, default="21-40", help="Seed range (inclusive)"
+        "--seeds", "-s", type=str, default="1-10", help="Seed range (inclusive)"
     )
     parser.add_argument(
         "--probe-class",
         "-p",
         type=str,
-        default="minimal",
-        choices=["minimal", "medium"],
+        default="V",
+        choices=["V", "QV"],
     )
     parser.add_argument(
         "--metric", "-m", type=str, default="test_accuracy", help="Metric"
@@ -93,48 +98,38 @@ def main(args: argparse.Namespace):
     probe_class = args.probe_class
     metric = args.metric
 
-    runs_by_seed_by_layer = fetch_runs(
-        api=wandb.Api(),
-        probe_class=probe_class,
-        min_layer=layer,
-        max_layer=layer,
-        min_seed=min_seed,
-        max_seed=max_seed,
-    )
-    assert len(runs_by_seed_by_layer) == 1
-    runs_by_seed = runs_by_seed_by_layer[layer]
-    seed_run_sorted = sorted(
-        runs_by_seed.items(), key=lambda s_r: s_r[1].summary.get(metric)
-    )
+    contexts = ["no-fsp", "biased-fsp"]
+    for context in contexts:
+        runs_by_seed_by_layer = fetch_runs(
+            api=wandb.Api(),
+            probe_class=probe_class,
+            min_layer=layer,
+            max_layer=layer,
+            min_seed=min_seed,
+            max_seed=max_seed,
+            context=context,
+        )
+        assert len(runs_by_seed_by_layer) == 1
+        runs_by_seed = runs_by_seed_by_layer[layer]
+        seed_run_sorted = sorted(
+            runs_by_seed.items(), key=lambda s_r: s_r[1].summary.get(metric)
+        )
 
-    # median_seed, median_run = seed_run_sorted[len(seed_run_sorted) // 2]
-    # median_acc = median_run.summary.get(metric)
-    # raw_acts_path = f"../activations/acts_L{layer:02d}_biased-fsp-oct28-1156.pkl"
-    # with open(raw_acts_path, "rb") as f:
-    #     raw_acts_dataset = pickle.load(f)
-    # trainer, _, test_idxs = AttnProbeTrainer.from_wandb(
-    #     raw_acts_dataset=raw_acts_dataset,
-    #     run_id=median_run.id,
-    # )
-    # unbiased_fsp_str = raw_acts_dataset["unbiased_fsp"]
-    # raw_acts_qs = raw_acts_dataset["qs"]
-    # del raw_acts_dataset
+        value_vectors = torch.stack(
+            [get_value_vector(run) for _seed, run in seed_run_sorted]
+        )
+        sim_matrix = torch.zeros((n_seeds, n_seeds))
 
-    value_vectors = torch.stack(
-        [get_value_vector(run) for _seed, run in seed_run_sorted]
-    )
-    sim_matrix = torch.zeros((n_seeds, n_seeds))
+        for i in range(n_seeds):
+            for j in range(n_seeds):
+                if j > i:
+                    sim_matrix[i, j] = float("nan")
+                else:
+                    sim_matrix[i, j] = cosine_similarity(
+                        value_vectors[i], value_vectors[j], dim=0
+                    )
 
-    for i in range(n_seeds):
-        for j in range(n_seeds):
-            if j > i:
-                sim_matrix[i, j] = float("nan")
-            else:
-                sim_matrix[i, j] = cosine_similarity(
-                    value_vectors[i], value_vectors[j], dim=0
-                )
-
-    plot_sim_matrix(sim_matrix, n_seeds, probe_class, layer)
+        plot_sim_matrix(sim_matrix, n_seeds, probe_class, layer, context)
 
 
 if __name__ == "__main__":
