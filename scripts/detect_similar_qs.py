@@ -65,10 +65,33 @@ Question 2: {question2}
     return float(str_score)
 
 
+def get_keywords(question: str, openai_model: str) -> list[str]:
+    prompt = f"""For the following question, provide up to three relevant keywords that capture its main concepts. 
+    Respond with just the keywords in lowercase, separated by commas (no spaces after commas).
+    
+    Question: {question}"""
+
+    response = client.chat.completions.create(
+        model=openai_model,
+        messages=[
+            {
+                "role": "system",
+                "content": "You are an AI assistant that extracts keywords from questions.",
+            },
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0.3,
+        max_tokens=50,
+    )
+
+    keywords = response.choices[0].message.content.strip().split(",")
+    return keywords
+
+
 def main(args: argparse.Namespace):
     logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING)
 
-    questions_dataset_path = DATA_DIR / "generated_questions_dataset.json"
+    questions_dataset_path = DATA_DIR / "generated_qs_oct28-1156.json"
 
     question_dataset = []
     if questions_dataset_path.exists():
@@ -80,31 +103,41 @@ def main(args: argparse.Namespace):
         )
 
     for i in tqdm.tqdm(range(args.start_index, len(question_dataset))):
+        ith_question = (
+            question_dataset[i]["question"]
+            .split("\nLet's think step by step:")[0]
+            .strip()
+        )
+
+        # Get keywords only for question i
+        keywords = get_keywords(ith_question, args.openai_model)
+
         for j in range(i + 1, len(question_dataset)):
-            ith_question = question_dataset[i]["question"]
-            jth_question = question_dataset[j]["question"]
-
-            split_string = "\nLet's think step by step:"
-            ith_question = ith_question.split(split_string)[0].strip()
-            jth_question = jth_question.split(split_string)[0].strip()
-
-            score = get_similarity_score(
-                ith_question,
-                jth_question,
-                args.openai_model,
+            jth_question = (
+                question_dataset[j]["question"]
+                .split("\nLet's think step by step:")[0]
+                .strip()
             )
-            if score >= args.threshold:
-                if args.verbose:
-                    print(
-                        f"\nThe following questions ({i} and {j}) have a similarity score of {score}:"
-                    )
-                    print(ith_question)
-                    print(jth_question)
 
-                if args.write:
-                    question_dataset.pop(j)
-                    with open(questions_dataset_path, "w") as f:
-                        json.dump(question_dataset, f)
+            # Simple text search in jth_question
+            if any(kw in jth_question.lower() for kw in keywords):
+                # Only get similarity score if they share keywords
+                score = get_similarity_score(
+                    ith_question, jth_question, args.openai_model
+                )
+
+                if score >= args.threshold:
+                    if args.verbose:
+                        print(
+                            f"\nThe following questions ({i} and {j}) have a similarity score of {score}:"
+                        )
+                        print(ith_question)
+                        print(jth_question)
+
+                    if args.write:
+                        question_dataset.pop(j)
+                        with open(questions_dataset_path, "w") as f:
+                            json.dump(question_dataset, f)
 
 
 if __name__ == "__main__":
