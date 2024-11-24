@@ -117,7 +117,7 @@ def main(args: argparse.Namespace):
         )
 
         if args.verbose:
-            print(f"Question {i}: {ith_question}")
+            print(f"\nQuestion {i}: {ith_question}")
 
         # Get keywords only for question i
         keywords = get_keywords(ith_question, args.openai_model)
@@ -136,7 +136,7 @@ def main(args: argparse.Namespace):
             if len(matching_keywords) > len(keywords) / 2:
                 if args.verbose:
                     print(
-                        f"Found {len(matching_keywords)} matching keywords: {matching_keywords} in question {j}: {jth_question}"
+                        f"\nFound {len(matching_keywords)} matching keywords: {matching_keywords} in question {j}: {jth_question}"
                     )
 
                 score = get_similarity_score(
