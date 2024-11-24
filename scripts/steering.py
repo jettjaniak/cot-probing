@@ -3,6 +3,7 @@ import argparse
 import logging
 import pickle
 import random
+from collections import Counter
 from typing import Literal
 
 import numpy as np
@@ -247,6 +248,13 @@ def main(args: argparse.Namespace):
     )
     trainer.model.eval()
     trainer.model.requires_grad_(False)
+
+    if args.verbose:
+        # List number of expected answers yes and no
+        c = Counter()
+        for data_point in test_acts_dataset["qs"]:
+            c[f"{data_point['expected_answer']}-{data_point['biased_cot_label']}"] += 1
+        print(c)
 
     model, tokenizer = load_model_and_tokenizer(8)
     model.eval()
