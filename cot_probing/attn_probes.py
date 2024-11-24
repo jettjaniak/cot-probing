@@ -13,6 +13,9 @@ import wandb
 from fancy_einsum import einsum
 from torch import nn
 from torch.optim.adam import Adam
+from torch.optim.adamw import AdamW
+from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 from wandb.apis.public.runs import Run
@@ -48,6 +51,9 @@ class ProbingConfig:
     model_device: str
     data_device: str
     layer: int
+    lr_scheduler: Literal["plateau"] | None
+    lr_patience: int
+    lr_factor: float
 
 
 @dataclass
@@ -411,9 +417,19 @@ class AttnProbeTrainer:
         wandb.config.update({f"args_{k}": v for k, v in vars(args).items()})
         wandb.config.update({"git_commit": get_git_commit_hash()})
 
-        optimizer = Adam(
+        optimizer = AdamW(
             self.model.parameters(), lr=self.c.lr, betas=(self.c.beta1, self.c.beta2)
         )
+
+        # Initialize scheduler if requested
+        scheduler = None
+        if self.c.lr_scheduler == "plateau":
+            scheduler = ReduceLROnPlateau(
+                optimizer,
+                mode="min",
+                factor=self.c.lr_factor,
+                patience=self.c.lr_patience,
+            )
 
         # Training loop
         best_val_loss = float("inf")
@@ -432,6 +448,13 @@ class AttnProbeTrainer:
                         val_loader=self.val_loader,
                         epoch=epoch,
                     )
+
+                    # Step scheduler if it exists
+                    if scheduler is not None:
+                        scheduler.step(val_metrics.loss)
+
+                    # Log learning rate
+                    current_lr = optimizer.param_groups[0]["lr"]
                     wandb.log(
                         {
                             "train_loss": train_loss,
@@ -439,6 +462,7 @@ class AttnProbeTrainer:
                             "val_loss": val_metrics.loss,
                             "val_accuracy": val_metrics.acc,
                             "val_auc": val_metrics.auc,
+                            "learning_rate": current_lr,
                             "epoch": epoch,
                         }
                     )
@@ -490,7 +514,7 @@ class AttnProbeTrainer:
 
 def train_epoch(
     model: AbstractAttnProbeModel,
-    optimizer: Adam,
+    optimizer: Optimizer,
     criterion: nn.BCELoss,
     train_loader: DataLoader,
     val_loader: DataLoader,

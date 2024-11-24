@@ -67,6 +67,25 @@ def parse_args() -> argparse.Namespace:
         help="Learning rate for training",
     )
     parser.add_argument(
+        "--lr-scheduler",
+        type=str,
+        default=None,
+        choices=[None, "plateau"],
+        help="Learning rate scheduler to use",
+    )
+    parser.add_argument(
+        "--lr-patience",
+        type=int,
+        default=5,
+        help="Number of epochs to wait before reducing learning rate",
+    )
+    parser.add_argument(
+        "--lr-factor",
+        type=float,
+        default=0.1,
+        help="Factor to reduce learning rate by",
+    )
+    parser.add_argument(
         "--beta1",
         type=float,
         default=0.9,
@@ -177,6 +196,9 @@ def build_probe_config(
         model_device=args.model_device,
         data_device=args.data_device,
         layer=layer,
+        lr_scheduler=args.lr_scheduler,
+        lr_patience=args.lr_patience,
+        lr_factor=args.lr_factor,
     )
 
 
