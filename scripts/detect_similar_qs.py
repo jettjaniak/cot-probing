@@ -3,6 +3,7 @@ import argparse
 import json
 import logging
 import os
+import time
 
 import tqdm
 from openai import OpenAI
@@ -10,6 +11,8 @@ from openai import OpenAI
 from cot_probing import DATA_DIR
 
 client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+
+CHATGPT_DELAY_SECONDS = 1
 
 
 def parse_args():
@@ -38,6 +41,8 @@ def get_similarity_score(
     question2: str,
     openai_model: str,
 ) -> float:
+    time.sleep(CHATGPT_DELAY_SECONDS)
+
     prompt = f"""Compare the following two questions and determine if they are similar in meaning or intent. Provide only a similarity score between 0 and 1, where 0 means completely different and 1 means identical or very similar.
 
 Question 1: {question1}
@@ -66,6 +71,8 @@ Question 2: {question2}
 
 
 def get_keywords(question: str, openai_model: str) -> list[str]:
+    time.sleep(CHATGPT_DELAY_SECONDS)
+
     prompt = f"""For the following question, provide up to three relevant keywords that capture its main concepts. 
     Respond with just the keywords in lowercase, separated by commas (no spaces after commas).
     
@@ -89,7 +96,7 @@ def get_keywords(question: str, openai_model: str) -> list[str]:
 
 
 def main(args: argparse.Namespace):
-    logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING)
+    logging.basicConfig(level=logging.WARNING)
 
     questions_dataset_path = DATA_DIR / "generated_qs_oct28-1156.json"
 
@@ -109,8 +116,13 @@ def main(args: argparse.Namespace):
             .strip()
         )
 
+        if args.verbose:
+            print(f"Question {i}: {ith_question}")
+
         # Get keywords only for question i
         keywords = get_keywords(ith_question, args.openai_model)
+        if args.verbose:
+            print(f"Keywords for question {i}: {keywords}")
 
         for j in range(i + 1, len(question_dataset)):
             jth_question = (
@@ -119,21 +131,21 @@ def main(args: argparse.Namespace):
                 .strip()
             )
 
-            # Simple text search in jth_question
-            if any(kw in jth_question.lower() for kw in keywords):
-                # Only get similarity score if they share keywords
+            # Count matching number of keywords
+            matching_keywords = [kw for kw in keywords if kw in jth_question.lower()]
+            if len(matching_keywords) > len(keywords) / 2:
+                if args.verbose:
+                    print(
+                        f"Found {len(matching_keywords)} matching keywords: {matching_keywords} in question {j}: {jth_question}"
+                    )
+
                 score = get_similarity_score(
                     ith_question, jth_question, args.openai_model
                 )
+                if args.verbose:
+                    print(f"Similarity score is {score}")
 
                 if score >= args.threshold:
-                    if args.verbose:
-                        print(
-                            f"\nThe following questions ({i} and {j}) have a similarity score of {score}:"
-                        )
-                        print(ith_question)
-                        print(jth_question)
-
                     if args.write:
                         question_dataset.pop(j)
                         with open(questions_dataset_path, "w") as f:
