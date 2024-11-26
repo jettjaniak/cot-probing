@@ -133,10 +133,6 @@ def split_data(
     pos_idxs = [i for i, label in enumerate(labels_by_q_list) if label == 1]
     neg_idxs = [i for i, label in enumerate(labels_by_q_list) if label == 0]
 
-    # Shuffle indices
-    np.random.shuffle(pos_idxs)
-    np.random.shuffle(neg_idxs)
-
     # Calculate fold sizes
     pos_fold_size = len(pos_idxs) // n_folds
     neg_fold_size = len(neg_idxs) // n_folds
