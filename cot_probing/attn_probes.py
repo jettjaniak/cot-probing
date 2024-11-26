@@ -36,15 +36,15 @@ class AttnProbeModelConfig:
 class ProbingConfig:
     probe_model_class: type["AbstractAttnProbeModel"]
     probe_model_config: AttnProbeModelConfig
-    data_seed: int
+    train_seed: int
     lr: float
     beta1: float
     beta2: float
     batch_size: int
     patience: int
     n_epochs: int
-    validation_split: float
-    test_split: float
+    fold: int
+    n_folds: int
     model_device: str
     data_device: str
     layer: int
@@ -343,19 +343,17 @@ class AttnProbeTrainer:
             **{
                 k: w_config[k]
                 for k in [
-                    "data_seed",
+                    "train_seed",
                     "lr",
                     "beta1",
                     "beta2",
                     "batch_size",
                     "patience",
                     "n_epochs",
-                    "validation_split",
-                    "test_split",
+                    "fold",
+                    "n_folds",
                     "model_device",
                     "layer",
-                    "beta1",
-                    "beta2",
                 ]
             },
         )
@@ -370,9 +368,9 @@ class AttnProbeTrainer:
         # Construct data loading kwargs from config
         data_loading_kwargs = {
             "batch_size": config.batch_size,
-            "validation_split": config.validation_split,
-            "test_split": config.test_split,
-            "data_seed": config.data_seed,
+            "fold": config.fold,
+            "n_folds": config.n_folds,
+            "train_seed": config.train_seed,
             "data_device": config.data_device,
             "layer": config.layer,
             "include_answer_toks": w_config["args_include_answer_toks"],

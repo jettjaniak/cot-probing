@@ -115,15 +115,19 @@ def split_data(
 ) -> tuple[
     tuple[DataLoader, DataLoader, DataLoader], tuple[list[int], list[int], list[int]]
 ]:
-    data_seed = data_loading_kwargs["data_seed"]
-    assert isinstance(data_seed, int)
-    test_split = data_loading_kwargs["test_split"]
-    assert isinstance(test_split, float)
-    validation_split = data_loading_kwargs["validation_split"]
-    assert isinstance(validation_split, float)
+    """Split data into train/val/test sets using cross-validation folds"""
+    train_seed = data_loading_kwargs["train_seed"]
+    assert isinstance(train_seed, int)
     batch_size = data_loading_kwargs["batch_size"]
     assert isinstance(batch_size, int)
-    setup_determinism(data_seed)
+
+    # Get fold information
+    fold = data_loading_kwargs.get("fold", 0)
+    n_folds = data_loading_kwargs.get("n_folds", 1)
+    assert isinstance(fold, int) and isinstance(n_folds, int)
+    assert 0 <= fold < n_folds
+
+    setup_determinism(train_seed)
 
     # Separate indices by label
     pos_idxs = [i for i, label in enumerate(labels_by_q_list) if label == 1]
@@ -133,23 +137,47 @@ def split_data(
     np.random.shuffle(pos_idxs)
     np.random.shuffle(neg_idxs)
 
-    min_size = min(len(pos_idxs), len(neg_idxs))
-    # Calculate sizes for each split
-    test_size_per_class = int(min_size * test_split)
-    val_size_per_class = int(min_size * validation_split)
+    # Calculate fold sizes
+    pos_fold_size = len(pos_idxs) // n_folds
+    neg_fold_size = len(neg_idxs) // n_folds
 
-    # Split indices for each class
-    pos_test = pos_idxs[:test_size_per_class]
-    pos_val = pos_idxs[test_size_per_class : test_size_per_class + val_size_per_class]
-    pos_train = pos_idxs[test_size_per_class + val_size_per_class :]
+    # Split into folds
+    pos_folds = [
+        pos_idxs[i : i + pos_fold_size] for i in range(0, len(pos_idxs), pos_fold_size)
+    ]
+    neg_folds = [
+        neg_idxs[i : i + neg_fold_size] for i in range(0, len(neg_idxs), neg_fold_size)
+    ]
 
-    neg_test = neg_idxs[:test_size_per_class]
-    neg_val = neg_idxs[test_size_per_class : test_size_per_class + val_size_per_class]
-    neg_train = neg_idxs[test_size_per_class + val_size_per_class :]
+    # Append remaining indices to last fold if necessary
+    if len(pos_folds) > n_folds:
+        assert len(pos_folds) == n_folds + 1
+        pos_folds[n_folds - 1].extend(pos_folds[n_folds])
+        pos_folds = pos_folds[:n_folds]
+    if len(neg_folds) > n_folds:
+        assert len(neg_folds) == n_folds + 1
+        neg_folds[n_folds - 1].extend(neg_folds[n_folds])
+        neg_folds = neg_folds[:n_folds]
 
-    train_idxs = pos_train + neg_train
-    val_idxs = pos_val + neg_val
-    test_idxs = pos_test + neg_test
+    assert len(pos_folds) == n_folds
+    assert len(neg_folds) == n_folds
+
+    # Use current fold as test set
+    test_idxs = pos_folds[fold] + neg_folds[fold]
+
+    # Use next fold (circularly) as validation set
+    val_fold = (fold + 1) % n_folds
+    val_idxs = pos_folds[val_fold] + neg_folds[val_fold]
+
+    # Use remaining folds as training set
+    train_folds = list(range(n_folds))
+    train_folds.remove(fold)
+    train_folds.remove(val_fold)
+
+    train_idxs = []
+    for train_fold in train_folds:
+        train_idxs.extend(pos_folds[train_fold])
+        train_idxs.extend(neg_folds[train_fold])
 
     def make_dataset(idxs: list[int]) -> SequenceDataset:
         return SequenceDataset(
