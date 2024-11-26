@@ -162,3 +162,4 @@ cython_debug/
 .idea/
 results/
 wandb/
+*.DS_Store
