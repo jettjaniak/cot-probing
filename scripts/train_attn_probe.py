@@ -222,7 +222,7 @@ def train_attn_probes(
     setup_determinism(args.cross_validation_seed)
 
     # Shuffle data before splitting into folds
-    raw_acts_dataset["qs"] = np.random.shuffle(raw_acts_dataset["qs"])
+    np.random.shuffle(raw_acts_dataset["qs"])
 
     fold_results = []
     n_folds = args.cross_validation_n_folds
