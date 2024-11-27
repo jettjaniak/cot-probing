@@ -237,6 +237,7 @@ def generate_question(
         "question": new_full_question,
         "expected_answer": expected_answer,
         "q_uiid": uuid.uuid4().hex,
+        "source": f"openai-{openai_model}",
     }
 
 
