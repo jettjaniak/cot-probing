@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
-
-import argparse
 import tempfile
+import uuid
 from abc import ABC, abstractmethod
 from copy import deepcopy
 from dataclasses import asdict, dataclass
@@ -10,6 +9,7 @@ from pathlib import Path
 import sklearn.metrics
 import torch
 import wandb
+from dacite import from_dict
 from fancy_einsum import einsum
 from torch import nn
 from torch.optim.adam import Adam
@@ -17,7 +17,11 @@ from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 from wandb.apis.public.runs import Run
 
-from cot_probing.attn_probes_data_proc import CollateFnOutput, preprocess_and_split_data
+from cot_probing.attn_probes_data_proc import (
+    CollateFnOutput,
+    DataConfig,
+    load_and_split_data,
+)
 from cot_probing.typing import *
 from cot_probing.utils import get_git_commit_hash, safe_torch_save, setup_determinism
 
@@ -33,21 +37,32 @@ class AttnProbeModelConfig:
 
 
 @dataclass
-class ProbingConfig:
-    probe_model_class: type["AbstractAttnProbeModel"]
+class ExperimentConfig:
+    probe_class: Literal["tied", "untied"]
     probe_model_config: AttnProbeModelConfig
-    train_seed: int
+    data_config: DataConfig
     lr: float
     beta1: float
     beta2: float
-    batch_size: int
     patience: int
     n_epochs: int
-    fold: int
-    n_folds: int
     model_device: str
-    data_device: str
-    layer: int
+
+    def get_run_name(self) -> str:
+        assert (
+            self.data_config.train_val_seed == self.probe_model_config.weight_init_seed
+        )
+        train_seed = self.data_config.train_val_seed
+        args = [
+            f"L{self.data_config.layer:02d}",
+            self.probe_class,
+            self.data_config.context,
+            f"cvs{self.data_config.cv_seed}",
+            f"ts{train_seed}",
+            f"f{self.data_config.cv_test_fold}",
+            uuid.uuid4().hex[:8],
+        ]
+        return "_".join(args)
 
 
 @dataclass
@@ -55,13 +70,6 @@ class EvalMetrics:
     loss: float
     acc: float
     auc: float
-
-
-@dataclass
-class DatasetConfig:
-    id: str
-    layer: int
-    context: Literal["biased-fsp", "unbiased-fsp", "no-fsp"]
 
 
 class AbstractAttnProbeModel(nn.Module, ABC):
@@ -132,7 +140,7 @@ class AbstractAttnProbeModel(nn.Module, ABC):
         return torch.sigmoid(z + self.z_bias)
 
 
-class VAttnProbeModel(AbstractAttnProbeModel):
+class TiedAttnProbeModel(AbstractAttnProbeModel):
     def __init__(self, c: AttnProbeModelConfig):
         super().__init__(c)
         # Use value_vector as probe_vector
@@ -143,7 +151,7 @@ class VAttnProbeModel(AbstractAttnProbeModel):
         return self.value_vector * self.query_scale
 
 
-class QVAttnProbeModel(AbstractAttnProbeModel):
+class UntiedAttnProbeModel(AbstractAttnProbeModel):
     def __init__(self, c: AttnProbeModelConfig):
         super().__init__(c)
         # Only need query vector since value vector is in parent
@@ -155,8 +163,8 @@ class QVAttnProbeModel(AbstractAttnProbeModel):
 
 def get_probe_model_class(probe_class_arg: str) -> type[AbstractAttnProbeModel]:
     return {
-        "V": VAttnProbeModel,
-        "QV": QVAttnProbeModel,
+        "tied": TiedAttnProbeModel,
+        "untied": UntiedAttnProbeModel,
     }[probe_class_arg]
 
 
@@ -243,21 +251,17 @@ class AttnProbeTrainer:
     def __init__(
         self,
         *,
-        c: ProbingConfig,
-        raw_acts_dataset: dict,
-        data_loading_kwargs: dict[str, Any],
-        dataset_config: DatasetConfig,
+        c: ExperimentConfig,
+        raw_q_dicts: list[dict],
         model_state_dict: dict[str, Any] | None = None,
     ):
         self.c = c
-        self.dataset_config = dataset_config
         self.model_device = torch.device(c.model_device)
         self.criterion = nn.BCELoss()
 
         # Initialize model
-        self.model = self.c.probe_model_class(self.c.probe_model_config).to(
-            self.model_device
-        )
+        probe_model_class = get_probe_model_class(self.c.probe_class)
+        self.model = probe_model_class(self.c.probe_model_config).to(self.model_device)
         if model_state_dict is not None:
             self.model.load_state_dict(model_state_dict)
 
@@ -270,15 +274,15 @@ class AttnProbeTrainer:
             self.train_idxs,
             self.val_idxs,
             self.test_idxs,
-        ) = preprocess_and_split_data(
-            raw_acts_dataset,
-            data_loading_kwargs,
+        ) = load_and_split_data(
+            raw_q_dicts,
+            self.c.data_config,
         )
 
     @classmethod
     def from_wandb(
         cls,
-        raw_acts_dataset: dict,
+        raw_q_dicts: list[dict],
         entity: str = "cot-probing",
         project: str = "attn-probes",
         run_id: str | None = None,
@@ -327,55 +331,8 @@ class AttnProbeTrainer:
             run = runs[0]
         assert run.state == "finished"
 
-        # Get config from W&B
-        w_config = run.config
-
-        # Create probe model config
-        probe_model_config = AttnProbeModelConfig(**w_config["probe_model_config"])
-        probe_model_class = get_probe_model_class(w_config["args_probe_class"])
-
-        # Create probing config
-        config = ProbingConfig(
-            probe_model_class=probe_model_class,
-            probe_model_config=probe_model_config,
-            data_device="cpu",
-            # FIXME: this is terrible
-            **{
-                k: w_config[k]
-                for k in [
-                    "train_seed",
-                    "lr",
-                    "beta1",
-                    "beta2",
-                    "batch_size",
-                    "patience",
-                    "n_epochs",
-                    "fold",
-                    "n_folds",
-                    "model_device",
-                    "layer",
-                ]
-            },
-        )
-
-        # Create dataset config
-        dataset_config = DatasetConfig(
-            id=w_config["dataset_id"],
-            layer=w_config["dataset_layer"],
-            context=w_config["dataset_context"],
-        )
-
-        # Construct data loading kwargs from config
-        data_loading_kwargs = {
-            "batch_size": config.batch_size,
-            "fold": config.fold,
-            "n_folds": config.n_folds,
-            "train_seed": config.train_seed,
-            "data_device": config.data_device,
-            "layer": config.layer,
-            "include_answer_toks": w_config["args_include_answer_toks"],
-            "d_model": probe_model_config.d_model,
-        }
+        del run.config["git_commit"]
+        experiment_config = from_dict(ExperimentConfig, run.config)
 
         # Download and load model weights
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -386,27 +343,23 @@ class AttnProbeTrainer:
                 tmp_path, map_location="cpu", weights_only=True
             )
         instance = cls(
-            c=config,
-            raw_acts_dataset=raw_acts_dataset,
-            data_loading_kwargs=data_loading_kwargs,
-            dataset_config=dataset_config,
+            c=experiment_config,
+            raw_q_dicts=raw_q_dicts,
             model_state_dict=model_state_dict,
         )
         return instance, run, instance.test_idxs
 
     def train(
         self,
-        run_name: str,
         project_name: str,
-        args: argparse.Namespace,
     ) -> AbstractAttnProbeModel:
         # Initialize W&B
-        wandb.init(entity="cot-probing", project=project_name, name=run_name)
-        wandb.config.update(asdict(self.c))
-        wandb.config.update(
-            {f"dataset_{k}": v for k, v in asdict(self.dataset_config).items()}
+        wandb.init(
+            entity="cot-probing",
+            project=project_name,
+            name=self.c.get_run_name(),
         )
-        wandb.config.update({f"args_{k}": v for k, v in vars(args).items()})
+        wandb.config.update(asdict(self.c))
         wandb.config.update({"git_commit": get_git_commit_hash()})
 
         optimizer = Adam(
