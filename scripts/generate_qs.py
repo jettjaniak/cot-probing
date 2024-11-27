@@ -13,7 +13,6 @@ from cot_probing.questions_generation import generate_questions_dataset
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Generate questions dataset")
-    parser.add_argument("-s", "--size", type=int, default=8, help="Model size")
     parser.add_argument(
         "-o", "--openai-model", type=str, default="gpt-4o", help="OpenAI model"
     )
