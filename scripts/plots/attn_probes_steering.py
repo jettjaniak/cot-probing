@@ -11,7 +11,7 @@ from tqdm.auto import tqdm
 from transformers import PreTrainedModel, PreTrainedTokenizerBase
 
 from cot_probing import DATA_DIR
-from cot_probing.attn_probes import AbstractAttnProbeModel
+from cot_probing.attn_probes import AbstractProbe
 from cot_probing.attn_probes_utils import load_median_probe_test_data
 from cot_probing.generation import categorize_response as categorize_response_unbiased
 from cot_probing.steering import steer_generation_with_attn_probe

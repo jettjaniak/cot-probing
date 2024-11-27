@@ -5,7 +5,7 @@ from typing import Literal
 import torch
 
 from cot_probing import DATA_DIR
-from cot_probing.attn_probes import AbstractAttnProbeModel, AttnProbeTrainer
+from cot_probing.attn_probes import AbstractProbe, ProbeTrainer
 from cot_probing.attn_probes_utils import fetch_runs
 
 import wandb
@@ -26,7 +26,7 @@ with open(raw_acts_path, "rb") as f:
 
 def fetch_attn_probe_models(
     fsp_context: Literal["biased-fsp", "unbiased-fsp", "no-fsp"]
-) -> list[AbstractAttnProbeModel]:
+) -> list[AbstractProbe]:
     runs_by_seed_by_layer = fetch_runs(
         api=wandb.Api(),
         probe_class=PROBE_CLASS,
@@ -40,7 +40,7 @@ def fetch_attn_probe_models(
 
     attn_probes = []
     for run in runs_by_seed.values():
-        trainer, _, test_idxs = AttnProbeTrainer.from_wandb(
+        trainer, _, test_idxs = ProbeTrainer.from_wandb(
             raw_acts_dataset=raw_acts_dataset,
             run_id=run.id,
         )

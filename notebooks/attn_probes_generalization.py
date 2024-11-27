@@ -13,7 +13,7 @@ from cot_probing.activations import (
     collect_resid_acts_no_pastkv,
     collect_resid_acts_with_pastkv,
 )
-from cot_probing.attn_probes import AbstractAttnProbeModel, AttnProbeTrainer
+from cot_probing.attn_probes import AbstractProbe, ProbeTrainer
 from cot_probing.attn_probes_case_studies import (
     load_filtered_data,
     load_median_probe_test_data,
@@ -45,7 +45,9 @@ trainer, test_acts_dataset = load_median_probe_test_data(
     probe_class, layer, min_seed, max_seed, metric
 )
 collate_fn_out: CollateFnOutput = list(trainer.test_loader)[0]
-unbiased_fsp_cache = build_fsp_cache(model, tokenizer, test_acts_dataset["unbiased_fsp"])
+unbiased_fsp_cache = build_fsp_cache(
+    model, tokenizer, test_acts_dataset["unbiased_fsp"]
+)
 
 trainer.model.eval()
 trainer.model.requires_grad_(False)

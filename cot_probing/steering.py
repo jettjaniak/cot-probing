@@ -4,13 +4,13 @@ from functools import partial
 import torch
 from transformers import PreTrainedModel, PreTrainedTokenizerBase
 
-from cot_probing.attn_probes import AbstractAttnProbeModel
+from cot_probing.attn_probes import AbstractProbe
 
 
 def steer_generation_with_attn_probe(
     model: PreTrainedModel,
     tokenizer: PreTrainedTokenizerBase,
-    attn_probe_model: AbstractAttnProbeModel,
+    attn_probe_model: AbstractProbe,
     input_ids: list[int],
     layer_to_steer: int,
     steer_magnitude: float,
