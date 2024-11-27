@@ -2,21 +2,15 @@
 import argparse
 import logging
 import pickle
+import uuid
 from pathlib import Path
 
 import torch
-from beartype import beartype
 
-from cot_probing.attn_probes import (
-    AttnProbeModelConfig,
-    AttnProbeTrainer,
-    DataConfig,
-    ExperimentConfig,
-)
+from cot_probing.attn_probes_utils import train_attn_probe
 from cot_probing.typing import *
 
 
-@beartype
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train attn probes")
     parser.add_argument(
@@ -28,6 +22,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--probe-class",
+        "--pc",
         type=str,
         required=True,
         choices=["tied", "untied"],
@@ -46,7 +41,7 @@ def parse_args() -> argparse.Namespace:
         help="Range for weight initialization",
     )
     parser.add_argument(
-        "--learning-rate",
+        "--lr",
         type=float,
         default=1e-3,
         help="Learning rate for training",
@@ -76,7 +71,7 @@ def parse_args() -> argparse.Namespace:
         help="Number of epochs to wait for improvement before early stopping",
     )
     parser.add_argument(
-        "--epochs",
+        "--max-epochs",
         type=int,
         default=300,
         help="Maximum number of epochs to train for",
@@ -100,21 +95,14 @@ def parse_args() -> argparse.Namespace:
         help="Wandb project name",
     )
     parser.add_argument(
-        "--wandb-run-name",
-        type=str,
-        default=None,
-        help="Wandb run name. If not provided, will be auto-generated.",
-    )
-    parser.add_argument(
         "--cv-n-folds",
-        "--n-folds",
+        "--cvnf",
         type=int,
         default=10,
         help="Number of folds for cross-validation.",
     )
     parser.add_argument(
         "--cv-fold-nrs",
-        "--fold-nrs",
         type=str,
         default="all",
         help="Comma-separated list of folds to train on, defaults to all folds.",
@@ -125,6 +113,12 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=0,
         help="Random seed for reproducibility of cross-validation (data folds splitting).",
+    )
+    parser.add_argument(
+        "--val-frac",
+        type=float,
+        default=0.1,
+        help="Fraction of training data to use as validation set",
     )
     parser.add_argument(
         "--train-seed",
@@ -142,73 +136,6 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-@beartype
-def build_experiment_config(
-    args: argparse.Namespace,
-    fold_nr: int,
-) -> ExperimentConfig:
-    probe_class_arg = args.probe_class
-
-    probe_model_config = AttnProbeModelConfig(
-        d_model=args.d_model,
-        weight_init_range=args.weight_init_range,
-        weight_init_seed=args.train_seed,
-        partial_seq=args.partial_seq,
-    )
-
-    data_config = build_data_config(args, fold_nr)
-
-    return ExperimentConfig(
-        probe_class=probe_class_arg,
-        probe_model_config=probe_model_config,
-        data_config=data_config,
-        lr=args.learning_rate,
-        beta1=args.beta1,
-        beta2=args.beta2,
-        patience=args.patience,
-        n_epochs=args.epochs,
-        model_device=args.model_device,
-    )
-
-
-@beartype
-def build_data_config(args: argparse.Namespace, cv_test_fold: int) -> DataConfig:
-    acts_str, layer_str, context, dataset_id = args.file.stem.split("_")
-    assert acts_str == "acts"
-    layer = int(layer_str[1:])
-    assert layer_str == f"L{layer:02d}"
-    assert context in ["biased-fsp", "unbiased-fsp", "no-fsp"]
-
-    return DataConfig(
-        dataset_id=dataset_id,
-        layer=layer,
-        context=context,
-        cv_seed=args.cv_seed,
-        cv_n_folds=args.cv_n_folds,
-        cv_test_fold=cv_test_fold,
-        train_val_seed=args.train_seed,
-        val_frac=args.val_frac,
-        data_device=args.data_device,
-        batch_size=args.batch_size,
-    )
-
-
-@beartype
-def train_attn_probe(
-    raw_q_dicts: list[dict],
-    args: argparse.Namespace,
-    fold_nr: int,
-):
-
-    experiment_config = build_experiment_config(args, fold_nr)
-    trainer = AttnProbeTrainer(
-        c=experiment_config,
-        raw_q_dicts=raw_q_dicts,
-    )
-    trainer.train(project_name=args.wandb_project)
-
-
-@beartype
 def main(args: argparse.Namespace):
     logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING)
     logging.info("Running with arguments:")
@@ -220,12 +147,13 @@ def main(args: argparse.Namespace):
         raw_q_dicts = pickle.load(f)["qs"]
 
     if args.cv_fold_nrs == "all":
-        fold_nrs = list(range(args.cv_n_folds))
+        cv_fold_nrs = list(range(args.cv_n_folds))
     else:
-        fold_nrs = [int(f) for f in args.cv_fold_nrs.split(",")]
+        cv_fold_nrs = [int(f) for f in args.cv_fold_nrs.split(",")]
 
-    for fold_nr in fold_nrs:
-        train_attn_probe(raw_q_dicts, args, fold_nr)
+    experiment_uuid = uuid.uuid4().hex[:8]
+    for cv_test_fold in cv_fold_nrs:
+        train_attn_probe(raw_q_dicts, args, experiment_uuid, cv_test_fold)
 
 
 if __name__ == "__main__":

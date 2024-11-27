@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
+import pickle
 import tempfile
-import uuid
 from abc import ABC, abstractmethod
 from copy import deepcopy
 from dataclasses import asdict, dataclass
@@ -16,6 +16,7 @@ from torch.optim.adam import Adam
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 from wandb.apis.public.runs import Run
+from wandb.sdk.wandb_run import Run as WandbSdkRun
 
 from cot_probing.attn_probes_data_proc import (
     CollateFnOutput,
@@ -29,7 +30,7 @@ torch.set_grad_enabled(True)
 
 
 @dataclass(kw_only=True)
-class AttnProbeModelConfig:
+class ProbeConfig:
     d_model: int
     weight_init_range: float
     weight_init_seed: int
@@ -37,30 +38,30 @@ class AttnProbeModelConfig:
 
 
 @dataclass
-class ExperimentConfig:
+class TrainerConfig:
     probe_class: Literal["tied", "untied"]
-    probe_model_config: AttnProbeModelConfig
+    probe_config: ProbeConfig
     data_config: DataConfig
     lr: float
     beta1: float
     beta2: float
     patience: int
-    n_epochs: int
+    max_epochs: int
     model_device: str
+    experiment_uuid: str
 
     def get_run_name(self) -> str:
-        assert (
-            self.data_config.train_val_seed == self.probe_model_config.weight_init_seed
-        )
-        train_seed = self.data_config.train_val_seed
+        dc = self.data_config
+        assert dc.train_val_seed == self.probe_config.weight_init_seed
+        train_seed = dc.train_val_seed
         args = [
-            f"L{self.data_config.layer:02d}",
+            f"L{dc.layer:02d}",
             self.probe_class,
-            self.data_config.context,
-            f"cvs{self.data_config.cv_seed}",
+            dc.context,
+            f"cvs{dc.cv_seed}",
             f"ts{train_seed}",
-            f"f{self.data_config.cv_test_fold}",
-            uuid.uuid4().hex[:8],
+            self.experiment_uuid,
+            f"f{dc.cv_test_fold}",
         ]
         return "_".join(args)
 
@@ -72,8 +73,8 @@ class EvalMetrics:
     auc: float
 
 
-class AbstractAttnProbeModel(nn.Module, ABC):
-    def __init__(self, c: AttnProbeModelConfig):
+class AbstractProbe(nn.Module, ABC):
+    def __init__(self, c: ProbeConfig):
         super().__init__()
         self.c = c
         setup_determinism(c.weight_init_seed)
@@ -140,8 +141,8 @@ class AbstractAttnProbeModel(nn.Module, ABC):
         return torch.sigmoid(z + self.z_bias)
 
 
-class TiedAttnProbeModel(AbstractAttnProbeModel):
-    def __init__(self, c: AttnProbeModelConfig):
+class TiedProbe(AbstractProbe):
+    def __init__(self, c: ProbeConfig):
         super().__init__(c)
         # Use value_vector as probe_vector
         self.query_scale = nn.Parameter(torch.ones(1))
@@ -151,8 +152,8 @@ class TiedAttnProbeModel(AbstractAttnProbeModel):
         return self.value_vector * self.query_scale
 
 
-class UntiedAttnProbeModel(AbstractAttnProbeModel):
-    def __init__(self, c: AttnProbeModelConfig):
+class UntiedProbe(AbstractProbe):
+    def __init__(self, c: ProbeConfig):
         super().__init__(c)
         # Only need query vector since value vector is in parent
         self.query_vector = nn.Parameter(torch.randn(c.d_model) * c.weight_init_range)
@@ -161,15 +162,15 @@ class UntiedAttnProbeModel(AbstractAttnProbeModel):
         return self.query_vector
 
 
-def get_probe_model_class(probe_class_arg: str) -> type[AbstractAttnProbeModel]:
+def get_probe_class(probe_class_name: str) -> type[AbstractProbe]:
     return {
-        "tied": TiedAttnProbeModel,
-        "untied": UntiedAttnProbeModel,
-    }[probe_class_arg]
+        "tied": TiedProbe,
+        "untied": UntiedProbe,
+    }[probe_class_name]
 
 
 def collate_fn_out_to_model_out(
-    model: AbstractAttnProbeModel,
+    model: AbstractProbe,
     collate_fn_output: CollateFnOutput,
 ) -> Float[torch.Tensor, " batch"]:
     cot_acts = collate_fn_output.cot_acts.to(model.device)
@@ -178,7 +179,7 @@ def collate_fn_out_to_model_out(
 
 
 def compute_loss_and_acc_single_batch(
-    model: AbstractAttnProbeModel,
+    model: AbstractProbe,
     criterion: nn.BCELoss,
     collate_fn_output: CollateFnOutput,
 ) -> tuple[Float[torch.Tensor, ""], float]:
@@ -228,7 +229,7 @@ def compute_loss_and_acc_single_batch(
 
 
 def compute_eval_metrics(
-    model: AbstractAttnProbeModel,
+    model: AbstractProbe,
     criterion: nn.BCELoss,
     data_loader: DataLoader,
 ) -> EvalMetrics:
@@ -247,11 +248,11 @@ def compute_eval_metrics(
     return EvalMetrics(loss=loss.item(), acc=acc, auc=roc_auc)
 
 
-class AttnProbeTrainer:
+class ProbeTrainer:
     def __init__(
         self,
         *,
-        c: ExperimentConfig,
+        c: TrainerConfig,
         raw_q_dicts: list[dict],
         model_state_dict: dict[str, Any] | None = None,
     ):
@@ -260,8 +261,8 @@ class AttnProbeTrainer:
         self.criterion = nn.BCELoss()
 
         # Initialize model
-        probe_model_class = get_probe_model_class(self.c.probe_class)
-        self.model = probe_model_class(self.c.probe_model_config).to(self.model_device)
+        probe_model_class = get_probe_class(self.c.probe_class)
+        self.model = probe_model_class(self.c.probe_config).to(self.model_device)
         if model_state_dict is not None:
             self.model.load_state_dict(model_state_dict)
 
@@ -282,28 +283,27 @@ class AttnProbeTrainer:
     @classmethod
     def from_wandb(
         cls,
-        raw_q_dicts: list[dict],
+        activations_dir: Path,
         entity: str = "cot-probing",
         project: str = "attn-probes",
         run_id: str | None = None,
         config_filters: dict[str, Any] | None = None,
-    ) -> tuple["AttnProbeTrainer", Run, list[int]]:
+    ) -> tuple["ProbeTrainer", Run]:
         """Load a model from W&B.
 
         Args:
+            activations_dir: Directory containing activations
             entity: W&B entity name
             project: W&B project name
             run_id: Optional W&B run ID. Must specify either run_id or config_filters
             config_filters: Optional dict of config values to filter runs by. Must specify either run_id or config_filters
-            raw_acts_dataset: Dataset to use
-            data_loading_kwargs: Arguments for data loading
 
         Raises:
             ValueError: If neither run_id nor config_filters is specified, or if both are specified
             ValueError: If config_filters matches zero or multiple runs
 
         Returns:
-            Trainer, run, and test indices
+            ProbeTrainer and W&B run
         """
         api = wandb.Api()
 
@@ -332,7 +332,7 @@ class AttnProbeTrainer:
         assert run.state == "finished"
 
         del run.config["git_commit"]
-        experiment_config = from_dict(ExperimentConfig, run.config)
+        trainer_config = from_dict(TrainerConfig, run.config)
 
         # Download and load model weights
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -342,19 +342,23 @@ class AttnProbeTrainer:
             model_state_dict = torch.load(
                 tmp_path, map_location="cpu", weights_only=True
             )
-        instance = cls(
-            c=experiment_config,
+
+        acts_filename = trainer_config.data_config.get_acts_filename()
+        with open(activations_dir / acts_filename, "rb") as f:
+            raw_q_dicts = pickle.load(f)["qs"]
+        trainer = cls(
+            c=trainer_config,
             raw_q_dicts=raw_q_dicts,
             model_state_dict=model_state_dict,
         )
-        return instance, run, instance.test_idxs
+        return trainer, run
 
     def train(
         self,
         project_name: str,
-    ) -> AbstractAttnProbeModel:
+    ) -> tuple[AbstractProbe, WandbSdkRun]:
         # Initialize W&B
-        wandb.init(
+        run = wandb.init(
             entity="cot-probing",
             project=project_name,
             name=self.c.get_run_name(),
@@ -373,7 +377,7 @@ class AttnProbeTrainer:
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_dir_path = Path(tmp_dir)
-            for epoch in range(self.c.n_epochs):
+            for epoch in range(self.c.max_epochs):
                 try:
                     train_loss, train_acc, val_metrics = train_epoch(
                         model=self.model,
@@ -427,7 +431,7 @@ class AttnProbeTrainer:
             )
             wandb.finish()
 
-        return self.model
+        return self.model, run
 
     def compute_test_metrics(self) -> EvalMetrics:
         """Compute loss, accuracy, and AUC on the test set.
@@ -440,7 +444,7 @@ class AttnProbeTrainer:
 
 
 def train_epoch(
-    model: AbstractAttnProbeModel,
+    model: AbstractProbe,
     optimizer: Adam,
     criterion: nn.BCELoss,
     train_loader: DataLoader,

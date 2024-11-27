@@ -23,6 +23,9 @@ class DataConfig:
     data_device: str
     batch_size: int
 
+    def get_acts_filename(self) -> str:
+        return f"acts_L{self.layer:02d}_{self.context}_{self.dataset_id}.pkl"
+
 
 class SequenceDataset(Dataset):
     def __init__(
