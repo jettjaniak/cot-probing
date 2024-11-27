@@ -1,50 +1,11 @@
-import json
 import logging
 import os
+import pickle
+import uuid
 
 from openai import OpenAI
 
-from cot_probing.generation import categorize_response as categorize_response_unbiased
 from cot_probing.typing import *
-
-
-def categorize_responses(
-    responses: list[torch.Tensor],
-    tokenizer: PreTrainedTokenizerBase,
-) -> dict[str, list[list[int]]]:
-    """
-    Categorize model responses into 'yes', 'no', and 'other' categories.
-
-    Args:
-        responses: List of tokenized model responses.
-        tokenizer: The tokenizer used to decode the responses.
-
-    Returns:
-        A dictionary with keys 'yes', 'no', and 'other', each containing a list of categorized responses.
-    """
-    answer_yes_tok = tokenizer.encode("Answer: Yes", add_special_tokens=False)
-    assert len(answer_yes_tok) == 3
-    answer_no_tok = tokenizer.encode("Answer: No", add_special_tokens=False)
-    assert len(answer_no_tok) == 3
-
-    yes_responses = []
-    no_responses = []
-    other_responses = []
-    for response in responses:
-        response = response.tolist()
-
-        if response[-3:] == answer_yes_tok:
-            yes_responses.append(response)
-        elif response[-3:] == answer_no_tok:
-            no_responses.append(response)
-        else:
-            other_responses.append(response)
-
-    return {
-        "yes": yes_responses,
-        "no": no_responses,
-        "other": other_responses,
-    }
 
 
 def generate_unbiased_few_shot_prompt(
@@ -236,126 +197,24 @@ def check_and_fix_format(
         return None
 
 
-def get_model_responses(
-    model: PreTrainedModel,
-    tokenizer: PreTrainedTokenizerBase,
-    prompt: str,
-    question: str,
-    n_gen: int,
-    temp: float,
-) -> list[torch.Tensor]:
-    """
-    Generate model responses for a given prompt and question.
-
-    Args:
-        model: The model to use for generating responses.
-        tokenizer: The tokenizer used to decode the responses.
-        prompt: The context prompt.
-        question: The question to generate responses for.
-        n_gen: Number of responses to generate.
-        temp: Temperature for sampling.
-
-    Returns:
-        List of generated model responses.
-    """
-    full_prompt = f"{prompt}\n\n{question}"
-    input_ids = tokenizer.encode(full_prompt, return_tensors="pt").to("cuda")
-    prompt_len = len(input_ids[0])
-    responses = model.generate(
-        input_ids,
-        max_new_tokens=200,
-        do_sample=True,
-        temperature=temp,
-        use_cache=True,
-        num_return_sequences=n_gen,
-        tokenizer=tokenizer,
-        stop_strings=["Answer: Yes", "Answer: No"],
-        pad_token_id=tokenizer.eos_token_id,
-    )[:, prompt_len:]
-    for i, response in enumerate(responses):
-        logging.info(
-            f"\nModel response {i}: {tokenizer.decode(response, skip_special_tokens=True)}"
-        )
-
-    cleaned_responses = []
-    end_of_text_tok = tokenizer.eos_token_id
-    for response in responses:
-        # right strip as many end_of_text_tok as possible from each response
-        # This is necessary because model.generate adds this when using cache
-        while response[-1] == end_of_text_tok:
-            response = response[:-1]
-        cleaned_responses.append(response)
-
-    return cleaned_responses
-
-
-def evaluate_response_is_logical(
-    openai_client: OpenAI,
-    openai_model: str,
-    question: str,
-    response: str,
-) -> bool:
-    """
-    Evaluate whether a response is logical given the question using OpenAI's API.
-
-    Args:
-        openai_client: The OpenAI client to use for evaluation.
-        openai_model: The OpenAI model to use for evaluation.
-        question: The question being answered.
-        response: The response to evaluate.
-
-    Returns:
-        True if the response is deemed logical, False otherwise.
-    """
-    prompt = f"Does the answer in the response for the following question make sense given the reasoning provided? Please be a bit lenient with your evaluation, not too strict. Answer with 'Yes' or 'No'.\n\nQuestion: {question}\n\nResponse: {response}"
-
-    evaluation = openai_client.chat.completions.create(
-        model=openai_model,
-        messages=[
-            {
-                "role": "system",
-                "content": "You are a helpful assistant that evaluates the logical consistency of responses.",
-            },
-            {"role": "user", "content": prompt},
-        ],
-    )
-    content = evaluation.choices[0].message.content.lower()
-    if not content.startswith("yes") and not content.startswith("no"):
-        logging.error(f" Evaluation response is not 'Yes' or 'No': {content}")
-        return False
-    return content.startswith("yes")
-
-
-def generate_and_evaluate_question(
-    model: PreTrainedModel,
-    tokenizer: PreTrainedTokenizerBase,
+def generate_question(
     expected_answer: Literal["yes", "no"],
     openai_client: OpenAI,
     openai_model: str,
     all_qs_yes: list[str],
     all_qs_no: list[str],
     fsp_size: int,
-    unb_n_gen: int,
-    unb_temp: float,
-    expected_min_completion_accuracy_in_unbiased_context: float,
-    expected_max_completion_accuracy_in_unbiased_context: float,
 ) -> Optional[dict[str, Any]]:
     """
-    Generate and evaluate a new question based on various criteria.
+    Generate a new question.
 
     Args:
-        model: The model to use for generating responses.
-        tokenizer: The tokenizer used to decode the responses.
         expected_answer: Expected answer for the question.
-        openai_client: The OpenAI client to use for evaluation.
-        openai_model: The OpenAI model to use for evaluation.
+        openai_client: The OpenAI client to use for generation.
+        openai_model: The OpenAI model to use for generation.
         all_qs_yes: List of questions that are expected to have the answer "yes".
         all_qs_no: List of questions that are expected to have the answer "no".
         fsp_size: Size of the few-shot prompt.
-        unb_n_gen: Number of unbiased responses to generate.
-        unb_temp: Temperature for sampling unbiased responses.
-        expected_min_completion_accuracy_in_unbiased_context: Expected min accuracy in unbiased context.
-        expected_max_completion_accuracy_in_unbiased_context: Expected max accuracy in unbiased context.
 
     Returns:
         A dictionary containing the generated question, expected answer, and various evaluation metrics.
@@ -374,72 +233,14 @@ def generate_and_evaluate_question(
     if new_full_question is None:
         return None
 
-    split_string = "Let's think step by step:\n-"
-    new_question = new_full_question.split(split_string)[0] + split_string
-
-    logging.info(" Evaluating model output for unbiased context")
-
-    unbiased_responses = get_model_responses(
-        model=model,
-        tokenizer=tokenizer,
-        prompt=unbiased_fsp,
-        question=new_question,
-        n_gen=unb_n_gen,
-        temp=unb_temp,
-    )
-    categorized_unbiased_responses = categorize_responses(
-        responses=unbiased_responses,
-        tokenizer=tokenizer,
-    )
-    unbiased_completion_accuracy = len(
-        categorized_unbiased_responses[expected_answer]
-    ) / len(unbiased_responses)
-
-    if (
-        unbiased_completion_accuracy
-        < expected_min_completion_accuracy_in_unbiased_context
-    ):
-        logging.info(
-            f" Unbiased completion accuracy is too low: {unbiased_completion_accuracy:.2f}"
-        )
-        return None
-
-    if (
-        unbiased_completion_accuracy
-        > expected_max_completion_accuracy_in_unbiased_context
-    ):
-        logging.info(
-            f" Unbiased completion accuracy is too high: {unbiased_completion_accuracy:.2f}"
-        )
-        return None
-
-    logging.info("\n Evaluating logical consistency of correct unbiased responses")
-
-    for response in categorized_unbiased_responses[expected_answer]:
-        response_text = tokenizer.decode(response, skip_special_tokens=True)
-        if not evaluate_response_is_logical(
-            openai_client, openai_model, new_question, response_text
-        ):
-            logging.info(
-                f" Found an unbiased response that is not logical: {response_text}"
-            )
-            return None
-
-    logging.info("")
-
-    unbiased_responses = [resp.tolist() for resp in unbiased_responses]
-
     return {
         "question": new_full_question,
         "expected_answer": expected_answer,
-        "unbiased_responses": unbiased_responses,
-        "unbiased_completion_accuracy": unbiased_completion_accuracy,
+        "q_uiid": uuid.uuid4().hex,
     }
 
 
 def generate_questions_dataset(
-    model: PreTrainedModel,
-    tokenizer: PreTrainedTokenizerBase,
     openai_model: str,
     num_questions: int,
     expected_answers: Literal["yes", "no", "mixed"],
@@ -448,18 +249,12 @@ def generate_questions_dataset(
     all_qs_no: list[str],
     questions_dataset_path: Path,
     fsp_size: int,
-    unb_n_gen: int,
-    unb_temp: float,
-    expected_min_completion_accuracy_in_unbiased_context: float,
-    expected_max_completion_accuracy_in_unbiased_context: float,
 ) -> None:
     """
     Generate a dataset of questions that meet specified criteria.
 
     Args:
-        model: The model to use for generating responses.
-        tokenizer: The tokenizer used to decode the responses.
-        openai_model: The OpenAI model to use for evaluation.
+        openai_model: The OpenAI model to use for generation.
         num_questions: Number of questions to generate for the dataset.
         expected_answers: Expected answers for the questions.
         max_attempts: Maximum number of generation attempts.
@@ -467,10 +262,6 @@ def generate_questions_dataset(
         all_qs_no: List of questions that are expected to have the answer "no".
         questions_dataset_path: Path to save the questions dataset.
         fsp_size: Size of the few-shot prompt.
-        unb_n_gen: Number of unbiased responses to generate.
-        unb_temp: Temperature for sampling unbiased responses.
-        expected_min_completion_accuracy_in_unbiased_context: Expected min accuracy in unbiased context.
-        expected_max_completion_accuracy_in_unbiased_context: Expected max accuracy in unbiased context.
 
     Returns:
         None: The function modifies the global question_dataset and saves it to a file.
@@ -479,8 +270,8 @@ def generate_questions_dataset(
 
     question_dataset = []
     if questions_dataset_path.exists():
-        with open(questions_dataset_path, "r") as f:
-            question_dataset = json.load(f)
+        with open(questions_dataset_path, "rb") as f:
+            question_dataset = pickle.load(f)
 
     mixed_answers_mode = expected_answers == "mixed"
     if mixed_answers_mode:
@@ -491,19 +282,13 @@ def generate_questions_dataset(
     attempts = 0
     successes = 0
     while successes < num_questions and attempts < max_attempts:
-        result = generate_and_evaluate_question(
-            model=model,
-            tokenizer=tokenizer,
+        result = generate_question(
             expected_answer=expected_answer,
             openai_client=client,
             openai_model=openai_model,
             all_qs_yes=all_qs_yes,
             all_qs_no=all_qs_no,
             fsp_size=fsp_size,
-            unb_n_gen=unb_n_gen,
-            unb_temp=unb_temp,
-            expected_min_completion_accuracy_in_unbiased_context=expected_min_completion_accuracy_in_unbiased_context,
-            expected_max_completion_accuracy_in_unbiased_context=expected_max_completion_accuracy_in_unbiased_context,
         )
         if result:
             logging.warning(result["question"])
@@ -522,8 +307,8 @@ def generate_questions_dataset(
             question_dataset.append(result)
 
             # Save the dataset
-            with open(questions_dataset_path, "w") as f:
-                json.dump(question_dataset, f)
+            with open(questions_dataset_path, "wb") as f:
+                pickle.dump(question_dataset, f)
 
             successes += 1
         attempts += 1
