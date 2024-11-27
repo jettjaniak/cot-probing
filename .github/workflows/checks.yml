@@ -15,6 +15,8 @@ jobs:
   checks:
     name: checks
     runs-on: ubuntu-latest
+    env:
+      WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}
     steps:
       - uses: actions/checkout@v4
       - name: setup python
