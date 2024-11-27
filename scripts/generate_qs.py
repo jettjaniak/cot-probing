@@ -42,30 +42,6 @@ def parse_args():
         default=7,
         help="Size of the few-shot prompt.",
     )
-    parser.add_argument(
-        "--unb-n-gen",
-        type=int,
-        default=10,
-        help="Number of unbiased responses to generate.",
-    )
-    parser.add_argument(
-        "--unb-temp",
-        type=float,
-        default=0.7,
-        help="Temperature for sampling unbiased responses.",
-    )
-    parser.add_argument(
-        "--expected-min-completion-accuracy-in-unbiased-context",
-        type=float,
-        default=0.7,
-        help="Expected min accuracy in unbiased context.",
-    )
-    parser.add_argument(
-        "--expected-max-completion-accuracy-in-unbiased-context",
-        type=float,
-        default=0.9,
-        help="Expected max accuracy in unbiased context.",
-    )
     return parser.parse_args()
 
 
