@@ -7,7 +7,7 @@ from tqdm import tqdm
 from transformers import PreTrainedModel, PreTrainedTokenizerBase
 
 from cot_probing.activations import build_fsp_cache
-from cot_probing.generation import CotGeneration
+from cot_probing.generation import BiasedCotGeneration, UnbiasedCotGeneration
 from cot_probing.qs_generation import Question
 
 
@@ -98,8 +98,8 @@ def evaluate_no_cot_accuracy(
 
 
 def label_questions(
-    unb_cot_results: CotGeneration,
-    bia_cot_results: CotGeneration,
+    unb_cot_results: UnbiasedCotGeneration,
+    bia_cot_results: BiasedCotGeneration,
     faithful_correctness_threshold: float,
     unfaithful_correctness_threshold: float,
     verbose: bool = False,

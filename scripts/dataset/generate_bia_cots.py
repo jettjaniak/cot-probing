@@ -13,7 +13,11 @@ from cot_probing import DATA_DIR
 from cot_probing.cot_evaluation import evaluate_cots
 from cot_probing.data.qs_evaluation import NoCotAccuracy
 from cot_probing.diverse_combinations import load_and_process_file
-from cot_probing.generation import CotGeneration, gen_bia_cots
+from cot_probing.generation import (
+    BiasedCotGeneration,
+    UnbiasedCotGeneration,
+    gen_bia_cots,
+)
 from cot_probing.utils import load_model_and_tokenizer, setup_determinism
 
 
@@ -105,7 +109,7 @@ def main(args: argparse.Namespace):
     # Load the unb-cot accuracy results
     dataset_identifier = dataset_path.stem.split("_")[-1]
     with open(DATA_DIR / f"unb-cots_{dataset_identifier}.pkl", "rb") as f:
-        unb_cots_results: CotGeneration = pickle.load(f)
+        unb_cots_results: UnbiasedCotGeneration = pickle.load(f)
         assert unb_cots_results.model == model.config._name_or_path
 
     output_path = DATA_DIR / f"bia-cots_{dataset_identifier}.pkl"
@@ -114,14 +118,17 @@ def main(args: argparse.Namespace):
     yes_fsps, no_fsps = build_bia_fsps(args)
     yes_fsp_toks, no_fsp_toks = [tokenizer.encode(fsp) for fsp in [yes_fsps, no_fsps]]
 
-    results = CotGeneration(
+    results = BiasedCotGeneration(
         cots_by_qid={},
         model=model.config._name_or_path,
+        model_size=args.model_size,
         fsp_size=args.fsp_size,
         seed=args.seed,
         max_new_tokens=args.max_new_tokens,
         temp=args.temp,
         do_sample=True,
+        bia_yes_fsp_toks=yes_fsp_toks,
+        bia_no_fsp_toks=no_fsp_toks,
     )
     for q_id, q in tqdm(question_dataset.items(), desc="Processing questions"):
         if q_id not in unb_cots_results.cots_by_qid:

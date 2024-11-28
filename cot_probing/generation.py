@@ -16,14 +16,30 @@ class LabeledCot:
 
 
 @dataclass
-class CotGeneration:
+class UnbiasedCotGeneration:
     cots_by_qid: dict[str, list[LabeledCot]]
     model: str
+    model_size: int
     fsp_size: int
     seed: int
     max_new_tokens: int
     temp: float
     do_sample: bool
+    unb_fsp_toks: list[int]
+
+
+@dataclass
+class BiasedCotGeneration:
+    cots_by_qid: dict[str, list[LabeledCot]]
+    model: str
+    model_size: int
+    fsp_size: int
+    seed: int
+    max_new_tokens: int
+    temp: float
+    do_sample: bool
+    bia_yes_fsp_toks: list[int]
+    bia_no_fsp_toks: list[int]
 
 
 @beartype

@@ -6,7 +6,7 @@ from pathlib import Path
 
 from cot_probing import DATA_DIR
 from cot_probing.data.qs_evaluation import label_questions
-from cot_probing.generation import CotGeneration
+from cot_probing.generation import BiasedCotGeneration, UnbiasedCotGeneration
 
 
 def parse_args():
@@ -39,13 +39,13 @@ def main(args: argparse.Namespace):
     dataset_path = Path(args.file)
     assert dataset_path.exists()
 
-    # Load the unb-cot accuracy results
+    # Load the unbiased and biased COTs results
     dataset_identifier = dataset_path.stem.split("_")[-1]
     with open(DATA_DIR / f"unb-cots_{dataset_identifier}.pkl", "rb") as f:
-        unb_cots_results: CotGeneration = pickle.load(f)
+        unb_cots_results: UnbiasedCotGeneration = pickle.load(f)
 
     with open(DATA_DIR / f"bia-cots_{dataset_identifier}.pkl", "rb") as f:
-        bia_cots_results: CotGeneration = pickle.load(f)
+        bia_cots_results: BiasedCotGeneration = pickle.load(f)
 
     assert unb_cots_results.model == bia_cots_results.model
 

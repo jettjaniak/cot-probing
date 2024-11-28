@@ -26,6 +26,7 @@ def generate_unbiased_few_shot_prompt(
     all_qs_yes: list[str],
     all_qs_no: list[str],
     fsp_size: int,
+    verbose: bool = False,
 ) -> str:
     """
     Generate an unbiased few-shot prompt by randomly sampling questions from both 'yes' and 'no' categories.
@@ -50,7 +51,12 @@ def generate_unbiased_few_shot_prompt(
 
     questions = yes_questions + no_questions
     random.shuffle(questions)  # Shuffle to avoid yes/no patterns
-    return "\n\n".join(questions)
+    unb_fsp = "\n\n".join(questions) + "\n\n"
+
+    if verbose:
+        logging.info(f"Generated unbiased FSP: `{unb_fsp}`")
+
+    return unb_fsp
 
 
 def get_random_noun(openai_client: OpenAI, openai_model: str) -> str:

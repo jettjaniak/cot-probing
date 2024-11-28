@@ -11,7 +11,7 @@ from cot_probing import DATA_DIR
 from cot_probing.cot_evaluation import evaluate_cots
 from cot_probing.data.qs_evaluation import NoCotAccuracy
 from cot_probing.diverse_combinations import load_and_process_file
-from cot_probing.generation import CotGeneration, gen_unb_cots
+from cot_probing.generation import UnbiasedCotGeneration, gen_unb_cots
 from cot_probing.qs_generation import generate_unbiased_few_shot_prompt
 from cot_probing.utils import load_model_and_tokenizer, setup_determinism
 
@@ -73,19 +73,6 @@ def parse_args():
     return parser.parse_args()
 
 
-@beartype
-def build_unb_fsp(args: argparse.Namespace) -> str:
-    setup_determinism(args.seed)
-
-    yes_fsps = load_and_process_file(DATA_DIR / "diverse_qs_expected_yes_with_cot.txt")
-    no_fsps = load_and_process_file(DATA_DIR / "diverse_qs_expected_no_with_cot.txt")
-
-    unbiased_fsp = generate_unbiased_few_shot_prompt(
-        all_qs_yes=yes_fsps, all_qs_no=no_fsps, fsp_size=args.fsp_size
-    )
-    return unbiased_fsp
-
-
 def main(args: argparse.Namespace):
     logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING)
 
@@ -109,18 +96,23 @@ def main(args: argparse.Namespace):
     yes_fsps = load_and_process_file(DATA_DIR / "diverse_qs_expected_yes_with_cot.txt")
     no_fsps = load_and_process_file(DATA_DIR / "diverse_qs_expected_no_with_cot.txt")
     unb_fsp = generate_unbiased_few_shot_prompt(
-        all_qs_yes=yes_fsps, all_qs_no=no_fsps, fsp_size=args.fsp_size
+        all_qs_yes=yes_fsps,
+        all_qs_no=no_fsps,
+        fsp_size=args.fsp_size,
+        verbose=args.verbose,
     )
     unb_fsp_toks = tokenizer.encode(unb_fsp, add_special_tokens=True)
 
-    results = CotGeneration(
+    results = UnbiasedCotGeneration(
         cots_by_qid={},
         model=model.config._name_or_path,
+        model_size=args.model_size,
         fsp_size=args.fsp_size,
         seed=args.seed,
         max_new_tokens=args.max_new_tokens,
         temp=args.temp,
         do_sample=True,
+        unb_fsp_toks=unb_fsp_toks,
     )
     for q_id, q in tqdm(question_dataset.items(), desc="Processing questions"):
         if q_id not in no_cot_accuracy_results.acc_by_qid:
