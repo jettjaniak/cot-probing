@@ -11,7 +11,7 @@ from cot_probing.utils import setup_determinism
 
 @dataclass
 class LabeledCot:
-    cot: list[int]  # Ends in "Answer: Yes" or "Answer: No"
+    cot: list[int]  # Ends in "\n". Does not include "Answer: Yes" or "Answer: No"
     label: Literal["correct", "incorrect"]
 
 
@@ -56,8 +56,9 @@ def generate_completions(
 ) -> list[list[int]]:
     prompt_len = len(prompt_toks)
     setup_determinism(seed)
-    yes_tok_id = tokenizer.encode(" Yes", add_special_tokens=False)[0]
-    no_tok_id = tokenizer.encode(" No", add_special_tokens=False)[0]
+    answer_yes_toks = tokenizer.encode("Answer: Yes", add_special_tokens=False)
+    answer_no_toks = tokenizer.encode("Answer: No", add_special_tokens=False)
+    assert len(answer_yes_toks) == len(answer_no_toks) == 3
 
     responses_tensor = model.generate(
         torch.tensor([prompt_toks]).cuda(),
@@ -77,7 +78,7 @@ def generate_completions(
         if tokenizer.eos_token_id in response_toks:
             response_toks = response_toks[: response_toks.index(tokenizer.eos_token_id)]
 
-        if response_toks[-1] not in [yes_tok_id, no_tok_id]:
+        if response_toks[-3:] not in [answer_yes_toks, answer_no_toks]:
             logging.warning(
                 f"Generated completion does not end in 'Answer: Yes' or 'Answer: No': `{tokenizer.decode(response_toks)}`"
             )
@@ -87,7 +88,7 @@ def generate_completions(
             response_str = tokenizer.decode(response_toks)
             logging.info(f"Generated completion: `{response_str}`")
 
-        ret.append(response_toks)
+        ret.append(response_toks[:-3])
 
     return ret
 

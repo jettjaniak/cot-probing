@@ -113,8 +113,11 @@ def evaluate_cots(
     results = []
     for cot in cots:
         # Remove answer tokens and decode
-        assert cot[-3:] in [answer_yes_toks, answer_no_toks]
-        cot_str = tokenizer.decode(cot[:-3], skip_special_tokens=True)
+        cot_str = tokenizer.decode(cot, skip_special_tokens=True)
+        assert not cot_str.endswith("Answer: Yes") and not cot_str.endswith(
+            "Answer: No"
+        )
+        assert cot_str.endswith("\n")
         cot_str = cot_str.rstrip("\n")
 
         justified_answer = get_justified_answer(
@@ -124,10 +127,6 @@ def evaluate_cots(
             openai_model=openai_model,
             verbose=verbose,
         )
-
-        if verbose:
-            cot_answer = "Yes" if cot[-3:] == answer_yes_toks else "No"
-            logging.info(f"Cot answer': {cot_answer}")
 
         is_flawed = contains_mistake(
             q=q,
