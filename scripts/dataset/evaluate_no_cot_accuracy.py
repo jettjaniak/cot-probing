@@ -54,7 +54,7 @@ def main(args: argparse.Namespace):
     assert len(all_qs_yes) == len(all_qs_no)
 
     setup_determinism(args.seed)
-    unbiased_fsp_without_cot = generate_unbiased_few_shot_prompt(
+    unbiased_fsp_without_cots = generate_unbiased_few_shot_prompt(
         all_qs_yes, all_qs_no, args.fsp_size, verbose=args.verbose
     )
 
@@ -65,7 +65,7 @@ def main(args: argparse.Namespace):
         model=model,
         tokenizer=tokenizer,
         question_dataset=question_dataset,
-        unbiased_fsp_without_cot=unbiased_fsp_without_cot,
+        unbiased_fsp_without_cots=unbiased_fsp_without_cots,
         fsp_size=args.fsp_size,
         seed=args.seed,
     )
