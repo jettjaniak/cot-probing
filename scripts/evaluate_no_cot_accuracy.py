@@ -157,7 +157,7 @@ def main(args: argparse.Namespace):
     )
 
     file_identifier = dataset_path.stem.split("_")[-1]
-    with open(DATA_DIR / f"no-cot-accuracy-{file_identifier}.pkl", "wb") as f:
+    with open(DATA_DIR / f"no-cot-accuracy_{file_identifier}.pkl", "wb") as f:
         pickle.dump(results, f)
 
 
