@@ -15,6 +15,12 @@ class Question:
     source: str
     extra_data: dict[str, Any]
 
+    def with_question_prefix(self) -> str:
+        return f"Question: {self.question}"
+
+    def with_step_by_step_suffix(self) -> str:
+        return f"{self.with_question_prefix()}\nLet's think step by step:\n-"
+
 
 def generate_unbiased_few_shot_prompt(
     all_qs_yes: list[str],
