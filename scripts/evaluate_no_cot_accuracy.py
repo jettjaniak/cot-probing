@@ -92,17 +92,12 @@ def evaluate_no_cot_accuracy(
     for q in tqdm(question_dataset, desc="Evaluating no-CoT accuracy"):
         question = q["question"]
         expected_answer = q["expected_answer"]
-
-        # Remove CoT
-        split_string = "\nLet's think step by step:\n-"
-        question_without_cot = question.split(split_string)[0]
-        assert question_without_cot.endswith("?")
-        question_without_cot = f"{question_without_cot}\nAnswer:"
+        assert question.endswith("?")
 
         no_cot_acc = get_no_cot_accuracy(
             model=model,
             tokenizer=tokenizer,
-            question_without_cot=question_without_cot,
+            question_without_cot=f"{question}\nAnswer:",
             expected_answer=expected_answer,
             unbiased_no_cot_cache=unbiased_no_cot_cache,
         )

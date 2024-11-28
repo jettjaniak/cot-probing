@@ -234,18 +234,23 @@ def generate_question(
     unbiased_fsp = generate_unbiased_few_shot_prompt(
         all_qs_yes=all_qs_yes, all_qs_no=all_qs_no, fsp_size=fsp_size
     )
-    new_full_question = generate_new_question(
+    full_question = generate_new_question(
         openai_client=openai_client,
         openai_model=openai_model,
         expected_answer=expected_answer,
         few_shot_prompt=unbiased_fsp,
     )
-    new_full_question = check_and_fix_format(new_full_question, expected_answer)
-    if new_full_question is None:
+    full_question = check_and_fix_format(full_question, expected_answer)
+    if full_question is None:
         return None
 
+    split_string = "\nLet's think step by step:\n-"
+    question_without_cot = full_question.split(split_string)[0]
+    assert question_without_cot.endswith("?")
+
     return {
-        "question": new_full_question,
+        "question_with_cot_and_answer": full_question,
+        "question": question_without_cot,
         "expected_answer": expected_answer,
         "q_uiid": uuid.uuid4().hex,
         "source": f"openai-{openai_model}",
