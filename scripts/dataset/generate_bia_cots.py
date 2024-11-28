@@ -5,10 +5,12 @@ import pickle
 import random
 from pathlib import Path
 
+import numpy as np
 from beartype import beartype
 from tqdm import tqdm
 
 from cot_probing import DATA_DIR
+from cot_probing.cot_evaluation import evaluate_cots
 from cot_probing.data.qs_evaluation import NoCotAccuracy
 from cot_probing.diverse_combinations import load_and_process_file
 from cot_probing.generation import CotGeneration, gen_bia_cots
@@ -95,9 +97,9 @@ def main(args: argparse.Namespace):
 
     # Load the unb-cot accuracy results
     dataset_identifier = dataset_path.stem.split("_")[-1]
-    with open(DATA_DIR / f"unb-cot-accuracy_{dataset_identifier}.pkl", "rb") as f:
-        unb_cot_accuracy_results: NoCotAccuracy = pickle.load(f)
-        assert unb_cot_accuracy_results.model == model.config._name_or_path
+    with open(DATA_DIR / f"unb-cots_{dataset_identifier}.pkl", "rb") as f:
+        unb_cots_results: CotGeneration = pickle.load(f)
+        assert unb_cots_results.model == model.config._name_or_path
 
     output_path = DATA_DIR / f"bia-cots_{dataset_identifier}.pkl"
 
@@ -115,11 +117,16 @@ def main(args: argparse.Namespace):
         do_sample=True,
     )
     for q_id, q in tqdm(question_dataset.items(), desc="Processing questions"):
-        if q_id not in unb_cot_accuracy_results.acc_by_qid:
+        if q_id not in unb_cots_results.cots_by_qid:
             continue
 
-        unb_cot_acc = unb_cot_accuracy_results.acc_by_qid[q_id]
-        if unb_cot_acc > args.max_no_cot_acc:
+        unb_cot_avg_corr = np.mean(
+            [
+                1 if cot.label == "correct" else 0
+                for cot in unb_cots_results.cots_by_qid[q_id]
+            ]
+        )
+        if unb_cot_avg_corr < args.min_unb_cot_corr:
             continue
 
         bia_cots = gen_bia_cots(
@@ -130,7 +137,15 @@ def main(args: argparse.Namespace):
             no_fsp_toks=no_fsp_toks,
             args=args,
         )
-        results.cots_by_qid[q_id] = bia_cots
+        labeled_bia_cots = evaluate_cots(
+            q=q,
+            cots=bia_cots,
+            tokenizer=tokenizer,
+            openai_model=args.openai_model,
+            verbose=args.verbose,
+        )
+        results.cots_by_qid[q_id] = labeled_bia_cots
+
         if len(results.cots_by_qid) % args.save_every == 0:
             with open(output_path, "wb") as f:
                 pickle.dump(results, f)
