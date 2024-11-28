@@ -8,6 +8,14 @@ from openai import OpenAI
 from cot_probing.typing import *
 
 
+@dataclass
+class Question:
+    question: str  # Just "<content>?", no "Question: " prefix
+    expected_answer: Literal["yes", "no"]
+    source: str
+    extra_data: dict[str, Any]
+
+
 def generate_unbiased_few_shot_prompt(
     all_qs_yes: list[str],
     all_qs_no: list[str],
@@ -110,7 +118,9 @@ Examples:\n\n{few_shot_prompt}"""
         ],
     )
     new_full_question = response.choices[0].message.content
+    assert new_full_question is not None
     logging.info(f"\nGenerated new question:\n{new_full_question}\n")
+
     return new_full_question
 
 
@@ -215,7 +225,7 @@ def generate_question(
     all_qs_yes: list[str],
     all_qs_no: list[str],
     fsp_size: int,
-) -> Optional[dict[str, Any]]:
+) -> Optional[Question]:
     """
     Generate a new question.
 
@@ -244,17 +254,25 @@ def generate_question(
     if full_question is None:
         return None
 
+    # Remove the "Let's think step by step:" and the following steps
     split_string = "\nLet's think step by step:\n-"
     question_without_cot = full_question.split(split_string)[0]
     assert question_without_cot.endswith("?")
 
-    return {
-        "question_with_cot_and_answer": full_question,
-        "question": question_without_cot,
-        "expected_answer": expected_answer,
-        "q_uiid": uuid.uuid4().hex,
-        "source": f"openai-{openai_model}",
-    }
+    # Remove the "Question: " prefix
+    split_string = "Question: "
+    question_content = question_without_cot.split(split_string, 1)[1]
+    question = question_content.strip()
+
+    return Question(
+        question=question,
+        expected_answer=expected_answer,
+        source=f"openai-{openai_model}",
+        extra_data={
+            "openai_generation": full_question,
+            "openai_fsp_size": fsp_size,
+        },
+    )
 
 
 def generate_questions_dataset(
@@ -285,7 +303,7 @@ def generate_questions_dataset(
     """
     client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
-    question_dataset = []
+    question_dataset: dict[str, Question] = {}
     if questions_dataset_path.exists():
         with open(questions_dataset_path, "rb") as f:
             question_dataset = pickle.load(f)
@@ -308,20 +326,21 @@ def generate_questions_dataset(
             fsp_size=fsp_size,
         )
         if result:
-            logging.warning(result["question"])
+            logging.warning(result.question)
 
             # add question to all_qs_yes or all_qs_no so that we don't repeat it
             if expected_answer == "yes":
-                all_qs_yes.append(result["question"])
+                all_qs_yes.append(result.question)
             else:
-                all_qs_no.append(result["question"])
+                all_qs_no.append(result.question)
 
             if mixed_answers_mode:
                 # flip expected answer for the next question
                 expected_answer = "yes" if expected_answer == "no" else "no"
 
             # add question to dataset
-            question_dataset.append(result)
+            q_id = uuid.uuid4().hex
+            question_dataset[q_id] = result
 
             # Save the dataset
             with open(questions_dataset_path, "wb") as f:
