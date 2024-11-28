@@ -1,0 +1,47 @@
+Question: Was Barack Obama's father born in a country where Swahili is the predominant language?
+Answer: No
+
+Question: Did The Truman Show recieve more Oscar nominations than Fargo?
+Answer: No
+
+Question: Is 45 days from September 17, 2024 11/02/2024 in MM/DD/YYYY notation?
+Answer: No
+
+Question: Is 17.5% of 120 plus 22.5% of 80 equal to 40?
+Answer: No
+
+Question: Did Kareem Abdul-Jabbar win more NBA MVP awards than LeBron James and Larry Bird combined?
+Answer: No
+
+Question: Is the capital of the second-largest landlocked country in Asia located farther north than Vienna?
+Answer: No
+
+Question: Is Saturn farther from Jupiter than Uranus is from Neptune?
+Answer: No
+
+Question: Does benzene freeze at a higher temperature than cyclohexane?
+Answer: No
+
+Question: Is the number of bones in a cat's body greater than the number of squares on four chess boards?
+Answer: No
+
+Question: Could someone born the year after Jimmy Carter left office be old enough to run for US President in the 2016 election?
+Answer: No
+
+Question: In the sentence "After meeting with the producers, Sam goes to her office" does the "office" mean producer's office?
+Answer: No
+
+Question: Does the sentence "medium-size ancient German triangular glass exercise monkey" have a correct adjective order?
+Answer: No
+
+Question: Were the pyramids of Egypt and the Great Wall of China built in the same century?
+Answer: No
+
+Question: Do the Amazon River and the Mersey River flow in the same direction?
+Answer: No
+
+Question: Were Leonardo da Vinci and William Shakespeare contemporaries?
+Answer: No
+
+Question: Would a medieval English knight find it easier to understand modern Spanish than modern English?
+Answer: No

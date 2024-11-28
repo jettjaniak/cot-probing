@@ -41,6 +41,15 @@ def load_model_and_tokenizer(
         low_cpu_mem_usage=True,
         device_map="cuda",
     )
+
+    # get rid of the warnings early
+    model(torch.tensor([[tokenizer.bos_token_id]]).cuda())
+    model.generate(
+        torch.tensor([[tokenizer.bos_token_id]]).cuda(),
+        max_new_tokens=1,
+        pad_token_id=tokenizer.eos_token_id,
+    )
+
     return model, tokenizer
 
 
