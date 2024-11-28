@@ -57,6 +57,12 @@ def parse_args():
         help="Maximum no-cot accuracy to generate CoTs for",
         default=0.6,
     )
+    parser.add_argument(
+        "--save-every",
+        type=int,
+        help="Save every N questions",
+        default=50,
+    )
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
     return parser.parse_args()
 
@@ -195,6 +201,7 @@ def main(args: argparse.Namespace):
     dataset_identifier = dataset_path.stem.split("_")[-1]
     with open(DATA_DIR / f"no-cot-accuracy_{dataset_identifier}.pkl", "rb") as f:
         no_cot_accuracy_results = pickle.load(f)
+    output_path = DATA_DIR / f"generated-cots_{dataset_identifier}.pkl"
 
     # Build the few-shot prompts
     unb_fsps, yes_fsps, no_fsps = build_fsps(args)
@@ -205,6 +212,7 @@ def main(args: argparse.Namespace):
     results = {}
     for q_id, q in tqdm(question_dataset.items(), desc="Processing questions"):
         # By default, we don't generate CoTs
+        # TODO: why are we adding it here at all?
         results[q_id] = {
             "unbiased_cots": [],
             "biased_cots": [],
@@ -236,8 +244,10 @@ def main(args: argparse.Namespace):
             "unbiased_cots": unb_cots,
             "biased_cots": bia_cots,
         }
-
-    with open(DATA_DIR / f"generated-cots_{dataset_identifier}.pkl", "wb") as f:
+        if len(results) % args.save_every == 0:
+            with open(output_path, "wb") as f:
+                pickle.dump(results, f)
+    with open(output_path, "wb") as f:
         pickle.dump(results, f)
 
 
