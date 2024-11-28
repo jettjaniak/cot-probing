@@ -55,7 +55,7 @@ def main(args: argparse.Namespace):
 
     setup_determinism(args.seed)
     unbiased_fsp_without_cot = generate_unbiased_few_shot_prompt(
-        all_qs_yes, all_qs_no, args.fsp_size
+        all_qs_yes, all_qs_no, args.fsp_size, verbose=args.verbose
     )
 
     model, tokenizer = load_model_and_tokenizer(args.model_size)

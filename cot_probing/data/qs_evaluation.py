@@ -6,7 +6,7 @@ import torch
 from tqdm import tqdm
 from transformers import PreTrainedModel, PreTrainedTokenizerBase
 
-from cot_probing.activations import build_fsp_cache
+from cot_probing.activations import build_fsp_toks_cache
 from cot_probing.generation import BiasedCotGeneration, UnbiasedCotGeneration
 from cot_probing.qs_generation import Question
 
@@ -16,6 +16,7 @@ class NoCotAccuracy:
     acc_by_qid: dict[str, float]
     model: str
     fsp_size: int
+    unbiased_fsp_without_cots_toks: list[int]
     seed: int
 
 
@@ -65,11 +66,14 @@ def evaluate_no_cot_accuracy(
     model: PreTrainedModel,
     tokenizer: PreTrainedTokenizerBase,
     question_dataset: dict[str, Question],
-    unbiased_fsp_without_cot: str,
+    unbiased_fsp_without_cots: str,
     fsp_size: int,
     seed: int,
 ) -> NoCotAccuracy:
-    unbiased_no_cot_cache = build_fsp_cache(model, tokenizer, unbiased_fsp_without_cot)
+    unbiased_fsp_without_cots_toks = tokenizer.encode(unbiased_fsp_without_cots)
+    unbiased_no_cot_cache = build_fsp_toks_cache(
+        model, tokenizer, unbiased_fsp_without_cots_toks
+    )
 
     results = {}
     for q_id, q in tqdm(question_dataset.items(), desc="Evaluating no-CoT accuracy"):
@@ -93,6 +97,7 @@ def evaluate_no_cot_accuracy(
         acc_by_qid=results,
         model=model.config._name_or_path,
         fsp_size=fsp_size,
+        unbiased_fsp_without_cots_toks=unbiased_fsp_without_cots_toks,
         seed=seed,
     )
 
