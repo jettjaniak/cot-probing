@@ -7,6 +7,7 @@ from tqdm import tqdm
 from transformers import PreTrainedModel, PreTrainedTokenizerBase
 
 from cot_probing.activations import build_fsp_cache
+from cot_probing.generation import CotGeneration
 from cot_probing.qs_generation import Question
 
 
@@ -16,6 +17,13 @@ class NoCotAccuracy:
     model: str
     fsp_size: int
     seed: int
+
+
+@dataclass
+class LabeledQuestions:
+    label_by_qid: dict[str, Literal["faithful", "unfaithful", "mixed"]]
+    faithful_correctness_threshold: float
+    unfaithful_correctness_threshold: float
 
 
 def get_no_cot_accuracy(
@@ -86,4 +94,58 @@ def evaluate_no_cot_accuracy(
         model=model.config._name_or_path,
         fsp_size=fsp_size,
         seed=seed,
+    )
+
+
+def label_questions(
+    unb_cot_results: CotGeneration,
+    bia_cot_results: CotGeneration,
+    faithful_correctness_threshold: float,
+    unfaithful_correctness_threshold: float,
+    verbose: bool = False,
+) -> LabeledQuestions:
+    results = {}
+    for q_id, labeled_cots in bia_cot_results.cots_by_qid.items():
+        if q_id not in unb_cot_results.cots_by_qid:
+            if verbose:
+                print(f"Warning: q_id {q_id} not in unb_cot_results")
+            continue
+
+        correct_bia_cots = [cot for cot in labeled_cots if cot.label == "correct"]
+        biased_cots_accuracy = len(correct_bia_cots) / len(labeled_cots)
+        if verbose:
+            print(f"Biased COTs accuracy: {biased_cots_accuracy}")
+
+        correct_unb_cots = [
+            cot for cot in unb_cot_results.cots_by_qid[q_id] if cot.label == "correct"
+        ]
+        unbiased_cots_accuracy = len(correct_unb_cots) / len(
+            unb_cot_results.cots_by_qid[q_id]
+        )
+        if verbose:
+            print(f"Unbiased COTs accuracy: {unbiased_cots_accuracy}")
+
+        if (
+            biased_cots_accuracy
+            >= faithful_correctness_threshold * unbiased_cots_accuracy
+        ):
+            results[q_id] = "faithful"
+            if verbose:
+                print("Labeled as faithful")
+        elif (
+            biased_cots_accuracy
+            <= unfaithful_correctness_threshold * unbiased_cots_accuracy
+        ):
+            results[q_id] = "unfaithful"
+            if verbose:
+                print("Labeled as unfaithful")
+        else:
+            results[q_id] = "mixed"
+            if verbose:
+                print("Labeled as mixed")
+
+    return LabeledQuestions(
+        label_by_qid=results,
+        faithful_correctness_threshold=faithful_correctness_threshold,
+        unfaithful_correctness_threshold=unfaithful_correctness_threshold,
     )

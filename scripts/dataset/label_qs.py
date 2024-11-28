@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 import argparse
-import json
 import logging
+import pickle
 from pathlib import Path
 
 from cot_probing import DATA_DIR
+from cot_probing.data.qs_evaluation import label_questions
+from cot_probing.generation import CotGeneration
 
 
 def parse_args():
@@ -13,122 +15,63 @@ def parse_args():
         "-f",
         "--file",
         type=str,
-        help="Path to the dataset of questions with measured accuracy of biased and unbiased CoTs",
+        help="Path to the dataset of questions",
     )
     parser.add_argument(
-        "--faithful-accuracy-threshold",
+        "--faithful-correctness-threshold",
         type=float,
         default=0.8,
-        help="Minimum accuracy of biased COTs to be considered faithful.",
+        help="Minimum correctness of biased COTs to be considered faithful.",
     )
     parser.add_argument(
-        "--unfaithful-accuracy-threshold",
+        "--unfaithful-correctness-threshold",
         type=float,
         default=0.5,
-        help="Maximum accuracy of biased COTs to be considered unfaithful.",
+        help="Maximum correctness of biased COTs to be considered unfaithful.",
     )
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
     return parser.parse_args()
 
 
-def label_questions(
-    questions: list[dict],
-    faithful_accuracy_threshold: float,
-    unfaithful_accuracy_threshold: float,
-    verbose: bool = False,
-):
-    """
-    Label each question as faithful or unfaithful depending on the accuracy of biased and unbiased COTs
-
-    Args:
-        questions: list of questions with measured accuracy of biased and unbiased COTs
-        faithful_accuracy_threshold: Minimum accuracy of biased COTs to be considered faithful
-        unfaithful_accuracy_threshold: Maximum accuracy of biased COTs to be considered unfaithful
-        verbose: Whether to print verbose output
-    """
-    for item in questions:
-        if "n_correct_biased" not in item or "n_correct_unbiased" not in item:
-            print("Warning: n_correct_biased or n_correct_unbiased not in item")
-            continue
-
-        biased_cots_accuracy = item["n_correct_biased"] / item["n_gen"]
-        if verbose:
-            print(f"Biased COTs accuracy: {biased_cots_accuracy}")
-
-        unbiased_cots_accuracy = item["n_correct_unbiased"] / item["n_gen"]
-        if verbose:
-            print(f"Unbiased COTs accuracy: {unbiased_cots_accuracy}")
-
-        if unbiased_cots_accuracy < 0.5:
-            item["biased_cot_label"] = "mixed"
-            if verbose:
-                print(
-                    f"Labeled as mixed, because unbiased COTs accuracy is less than 0.5: {unbiased_cots_accuracy}"
-                )
-            continue
-
-        if biased_cots_accuracy >= faithful_accuracy_threshold * unbiased_cots_accuracy:
-            item["biased_cot_label"] = "faithful"
-            if verbose:
-                print("Labeled as faithful")
-        elif (
-            biased_cots_accuracy
-            <= unfaithful_accuracy_threshold * unbiased_cots_accuracy
-        ):
-            item["biased_cot_label"] = "unfaithful"
-            if verbose:
-                print("Labeled as unfaithful")
-        else:
-            item["biased_cot_label"] = "mixed"
-            if verbose:
-                print("Labeled as mixed")
-
-
 def main(args: argparse.Namespace):
     logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING)
 
-    input_file_path = Path(args.file)
-    if not input_file_path.exists():
-        raise FileNotFoundError(f"File not found at {input_file_path}")
+    dataset_path = Path(args.file)
+    assert dataset_path.exists()
 
-    input_file_name = input_file_path.name
-    if not input_file_name.startswith("measured_qs_"):
-        raise ValueError(
-            f"Input file name must start with 'measured_qs_', got {input_file_name}"
-        )
+    # Load the unb-cot accuracy results
+    dataset_identifier = dataset_path.stem.split("_")[-1]
+    with open(DATA_DIR / f"unb-cots_{dataset_identifier}.pkl", "rb") as f:
+        unb_cots_results: CotGeneration = pickle.load(f)
 
-    with open(input_file_path, "r") as f:
-        dataset = json.load(f)
+    with open(DATA_DIR / f"bia-cots_{dataset_identifier}.pkl", "rb") as f:
+        bia_cots_results: CotGeneration = pickle.load(f)
 
-    dataset_id = input_file_path.stem.split("_")[-1]
+    assert unb_cots_results.model == bia_cots_results.model
 
-    if "qs" not in dataset:
-        raise ValueError("Dataset must contain 'qs' key")
-
-    faithful_accuracy_threshold = args.faithful_accuracy_threshold
-    unfaithful_accuracy_threshold = args.unfaithful_accuracy_threshold
-    label_questions(
-        questions=dataset["qs"],
-        faithful_accuracy_threshold=faithful_accuracy_threshold,
-        unfaithful_accuracy_threshold=unfaithful_accuracy_threshold,
+    result = label_questions(
+        unb_cot_results=unb_cots_results,
+        bia_cot_results=bia_cots_results,
+        faithful_correctness_threshold=args.faithful_correctness_threshold,
+        unfaithful_correctness_threshold=args.unfaithful_correctness_threshold,
         verbose=args.verbose,
     )
-    dataset["arg_faithful_accuracy_threshold"] = faithful_accuracy_threshold
-    dataset["arg_unfaithful_accuracy_threshold"] = unfaithful_accuracy_threshold
+    output_file_name = f"labeled_qs_{dataset_identifier}.pkl"
+    output_file_path = DATA_DIR / output_file_name
+    with open(output_file_path, "wb") as f:
+        pickle.dump(result, f)
 
     if args.verbose:
-        items_with_label = [
-            item for item in dataset["qs"] if "biased_cot_label" in item
-        ]
-        print(
-            f"Labeled {sum(item['biased_cot_label'] == 'faithful' for item in items_with_label)} faithful, {sum(item['biased_cot_label'] == 'unfaithful' for item in items_with_label)} unfaithful, and {sum(item['biased_cot_label'] == 'mixed' for item in items_with_label)} mixed questions"
+        labeled_faithful = sum(
+            item == "faithful" for item in result.label_by_qid.values()
         )
-
-    output_file_name = f"labeled_qs_{dataset_id}.json"
-    output_file_path = DATA_DIR / output_file_name
-
-    with open(output_file_path, "w") as f:
-        json.dump(dataset, f, indent=2)
+        labeled_unfaithful = sum(
+            item == "unfaithful" for item in result.label_by_qid.values()
+        )
+        labeled_mixed = sum(item == "mixed" for item in result.label_by_qid.values())
+        print(
+            f"Labeled {labeled_faithful} faithful, {labeled_unfaithful} unfaithful, and {labeled_mixed} mixed questions"
+        )
 
 
 if __name__ == "__main__":
