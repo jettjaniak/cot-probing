@@ -1,14 +1,33 @@
-import random
+import argparse
+import logging
 
-import numpy as np
 import torch
-import tqdm
+from beartype import beartype
 
+from cot_probing.qs_generation import Question
 from cot_probing.typing import *
 from cot_probing.utils import setup_determinism
 
 
-def hf_generate_many(
+@dataclass
+class LabeledCot:
+    cot: list[int]  # Ends in "Answer: Yes" or "Answer: No"
+    label: Literal["correct", "incorrect"]
+
+
+@dataclass
+class CotGeneration:
+    cots_by_qid: dict[str, list[LabeledCot]]
+    model: str
+    fsp_size: int
+    seed: int
+    max_new_tokens: int
+    temp: float
+    do_sample: bool
+
+
+@beartype
+def generate_completions(
     model: PreTrainedModel,
     tokenizer: PreTrainedTokenizerBase,
     prompt_toks: list[int],
@@ -17,9 +36,13 @@ def hf_generate_many(
     n_gen: int,
     seed: int,
     do_sample: bool,
+    verbose: bool = False,
 ) -> list[list[int]]:
     prompt_len = len(prompt_toks)
     setup_determinism(seed)
+    yes_tok_id = tokenizer.encode(" Yes", add_special_tokens=False)[0]
+    no_tok_id = tokenizer.encode(" No", add_special_tokens=False)[0]
+
     responses_tensor = model.generate(
         torch.tensor([prompt_toks]).cuda(),
         max_new_tokens=max_new_tokens,
@@ -28,15 +51,85 @@ def hf_generate_many(
         do_sample=do_sample,
         temperature=temp,
         num_return_sequences=n_gen,
-        stop_strings=["Answer:"],
+        use_cache=True,
+        stop_strings=["Answer: Yes", "Answer: No"],
     )[:, prompt_len:]
+
     ret = []
     for response_toks in responses_tensor:
         response_toks = response_toks.tolist()
         if tokenizer.eos_token_id in response_toks:
             response_toks = response_toks[: response_toks.index(tokenizer.eos_token_id)]
+
+        if response_toks[-1] not in [yes_tok_id, no_tok_id]:
+            logging.warning(
+                f"Generated completion does not end in 'Answer: Yes' or 'Answer: No': `{tokenizer.decode(response_toks)}`"
+            )
+            continue
+
+        if verbose:
+            response_str = tokenizer.decode(response_toks)
+            logging.info(f"Generated completion: `{response_str}`")
+
         ret.append(response_toks)
+
     return ret
+
+
+@beartype
+def gen_unb_cots(
+    q: Question,
+    model: PreTrainedModel,
+    tokenizer: PreTrainedTokenizerBase,
+    unb_fsp_toks: list[int],
+    args: argparse.Namespace,
+    verbose: bool = False,
+) -> list[list[int]]:
+    question_toks = tokenizer.encode(
+        q.with_step_by_step_suffix(), add_special_tokens=False
+    )
+
+    prompt_toks = unb_fsp_toks + question_toks
+    return generate_completions(
+        model=model,
+        tokenizer=tokenizer,
+        prompt_toks=prompt_toks,
+        max_new_tokens=args.max_new_tokens,
+        n_gen=args.n_gen,
+        temp=args.temp,
+        seed=args.seed,
+        do_sample=True,
+        verbose=verbose,
+    )
+
+
+@beartype
+def gen_bia_cots(
+    q: Question,
+    model: PreTrainedModel,
+    tokenizer: PreTrainedTokenizerBase,
+    yes_fsp_toks: list[int],
+    no_fsp_toks: list[int],
+    args: argparse.Namespace,
+    verbose: bool = False,
+) -> list[list[int]]:
+    question_toks = tokenizer.encode(
+        q.with_step_by_step_suffix(), add_special_tokens=False
+    )
+
+    bia_fsp_toks = no_fsp_toks if q.expected_answer == "yes" else yes_fsp_toks
+    prompt_toks = bia_fsp_toks + question_toks
+    return generate_completions(
+        model=model,
+        tokenizer=tokenizer,
+        prompt_toks=prompt_toks,
+        max_new_tokens=args.max_new_tokens,
+        n_gen=args.n_gen,
+        temp=args.temp,
+        seed=args.seed,
+        do_sample=True,
+        verbose=verbose,
+    )
 
 
 def categorize_response(
@@ -82,77 +175,3 @@ def categorize_responses(
         )
         ret[category].append(response)
     return ret
-
-
-def analyze_responses_single_question(
-    model: PreTrainedModel,
-    tokenizer: PreTrainedTokenizerBase,
-    combined_prompts: dict[str, str],
-    max_new_tokens: int,
-    temp: float,
-    n_gen: int,
-    seed: int,
-    do_sample: bool,
-):
-    prompt_unb = combined_prompts["unb_yes"]
-    prompt_no = combined_prompts["no_yes"]
-    question = prompt_unb.rsplit("Question:", 1)[-1][1:]
-    print("###")
-    print(question)
-    prompt_toks_unb = tokenizer.encode(prompt_unb)
-    prompt_toks_no = tokenizer.encode(prompt_no)
-    resp_unb = hf_generate_many(
-        model,
-        tokenizer,
-        prompt_toks_unb,
-        max_new_tokens=max_new_tokens,
-        temp=temp,
-        n_gen=n_gen,
-        seed=seed,
-        do_sample=do_sample,
-    )
-    resp_no = hf_generate_many(
-        model,
-        tokenizer,
-        prompt_toks_no,
-        max_new_tokens=max_new_tokens,
-        temp=temp,
-        n_gen=n_gen,
-        seed=seed,
-        do_sample=do_sample,
-    )
-    res = {
-        "unb": categorize_responses(model, tokenizer, prompt_toks_unb, resp_unb),
-        "bias_no": categorize_responses(model, tokenizer, prompt_toks_unb, resp_no),
-    }
-    for variant in ["unb", "bias_no"]:
-        print(f"{variant=}")
-        for key in ["yes", "no", "other"]:
-            print(f"- {key} {len(res[variant][key])}")
-    return res
-
-
-def analyze_responses(
-    model: PreTrainedModel,
-    tokenizer: PreTrainedTokenizerBase,
-    all_combinations: list[dict[str, str]],
-    max_new_tokens: int,
-    temp: float,
-    n_gen: int,
-    seed: int,
-    do_sample: bool,
-):
-    results = []
-    for i, combined_prompts in tqdm.tqdm(enumerate(all_combinations), desc="Questions"):
-        res = analyze_responses_single_question(
-            model,
-            tokenizer,
-            combined_prompts,
-            max_new_tokens,
-            temp,
-            n_gen,
-            seed,
-            do_sample,
-        )
-        results.append(res)
-    return results
