@@ -46,23 +46,25 @@ def main(args: argparse.Namespace):
 
     questions_dataset_path = DATA_DIR / "generated_qs.pkl"
 
-    question_dataset = []
-    if questions_dataset_path.exists():
-        with open(questions_dataset_path, "rb") as f:
-            question_dataset = pickle.load(f)
-
     all_qs_yes = load_and_process_file(
         DATA_DIR / "diverse_qs_expected_yes_with_cot.txt"
     )
     all_qs_no = load_and_process_file(DATA_DIR / "diverse_qs_expected_no_with_cot.txt")
     assert len(all_qs_yes) == len(all_qs_no)
 
-    # Add questions to all_qs_yes and all_qs_no so that we don't repeat them
-    for row in question_dataset:
-        if row["expected_answer"] == "yes":
-            all_qs_yes.append(row["question"])
-        else:
-            all_qs_no.append(row["question"])
+    # Add existing questions to all_qs_yes and all_qs_no so that we have less chance of repeating them
+    question_dataset = {}
+    if questions_dataset_path.exists():
+        with open(questions_dataset_path, "rb") as f:
+            question_dataset = pickle.load(f)
+
+    for q in question_dataset.values():
+        if "openai_generation" in q.extra_data:
+            full_question = q.extra_data["openai_generation"]
+            if q.expected_answer == "yes":
+                all_qs_yes.append(full_question)
+            else:
+                all_qs_no.append(full_question)
 
     # Generate the dataset
     generate_questions_dataset(
