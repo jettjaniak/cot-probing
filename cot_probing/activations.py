@@ -133,11 +133,19 @@ def collect_resid_acts_with_pastkv(
     return _collect_resid_acts(model, last_q_toks, layers, past_key_values)
 
 
+def build_fsp_toks_cache(
+    model: PreTrainedModel,
+    tokenizer: PreTrainedTokenizerBase,
+    fsp_toks: list[int],
+):
+    fsp_input_ids = torch.tensor([fsp_toks]).to("cuda")
+    with torch.inference_mode():
+        return model(fsp_input_ids).past_key_values
+
+
 def build_fsp_cache(
     model: PreTrainedModel,
     tokenizer: PreTrainedTokenizerBase,
     fsp: str,
 ):
-    fsp_input_ids = torch.tensor([tokenizer.encode(fsp)]).to("cuda")
-    with torch.inference_mode():
-        return model(fsp_input_ids).past_key_values
+    return build_fsp_toks_cache(model, tokenizer, tokenizer.encode(fsp))
