@@ -14,7 +14,7 @@ from cot_probing import DATA_DIR
 from cot_probing.activations import build_fsp_cache
 from cot_probing.diverse_combinations import load_and_process_file
 from cot_probing.questions_generation import generate_unbiased_few_shot_prompt
-from cot_probing.utils import load_model_and_tokenizer
+from cot_probing.utils import load_model_and_tokenizer, setup_determinism
 
 
 def parse_args():
@@ -25,7 +25,14 @@ def parse_args():
         type=str,
         help="Path to the dataset of questions",
     )
-    parser.add_argument("-s", "--size", type=int, default=8, help="Model size")
+    parser.add_argument(
+        "-m",
+        "--model-size",
+        type=int,
+        default=8,
+        help="Model size in billions of parameters",
+    )
+    parser.add_argument("-s", "--seed", type=int, help="Random seed", default=0)
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
     parser.add_argument(
         "--fsp-size",
@@ -77,6 +84,7 @@ def evaluate_no_cot_accuracy(
     question_dataset: list[dict],
     unbiased_fsp_without_cot: str,
     fsp_size: int,
+    seed: int,
 ):
     unbiased_no_cot_cache = build_fsp_cache(model, tokenizer, unbiased_fsp_without_cot)
 
@@ -107,6 +115,7 @@ def evaluate_no_cot_accuracy(
                 "acc": no_cot_acc,
                 "model": "Llama3.1-8B",
                 "fsp_size": fsp_size,
+                "seed": seed,
             }
         )
         results.append(q)
@@ -130,11 +139,12 @@ def main(args: argparse.Namespace):
     )
     assert len(all_qs_yes) == len(all_qs_no)
 
+    setup_determinism(args.seed)
     unbiased_fsp_without_cot = generate_unbiased_few_shot_prompt(
         all_qs_yes, all_qs_no, args.fsp_size
     )
 
-    model, tokenizer = load_model_and_tokenizer(args.size)
+    model, tokenizer = load_model_and_tokenizer(args.model_size)
 
     # Generate the dataset
     results = evaluate_no_cot_accuracy(
@@ -143,6 +153,7 @@ def main(args: argparse.Namespace):
         question_dataset=question_dataset,
         unbiased_fsp_without_cot=unbiased_fsp_without_cot,
         fsp_size=args.fsp_size,
+        seed=args.seed,
     )
 
     file_identifier = dataset_path.stem.split("_")[-1]
