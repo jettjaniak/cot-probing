@@ -81,9 +81,11 @@ def main(args: argparse.Namespace):
     if questions_dataset_path.exists():
         with open(questions_dataset_path, "rb") as f:
             question_dataset = pickle.load(f)
-        for question in question_dataset:
-            print(question["question"])
-            print()
+
+        if args.verbose:
+            for question in question_dataset.values():
+                print(question.question)
+                print()
 
 
 if __name__ == "__main__":
