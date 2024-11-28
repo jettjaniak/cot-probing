@@ -24,7 +24,18 @@ def generate_unbiased_few_shot_prompt(
     Returns:
         The generated unbiased few-shot prompt.
     """
-    questions = random.sample(all_qs_yes + all_qs_no, fsp_size)
+    half_size = fsp_size // 2
+    remainder = fsp_size % 2
+
+    yes_questions = random.sample(
+        all_qs_yes, half_size + (remainder if random.random() < 0.5 else 0)
+    )
+    no_questions = random.sample(
+        all_qs_no, half_size + (remainder if len(yes_questions) == half_size else 0)
+    )
+
+    questions = yes_questions + no_questions
+    random.shuffle(questions)  # Shuffle to avoid yes/no patterns
     return "\n\n".join(questions)
 
 
