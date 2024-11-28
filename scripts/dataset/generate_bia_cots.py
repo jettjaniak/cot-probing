@@ -58,6 +58,13 @@ def parse_args():
         default=0.8,
     )
     parser.add_argument(
+        "-o",
+        "--openai-model",
+        type=str,
+        default="gpt-4o",
+        help="OpenAI model used to evaluate unbiased CoTs",
+    )
+    parser.add_argument(
         "--save-every",
         type=int,
         help="Save every N questions",
