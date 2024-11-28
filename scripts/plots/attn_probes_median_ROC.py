@@ -9,13 +9,9 @@ from beartype import beartype
 from torch.utils.data import DataLoader, Dataset
 
 from cot_probing import DATA_DIR
-from cot_probing.attn_probes import AttnProbeTrainer
+from cot_probing.attn_probes import ProbeTrainer
 from cot_probing.attn_probes_case_studies import load_median_probe_test_data
-from cot_probing.attn_probes_data_proc import (
-    SequenceDataset,
-    collate_fn,
-    preprocess_data,
-)
+from cot_probing.attn_probes_data_proc import SequenceDataset, collate_fn, load_data
 from cot_probing.typing import *
 from cot_probing.utils import fetch_runs
 
@@ -64,7 +60,7 @@ def main(args: argparse.Namespace):
         probe_class, layer, min_seed, max_seed, metric
     )
 
-    cots_by_q, labels_by_q_list = preprocess_data(
+    cots_by_q, labels_by_q_list = load_data(
         test_acts_dataset,
         {"include_answer_toks": False, "data_device": "cuda", "d_model": 4096},
     )

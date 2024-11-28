@@ -5,7 +5,7 @@
 # %%
 from pathlib import Path
 import pandas as pd
-from cot_probing.attn_probes import AttnProbeTrainer, collate_fn_out_to_model_out
+from cot_probing.attn_probes import ProbeTrainer, collate_fn_out_to_model_out
 from cot_probing.activations import build_fsp_cache, collect_resid_acts_with_pastkv, collect_resid_acts_no_pastkv
 from cot_probing.attn_probes_data_proc import CollateFnOutput
 from cot_probing.utils import load_model_and_tokenizer
@@ -128,7 +128,7 @@ for seed in SEEDS:
     }
 
     try:
-        trainer, run, test_idxs = AttnProbeTrainer.from_wandb(
+        trainer, run, test_idxs = ProbeTrainer.from_wandb(
             raw_acts_dataset=raw_acts_dataset,
             config_filters=config_filters,
         )

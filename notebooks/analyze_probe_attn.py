@@ -12,7 +12,7 @@ from beartype import beartype
 
 # %%
 from cot_probing.utils import fetch_runs
-from cot_probing.attn_probes import AttnProbeTrainer
+from cot_probing.attn_probes import ProbeTrainer
 import wandb
 from cot_probing import DATA_DIR
 import pickle
@@ -25,7 +25,7 @@ def load_median_probe_test_data(
     min_seed: int,
     max_seed: int,
     metric: str,
-) -> tuple[AttnProbeTrainer, list[int], list[dict], str]:
+) -> tuple[ProbeTrainer, list[int], list[dict], str]:
     runs_by_seed_by_layer = fetch_runs(
         api=wandb.Api(),
         probe_class=probe_class,
@@ -48,7 +48,7 @@ def load_median_probe_test_data(
     )
     with open(raw_acts_path, "rb") as f:
         raw_acts_dataset = pickle.load(f)
-    trainer, _, test_idxs = AttnProbeTrainer.from_wandb(
+    trainer, _, test_idxs = ProbeTrainer.from_wandb(
         raw_acts_dataset=raw_acts_dataset,
         run_id=median_run.id,
     )
@@ -96,7 +96,7 @@ for q_idx, test_q in enumerate(raw_acts_qs):
 # %%
 from cot_probing.typing import *
 from cot_probing.vis import visualize_tokens_html
-from cot_probing.attn_probes import AbstractAttnProbeModel
+from cot_probing.attn_probes import AbstractProbe
 
 # Pre-compute all attention and probe outputs
 attn_probs_cache = []

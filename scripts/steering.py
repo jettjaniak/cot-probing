@@ -11,7 +11,7 @@ import tqdm
 from transformers import PreTrainedModel, PreTrainedTokenizerBase
 
 from cot_probing import DATA_DIR
-from cot_probing.attn_probes import AbstractAttnProbeModel
+from cot_probing.attn_probes import AbstractProbe
 from cot_probing.attn_probes_utils import load_median_probe_test_data
 from cot_probing.generation import categorize_response as categorize_response_unbiased
 from cot_probing.steering import steer_generation_with_attn_probe
@@ -97,7 +97,7 @@ def parse_args():
 def run_steering_experiment(
     model: PreTrainedModel,
     tokenizer: PreTrainedTokenizerBase,
-    attn_probe_model: AbstractAttnProbeModel,
+    attn_probe_model: AbstractProbe,
     test_acts_dataset: dict,
     layer_to_steer: int,
     fsp_context: Literal["biased-fsp", "unbiased-fsp", "no-fsp"],

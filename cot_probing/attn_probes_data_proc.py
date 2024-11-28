@@ -10,6 +10,23 @@ from cot_probing.typing import *
 from cot_probing.utils import setup_determinism
 
 
+@dataclass
+class DataConfig:
+    dataset_id: str
+    layer: int
+    context: Literal["biased-fsp", "unbiased-fsp", "no-fsp"]
+    cv_seed: int
+    cv_n_folds: int
+    cv_test_fold: int
+    train_val_seed: int
+    val_frac: float
+    data_device: str
+    batch_size: int
+
+    def get_acts_filename(self) -> str:
+        return f"acts_L{self.layer:02d}_{self.context}_{self.dataset_id}.pkl"
+
+
 class SequenceDataset(Dataset):
     def __init__(
         self,
@@ -75,21 +92,16 @@ def collate_fn(
     )
 
 
-def preprocess_data(
-    raw_acts_dataset: dict, data_loading_kwargs: dict[str, Any]
+def load_data(
+    raw_q_dicts: list[dict],
+    data_device: str,
 ) -> tuple[list[list[Float[torch.Tensor, "seq d_model"]]], list[int]]:
     """Extract sequences and labels from the dataset for probe training"""
-    include_answer_toks = data_loading_kwargs["include_answer_toks"]
-    assert isinstance(include_answer_toks, bool)
-    d_model = data_loading_kwargs["d_model"]
-    assert isinstance(d_model, int)
-    data_device = data_loading_kwargs["data_device"]
-    assert isinstance(data_device, str)
     cots_by_q = []
     labels_by_q = []
-    for q_data in raw_acts_dataset["qs"]:
+    for q_dict in raw_q_dicts:
         # labels
-        biased_cot_label = q_data["biased_cot_label"]
+        biased_cot_label = q_dict["biased_cot_label"]
         if biased_cot_label == "faithful":
             label = 1
         elif biased_cot_label == "unfaithful":
@@ -99,11 +111,8 @@ def preprocess_data(
         labels_by_q.append(label)
         # activations
         # we have multiple CoTs per question
-        acts_by_cot = [acts.to(data_device) for acts in q_data["cached_acts"]]
-        assert isinstance(acts_by_cot, list)
-        assert acts_by_cot[0].shape[-1] == d_model
-        if not include_answer_toks:
-            acts_by_cot = [acts[:-4] for acts in acts_by_cot]
+        # TODO: just don't collect acts for answer tokens
+        acts_by_cot = [acts.to(data_device)[:-4] for acts in q_dict["cached_acts"]]
         cots_by_q.append(acts_by_cot)
     return cots_by_q, labels_by_q
 
@@ -111,45 +120,48 @@ def preprocess_data(
 def split_data(
     cots_by_q: list[list[Float[torch.Tensor, " seq model"]]],
     labels_by_q_list: list[int],
-    data_loading_kwargs: dict[str, Any],
+    data_config: DataConfig,
 ) -> tuple[
     tuple[DataLoader, DataLoader, DataLoader], tuple[list[int], list[int], list[int]]
 ]:
-    data_seed = data_loading_kwargs["data_seed"]
-    assert isinstance(data_seed, int)
-    test_split = data_loading_kwargs["test_split"]
-    assert isinstance(test_split, float)
-    validation_split = data_loading_kwargs["validation_split"]
-    assert isinstance(validation_split, float)
-    batch_size = data_loading_kwargs["batch_size"]
-    assert isinstance(batch_size, int)
-    setup_determinism(data_seed)
+    """Split data into train/val/test sets using cross-validation folds"""
 
     # Separate indices by label
     pos_idxs = [i for i, label in enumerate(labels_by_q_list) if label == 1]
     neg_idxs = [i for i, label in enumerate(labels_by_q_list) if label == 0]
 
-    # Shuffle indices
-    np.random.shuffle(pos_idxs)
-    np.random.shuffle(neg_idxs)
+    setup_determinism(data_config.cv_seed)
+    random.shuffle(pos_idxs)
+    random.shuffle(neg_idxs)
 
-    min_size = min(len(pos_idxs), len(neg_idxs))
-    # Calculate sizes for each split
-    test_size_per_class = int(min_size * test_split)
-    val_size_per_class = int(min_size * validation_split)
+    # Calculate fold sizes
+    n_folds = data_config.cv_n_folds
+    pos_test_size = len(pos_idxs) // n_folds
+    neg_test_size = len(neg_idxs) // n_folds
 
-    # Split indices for each class
-    pos_test = pos_idxs[:test_size_per_class]
-    pos_val = pos_idxs[test_size_per_class : test_size_per_class + val_size_per_class]
-    pos_train = pos_idxs[test_size_per_class + val_size_per_class :]
+    test_fold_nr = data_config.cv_test_fold
+    pos_test_idxs = pos_idxs[
+        test_fold_nr * pos_test_size : (test_fold_nr + 1) * pos_test_size
+    ]
+    neg_test_idxs = neg_idxs[
+        test_fold_nr * neg_test_size : (test_fold_nr + 1) * neg_test_size
+    ]
+    test_idxs = pos_test_idxs + neg_test_idxs
+    pos_train_val_idxs = [i for i in pos_idxs if i not in pos_test_idxs]
+    neg_train_val_idxs = [i for i in neg_idxs if i not in neg_test_idxs]
 
-    neg_test = neg_idxs[:test_size_per_class]
-    neg_val = neg_idxs[test_size_per_class : test_size_per_class + val_size_per_class]
-    neg_train = neg_idxs[test_size_per_class + val_size_per_class :]
+    pos_val_size = int(len(pos_train_val_idxs) * data_config.val_frac)
+    neg_val_size = int(len(neg_train_val_idxs) * data_config.val_frac)
 
-    train_idxs = pos_train + neg_train
-    val_idxs = pos_val + neg_val
-    test_idxs = pos_test + neg_test
+    setup_determinism(data_config.train_val_seed)
+    random.shuffle(pos_train_val_idxs)
+    random.shuffle(neg_train_val_idxs)
+    pos_val_idxs = pos_train_val_idxs[:pos_val_size]
+    neg_val_idxs = neg_train_val_idxs[:neg_val_size]
+    val_idxs = pos_val_idxs + neg_val_idxs
+    pos_train_idxs = pos_train_val_idxs[pos_val_size:]
+    neg_train_idxs = neg_train_val_idxs[neg_val_size:]
+    train_idxs = pos_train_idxs + neg_train_idxs
 
     def make_dataset(idxs: list[int]) -> SequenceDataset:
         return SequenceDataset(
@@ -165,7 +177,7 @@ def split_data(
     # Create dataloaders
     train_loader = DataLoader(
         train_dataset,
-        batch_size=batch_size,
+        batch_size=data_config.batch_size,
         shuffle=True,
         collate_fn=collate_fn,
     )
@@ -184,12 +196,12 @@ def split_data(
     return (train_loader, val_loader, test_loader), (train_idxs, val_idxs, test_idxs)
 
 
-def preprocess_and_split_data(
-    raw_acts_dataset: dict,
-    data_loading_kwargs: dict[str, Any],
+def load_and_split_data(
+    raw_q_dicts: list[dict],
+    data_config: DataConfig,
 ) -> tuple[
     tuple[DataLoader, DataLoader, DataLoader],
     tuple[list[int], list[int], list[int]],
 ]:
-    cots_by_q, labels_by_q_list = preprocess_data(raw_acts_dataset, data_loading_kwargs)
-    return split_data(cots_by_q, labels_by_q_list, data_loading_kwargs)
+    cots_by_q, labels_by_q_list = load_data(raw_q_dicts, data_config.data_device)
+    return split_data(cots_by_q, labels_by_q_list, data_config)
