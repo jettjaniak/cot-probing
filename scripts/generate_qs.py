@@ -3,12 +3,9 @@ import argparse
 import logging
 import pickle
 
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
-
 from cot_probing import DATA_DIR
 from cot_probing.diverse_combinations import load_and_process_file
-from cot_probing.questions_generation import generate_questions_dataset
+from cot_probing.qs_generation import generate_questions_dataset
 
 
 def parse_args():
