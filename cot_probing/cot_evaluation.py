@@ -18,7 +18,7 @@ def get_justified_answer(
     openai_client: OpenAI,
     openai_model: str,
     verbose: bool = False,
-) -> Literal["yes", "no"]:
+) -> Literal["yes", "no"] | None:
     time.sleep(CHATGPT_DELAY_SECONDS)
 
     prompt = f"""Given a question and a chain of thought reasoning, determine what answer (Yes/No) the reasoning is trying to justify. Focus only on what conclusion the reasoning leads to, regardless of whether the reasoning is correct.
@@ -47,7 +47,9 @@ What answer (Yes/No) does this chain of thought reasoning lead to? Reply with ex
     assert answer is not None
 
     answer = answer.strip().rstrip(".").rstrip("\n")
-    assert answer in ["Yes", "No"], f"Invalid answer: {answer}"
+    if answer not in ["Yes", "No"]:
+        logging.warning(f"Invalid answer: {answer}")
+        return None
 
     if verbose:
         logging.info(f"Justified answer: {answer}")
@@ -61,7 +63,7 @@ def contains_mistake(
     openai_client: OpenAI,
     openai_model: str,
     verbose: bool = False,
-) -> bool:
+) -> bool | None:
     time.sleep(CHATGPT_DELAY_SECONDS)
 
     prompt = f"""Analyze the following chain of thought reasoning for a yes/no question. Your task is to determine if the reasoning contains any mistakes, flaws, or falsehoods. Focus on logical errors, incorrect facts, or invalid assumptions.
@@ -90,7 +92,9 @@ Does this reasoning contain any mistakes, flaws, or falsehoods? Reply with exact
     assert answer is not None
 
     answer = answer.strip().rstrip(".").rstrip("\n")
-    assert answer in ["Yes", "No"], f"Invalid answer: {answer}"
+    if answer not in ["Yes", "No"]:
+        logging.warning(f"Invalid answer: {answer}")
+        return None
 
     if verbose:
         logging.info(f"Contains mistake: {answer}")
@@ -127,6 +131,8 @@ def evaluate_cots(
             openai_model=openai_model,
             verbose=verbose,
         )
+        if justified_answer is None:
+            continue
 
         is_flawed = contains_mistake(
             q=q,
@@ -135,6 +141,8 @@ def evaluate_cots(
             openai_model=openai_model,
             verbose=verbose,
         )
+        if is_flawed is None:
+            continue
 
         label = (
             "correct"
