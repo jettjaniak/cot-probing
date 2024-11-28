@@ -12,6 +12,7 @@ from tqdm import tqdm
 from transformers import PreTrainedModel, PreTrainedTokenizerBase
 
 from cot_probing import DATA_DIR
+from cot_probing.data.qs_evaluation import NoCotAccuracy
 from cot_probing.diverse_combinations import load_and_process_file
 from cot_probing.qs_generation import Question
 from cot_probing.utils import load_model_and_tokenizer, setup_determinism
@@ -200,7 +201,9 @@ def main(args: argparse.Namespace):
     # Load the no-cot accuracy results
     dataset_identifier = dataset_path.stem.split("_")[-1]
     with open(DATA_DIR / f"no-cot-accuracy_{dataset_identifier}.pkl", "rb") as f:
-        no_cot_accuracy_results = pickle.load(f)
+        no_cot_accuracy_results: NoCotAccuracy = pickle.load(f)
+        assert no_cot_accuracy_results.model == model.config._name_or_path
+
     output_path = DATA_DIR / f"generated-cots_{dataset_identifier}.pkl"
 
     # Build the few-shot prompts
@@ -211,24 +214,11 @@ def main(args: argparse.Namespace):
 
     results = {}
     for q_id, q in tqdm(question_dataset.items(), desc="Processing questions"):
-        # By default, we don't generate CoTs
-        # TODO: why are we adding it here at all?
-        results[q_id] = {
-            "unbiased_cots": [],
-            "biased_cots": [],
-        }
-
-        if q_id not in no_cot_accuracy_results:
+        if q_id not in no_cot_accuracy_results.acc_by_qid:
             continue
 
-        no_cot_acc_for_model = [
-            res["no_cot_acc"]
-            for res in no_cot_accuracy_results[q_id]
-            if res["model"] == model.config._name_or_path
-        ]
-        if len(no_cot_acc_for_model) == 0:
-            continue
-        if max(no_cot_acc_for_model) > args.max_no_cot_acc:
+        no_cot_acc = no_cot_accuracy_results.acc_by_qid[q_id]
+        if no_cot_acc > args.max_no_cot_acc:
             continue
 
         unb_cots, bia_cots = process_question(
