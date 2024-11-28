@@ -113,7 +113,7 @@ def evaluate_no_cot_accuracy(
         q["no_cot_accuracy"].append(
             {
                 "acc": no_cot_acc,
-                "model": "Llama3.1-8B",
+                "model": model.config._name_or_path,
                 "fsp_size": fsp_size,
                 "seed": seed,
             }
