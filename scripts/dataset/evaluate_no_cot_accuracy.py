@@ -11,13 +11,11 @@ from cot_probing.qs_evaluation import (
     evaluate_no_cot_accuracy_chat,
 )
 from cot_probing.qs_generation import generate_unbiased_few_shot_prompt
-from cot_probing.utils import load_any_model_and_tokenizer, setup_determinism
-
-
-def is_chat_model(model_id: str) -> bool:
-    """Determine if model is a chat model based on its ID."""
-    model_id = model_id.lower()
-    return any(x in model_id for x in ["instruct", "-it"])
+from cot_probing.utils import (
+    is_chat_model,
+    load_any_model_and_tokenizer,
+    setup_determinism,
+)
 
 
 def parse_args():
@@ -56,9 +54,7 @@ def main(args: argparse.Namespace):
 
     model, tokenizer = load_any_model_and_tokenizer(args.model_id)
 
-    is_chat = is_chat_model(args.model_id)
-
-    if is_chat:
+    if is_chat_model(args.model_id):
         # For chat models, use chat evaluation
         results = evaluate_no_cot_accuracy_chat(
             model=model,

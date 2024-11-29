@@ -6,7 +6,7 @@ from beartype import beartype
 
 from cot_probing.qs_generation import Question
 from cot_probing.typing import *
-from cot_probing.utils import setup_determinism
+from cot_probing.utils import make_chat_prompt, setup_determinism
 
 
 @dataclass
@@ -42,7 +42,6 @@ class BiasedCotGeneration:
     bia_no_fsp_toks: list[int]
 
 
-@beartype
 def generate_completions(
     model: PreTrainedModel,
     tokenizer: PreTrainedTokenizerBase,
@@ -88,12 +87,60 @@ def generate_completions(
             response_str = tokenizer.decode(response_toks)
             logging.info(f"Generated completion: `{response_str}`")
 
-        ret.append(response_toks[:-3])
+        # drop "\nAnswer: Yes/No"
+        ret.append(response_toks[:-4])
 
     return ret
 
 
-@beartype
+def generate_completions_chat(
+    model: PreTrainedModel,
+    tokenizer: PreTrainedTokenizerBase,
+    prompt_toks: list[int],
+    max_new_tokens: int,
+    temp: float,
+    n_gen: int,
+    seed: int,
+    do_sample: bool,
+    verbose: bool = False,
+) -> list[list[int]]:
+    prompt_len = len(prompt_toks)
+    setup_determinism(seed)
+
+    # TODO: eos as padding may not work for chat models
+    responses_tensor = model.generate(
+        torch.tensor([prompt_toks]).cuda(),
+        max_new_tokens=max_new_tokens,
+        pad_token_id=tokenizer.eos_token_id,
+        tokenizer=tokenizer,
+        do_sample=do_sample,
+        temperature=temp,
+        num_return_sequences=n_gen,
+        use_cache=True,
+    )[:, prompt_len:]
+
+    ret = []
+    for response_toks in responses_tensor:
+        response_toks = response_toks.tolist()
+        if tokenizer.eos_token_id in response_toks:
+            response_toks = response_toks[: response_toks.index(tokenizer.eos_token_id)]
+
+        # TODO: check if the chat response is finished
+        # if response_toks[-3:] not in [answer_yes_toks, answer_no_toks]:
+        #     logging.warning(
+        #         f"Generated completion does not end in 'Answer: Yes' or 'Answer: No': `{tokenizer.decode(response_toks)}`"
+        #     )
+        #     continue
+
+        if verbose:
+            response_str = tokenizer.decode(response_toks)
+            logging.info(f"Generated completion: `{response_str}`")
+
+        ret.append(response_toks)
+
+    return ret
+
+
 def gen_unb_cots(
     q: Question,
     model: PreTrainedModel,
@@ -121,6 +168,32 @@ def gen_unb_cots(
 
 
 @beartype
+def gen_unb_cots_chat(
+    q: Question,
+    model: PreTrainedModel,
+    tokenizer: PreTrainedTokenizerBase,
+    args: argparse.Namespace,
+    verbose: bool = False,
+) -> list[list[int]]:
+    chat_prompt = make_chat_prompt(
+        instruction=q.question,
+        tokenizer=tokenizer,
+    )
+    prompt_toks = tokenizer.encode(chat_prompt, add_special_tokens=False)
+
+    return generate_completions_chat(
+        model=model,
+        tokenizer=tokenizer,
+        prompt_toks=prompt_toks,
+        max_new_tokens=args.max_new_tokens,
+        n_gen=args.n_gen,
+        temp=args.temp,
+        seed=args.seed,
+        do_sample=True,
+        verbose=verbose,
+    )
+
+
 def gen_bia_cots(
     q: Question,
     model: PreTrainedModel,

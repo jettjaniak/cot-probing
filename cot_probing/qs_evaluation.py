@@ -10,6 +10,7 @@ from cot_probing.activations import build_fsp_toks_cache
 from cot_probing.generation import BiasedCotGeneration, UnbiasedCotGeneration
 from cot_probing.qs_generation import Question
 from cot_probing.typing import *
+from cot_probing.utils import make_chat_prompt
 
 
 @dataclass
@@ -78,21 +79,9 @@ def get_no_cot_accuracy_chat(
     yes_tok_id = tokenizer.encode("Yes", add_special_tokens=False)[0]
     no_tok_id = tokenizer.encode("No", add_special_tokens=False)[0]
 
-    chat_input_str = tokenizer.apply_chat_template(
-        [
-            {
-                "role": "user",
-                "content": f'Answer the following question with a simple "Yes" or "No".\n\n{question}',
-            },
-        ],
-        add_generation_prompt=True,
-        tokenize=False,
-        return_tensors="pt",
-    )
-    assert isinstance(chat_input_str, str)
-    # remove the cutting knowledge and today date from system prompt of Llama
-    chat_input_str = re.sub(
-        r"\n\nCutting Knowledge Date: .*\nToday Date: .*\n\n", "", chat_input_str
+    chat_input_str = make_chat_prompt(
+        instruction=f'Answer the following question with a simple "Yes" or "No".\n\n{question}',
+        tokenizer=tokenizer,
     )
     prompt = tokenizer.encode(chat_input_str, add_special_tokens=False)
     logits = model(torch.tensor([prompt]).cuda()).logits[0, -1]

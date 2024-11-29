@@ -1,6 +1,7 @@
 import json
 import os
 import random
+import re
 import time
 
 import torch
@@ -219,3 +220,30 @@ def fetch_runs(
         print(f"Warning: Expected {expected_count} runs, got {actual_count}")
 
     return run_by_seed_by_layer
+
+
+def is_chat_model(model_id: str) -> bool:
+    """Determine if model is a chat model based on its ID."""
+    model_id = model_id.lower()
+    return any(x in model_id for x in ["instruct", "-it"])
+
+
+def remove_llama_system_dates(chat_input_str: str) -> str:
+    return re.sub(
+        r"\n\nCutting Knowledge Date: .*\nToday Date: .*\n\n", "", chat_input_str
+    )
+
+
+def make_chat_prompt(instruction: str, tokenizer: PreTrainedTokenizerBase) -> str:
+    chat_input_str = tokenizer.apply_chat_template(
+        [
+            {
+                "role": "user",
+                "content": instruction,
+            },
+        ],
+        add_generation_prompt=True,
+        tokenize=False,
+    )
+    assert isinstance(chat_input_str, str)
+    return remove_llama_system_dates(chat_input_str)
