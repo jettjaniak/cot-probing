@@ -133,9 +133,7 @@ def get_last_q_toks_to_cache(
         biased_cot_indexes_to_cache = list(range(len(biased_cots)))
 
     input_ids_to_cache = [
-        question_toks
-        + tokenizer.encode(biased_cots[i], add_special_tokens=False)
-        + answer_toks
+        question_toks + biased_cots[i] + answer_toks
         for i in biased_cot_indexes_to_cache
     ]
 
@@ -275,6 +273,8 @@ def collect_activations(
     biased_cots_collection_mode: Literal["none", "one", "all"],
     args: argparse.Namespace,
 ):
+    model_size = 8 if "8B" in bia_cots_results.model else 70
+
     unbiased_fsp = unb_cots_results.unb_fsp_toks
     biased_no_fsp = bia_cots_results.bia_no_fsp_toks
     biased_yes_fsp = bia_cots_results.bia_yes_fsp_toks
@@ -345,7 +345,14 @@ def collect_activations(
             # Save if we hit the frequency or it's the last item
             if (idx + 1) % args.save_every == 0 or idx == len(remaining_q_ids) - 1:
                 save_layer_results(
-                    layer_results, layers, dataset, args, output_file_stem
+                    layer_results=layer_results,
+                    layers=layers,
+                    unbiased_fsp=unbiased_fsp,
+                    biased_no_fsp=biased_no_fsp,
+                    biased_yes_fsp=biased_yes_fsp,
+                    model_size=model_size,
+                    args=args,
+                    output_file_stem=output_file_stem,
                 )
 
     except KeyboardInterrupt:
@@ -358,20 +365,38 @@ def collect_activations(
                 layer_results[layer] = layer_results[layer][:min_len]
 
         # Save one final time regardless of save_frequency
-        save_layer_results(layer_results, layers, dataset, args, output_file_stem)
+        save_layer_results(
+            layer_results=layer_results,
+            layers=layers,
+            unbiased_fsp=unbiased_fsp,
+            biased_no_fsp=biased_no_fsp,
+            biased_yes_fsp=biased_yes_fsp,
+            model_size=model_size,
+            args=args,
+            output_file_stem=output_file_stem,
+        )
         raise  # Re-raise the interrupt to exit the program
 
 
-def save_layer_results(layer_results, layers, dataset, args, output_file_stem):
+def save_layer_results(
+    layer_results,
+    layers,
+    unbiased_fsp,
+    biased_no_fsp,
+    biased_yes_fsp,
+    model_size,
+    args,
+    output_file_stem,
+):
     """Helper function to save results for all layers"""
     for layer in layers:
         skip_args = ["verbose", "file", "layers"]
         layer_output = {
-            "unbiased_fsp": dataset["unbiased_fsp"],
-            "biased_no_fsp": dataset["biased_no_fsp"],
-            "biased_yes_fsp": dataset["biased_yes_fsp"],
+            "unbiased_fsp": unbiased_fsp,
+            "biased_no_fsp": biased_no_fsp,
+            "biased_yes_fsp": biased_yes_fsp,
             "qs": layer_results[layer],
-            "arg_model_size": dataset["arg_model_size"],
+            "arg_model_size": model_size,
             **{f"arg_{k}": v for k, v in vars(args).items() if k not in skip_args},
         }
 
@@ -412,11 +437,11 @@ def main(args: argparse.Namespace):
         "with-unbiased-cots-", ""
     )
     if args.context == "no-fsp":
-        output_file_stem = "no-fsp-" + output_file_stem
+        output_file_stem = "no-fsp_" + output_file_stem
     elif args.context == "unbiased-fsp":
-        output_file_stem = "unbiased-fsp-" + output_file_stem
+        output_file_stem = "unbiased-fsp_" + output_file_stem
     elif args.context == "biased-fsp":
-        output_file_stem = "biased-fsp-" + output_file_stem
+        output_file_stem = "biased-fsp_" + output_file_stem
 
     collect_activations(
         model=model,
