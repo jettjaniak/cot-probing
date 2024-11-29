@@ -8,7 +8,7 @@ from cot_probing import DATA_DIR
 from cot_probing.data.qs_evaluation import evaluate_no_cot_accuracy
 from cot_probing.diverse_combinations import load_and_process_file
 from cot_probing.qs_generation import generate_unbiased_few_shot_prompt
-from cot_probing.utils import load_model_and_tokenizer, setup_determinism
+from cot_probing.utils import load_any_model_and_tokenizer, setup_determinism
 
 
 def parse_args():
@@ -21,10 +21,10 @@ def parse_args():
     )
     parser.add_argument(
         "-m",
-        "--model-size",
-        type=int,
-        default=8,
-        help="Model size in billions of parameters",
+        "--model-id",
+        type=str,
+        default="hugging-quants/Meta-Llama-3.1-8B-BNB-NF4-BF16",
+        help="Model ID",
     )
     parser.add_argument("-s", "--seed", type=int, help="Random seed", default=0)
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
@@ -58,7 +58,7 @@ def main(args: argparse.Namespace):
         all_qs_yes, all_qs_no, args.fsp_size, verbose=args.verbose
     )
 
-    model, tokenizer = load_model_and_tokenizer(args.model_size)
+    model, tokenizer = load_any_model_and_tokenizer(args.model_id)
 
     # Generate the dataset
     results = evaluate_no_cot_accuracy(

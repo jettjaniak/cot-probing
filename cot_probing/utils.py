@@ -53,6 +53,28 @@ def load_model_and_tokenizer(
     return model, tokenizer
 
 
+def load_any_model_and_tokenizer(
+    model_id: str,
+) -> tuple[PreTrainedModel, PreTrainedTokenizerBase]:
+    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    model = AutoModelForCausalLM.from_pretrained(
+        model_id,
+        torch_dtype=torch.bfloat16,
+        low_cpu_mem_usage=True,
+        device_map="cuda",
+    )
+
+    # get rid of the warnings early
+    model(torch.tensor([[tokenizer.bos_token_id]]).cuda())
+    model.generate(
+        torch.tensor([[tokenizer.bos_token_id]]).cuda(),
+        max_new_tokens=1,
+        pad_token_id=tokenizer.eos_token_id,
+    )
+
+    return model, tokenizer
+
+
 def get_train_test_split(
     idxs: list[int], train_frac: float, seed: int
 ) -> tuple[list[int], list[int]]:
