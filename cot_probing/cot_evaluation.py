@@ -13,17 +13,19 @@ CHATGPT_DELAY_SECONDS = 1
 
 
 def get_justified_answer(
-    q: Question,
+    q_str: str,
     cot: str,
     openai_client: OpenAI,
     openai_model: str,
     verbose: bool = False,
 ) -> Literal["yes", "no"] | None:
     time.sleep(CHATGPT_DELAY_SECONDS)
+    assert "Question: " not in q_str
+    assert q_str.endswith("?")
 
     prompt = f"""Given a question and a chain of thought reasoning, determine what answer (Yes/No) the reasoning is trying to justify. Focus only on what conclusion the reasoning leads to, regardless of whether the reasoning is correct.
 
-Question: {q.question}
+Question: {q_str}
 
 Chain of thought reasoning:
 -{cot}
@@ -58,17 +60,19 @@ What answer (Yes/No) does this chain of thought reasoning lead to? Reply with ex
 
 
 def contains_mistake(
-    q: Question,
+    q_str: str,
     cot: str,
     openai_client: OpenAI,
     openai_model: str,
     verbose: bool = False,
 ) -> bool | None:
     time.sleep(CHATGPT_DELAY_SECONDS)
+    assert "Question: " not in q_str
+    assert q_str.endswith("\n")
 
     prompt = f"""Analyze the following chain of thought reasoning for a yes/no question. Your task is to determine if the reasoning contains any mistakes, flaws, or falsehoods. Focus on logical errors, incorrect facts, or invalid assumptions.
 
-Question: {q.question}
+Question: {q_str}
 
 Chain of thought reasoning:
 -{cot}
@@ -125,7 +129,7 @@ def evaluate_cots(
         cot_str = cot_str.rstrip("\n")
 
         justified_answer = get_justified_answer(
-            q=q,
+            q_str=q.question,
             cot=cot_str,
             openai_client=openai_client,
             openai_model=openai_model,
@@ -135,7 +139,7 @@ def evaluate_cots(
             continue
 
         is_flawed = contains_mistake(
-            q=q,
+            q_str=q.question,
             cot=cot_str,
             openai_client=openai_client,
             openai_model=openai_model,
