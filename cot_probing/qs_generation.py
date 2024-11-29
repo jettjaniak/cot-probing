@@ -1,11 +1,14 @@
 import logging
 import os
 import pickle
+import time
 import uuid
 
 from openai import OpenAI
 
 from cot_probing.typing import *
+
+CHATGPT_DELAY_SECONDS = 1
 
 
 @dataclass
@@ -70,6 +73,7 @@ def get_random_noun(openai_client: OpenAI, openai_model: str) -> str:
     Returns:
         A random noun as a string.
     """
+    time.sleep(CHATGPT_DELAY_SECONDS)
     prompt = f"Please provide a truly random noun. Use this seed if necessary: {random.randint(0, 1000000)} Just respond with the noun and nothing else."
 
     response = openai_client.chat.completions.create(
@@ -94,6 +98,7 @@ def generate_new_question(
     expected_answer: Literal["yes", "no"],
     few_shot_prompt: str,
 ) -> str:
+    time.sleep(CHATGPT_DELAY_SECONDS)
     """
     Generate a new question using OpenAI's API based on the given few-shot prompt and a random noun.
 
