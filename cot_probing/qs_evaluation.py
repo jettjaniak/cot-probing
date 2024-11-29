@@ -1,6 +1,6 @@
 import math
+import re
 from dataclasses import dataclass
-from typing import Literal
 
 import torch
 from tqdm import tqdm
@@ -9,6 +9,7 @@ from transformers import PreTrainedModel, PreTrainedTokenizerBase
 from cot_probing.activations import build_fsp_toks_cache
 from cot_probing.generation import BiasedCotGeneration, UnbiasedCotGeneration
 from cot_probing.qs_generation import Question
+from cot_probing.typing import *
 
 
 @dataclass
@@ -25,6 +26,18 @@ class LabeledQuestions:
     label_by_qid: dict[str, Literal["faithful", "unfaithful", "mixed"]]
     faithful_correctness_threshold: float
     unfaithful_correctness_threshold: float
+
+
+def logits_to_accuracy(
+    yes_logit: float, no_logit: float, expected_answer: Literal["yes", "no"]
+) -> float:
+    exp_yes = math.exp(yes_logit)
+    exp_no = math.exp(no_logit)
+    denom = exp_yes + exp_no
+    if expected_answer == "yes":
+        return exp_yes / denom
+    else:
+        return exp_no / denom
 
 
 def get_no_cot_accuracy(
@@ -49,17 +62,44 @@ def get_no_cot_accuracy(
     yes_logit = logits[yes_tok_id].item()
     no_logit = logits[no_tok_id].item()
 
-    exp_yes = math.exp(yes_logit)
-    exp_no = math.exp(no_logit)
-    denom = exp_yes + exp_no
-    prob_yes = exp_yes / denom
-    prob_no = exp_no / denom
-    if expected_answer == "yes":
-        accuracy = prob_yes
-    else:
-        accuracy = prob_no
+    return logits_to_accuracy(yes_logit, no_logit, expected_answer)
 
-    return accuracy
+
+def get_no_cot_accuracy_chat(
+    model: PreTrainedModel,
+    tokenizer: PreTrainedTokenizerBase,
+    question: str,
+    expected_answer: Literal["yes", "no"],
+):
+    assert not question.endswith("Answer:")
+    assert "Let's think step by step:" not in question
+    assert not question.startswith("Question: ")
+
+    yes_tok_id = tokenizer.encode("Yes", add_special_tokens=False)[0]
+    no_tok_id = tokenizer.encode("No", add_special_tokens=False)[0]
+
+    chat_input_str = tokenizer.apply_chat_template(
+        [
+            {
+                "role": "user",
+                "content": f'Answer the following question with a simple "Yes" or "No".\n\n{question}',
+            },
+        ],
+        add_generation_prompt=True,
+        tokenize=False,
+        return_tensors="pt",
+    )
+    assert isinstance(chat_input_str, str)
+    # remove the cutting knowledge and today date from system prompt of Llama
+    chat_input_str = re.sub(
+        r"\n\nCutting Knowledge Date: .*\nToday Date: .*\n\n", "", chat_input_str
+    )
+    prompt = tokenizer.encode(chat_input_str, add_special_tokens=False)
+    logits = model(torch.tensor([prompt]).cuda()).logits[0, -1]
+    yes_logit = logits[yes_tok_id].item()
+    no_logit = logits[no_tok_id].item()
+
+    return logits_to_accuracy(yes_logit, no_logit, expected_answer)
 
 
 def evaluate_no_cot_accuracy(
@@ -98,6 +138,37 @@ def evaluate_no_cot_accuracy(
         model=model.config._name_or_path,
         fsp_size=fsp_size,
         unbiased_fsp_without_cots_toks=unbiased_fsp_without_cots_toks,
+        seed=seed,
+    )
+
+
+def evaluate_no_cot_accuracy_chat(
+    model: PreTrainedModel,
+    tokenizer: PreTrainedTokenizerBase,
+    question_dataset: dict[str, Question],
+    seed: int,
+) -> NoCotAccuracy:
+
+    results = {}
+    for q_id, q in tqdm(question_dataset.items(), desc="Evaluating no-CoT accuracy"):
+        question = q.question
+        expected_answer = q.expected_answer
+        assert question.endswith("?")
+        assert "Question: " not in question
+        assert "Let's think step by step:" not in question
+
+        results[q_id] = get_no_cot_accuracy_chat(
+            model=model,
+            tokenizer=tokenizer,
+            question=question,
+            expected_answer=expected_answer,
+        )
+
+    return NoCotAccuracy(
+        acc_by_qid=results,
+        model=model.config._name_or_path,
+        fsp_size=0,
+        unbiased_fsp_without_cots_toks=[],
         seed=seed,
     )
 

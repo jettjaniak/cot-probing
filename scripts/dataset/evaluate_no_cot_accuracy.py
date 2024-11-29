@@ -5,10 +5,19 @@ import pickle
 from pathlib import Path
 
 from cot_probing import DATA_DIR
-from cot_probing.data.qs_evaluation import evaluate_no_cot_accuracy
 from cot_probing.diverse_combinations import load_and_process_file
+from cot_probing.qs_evaluation import (
+    evaluate_no_cot_accuracy,
+    evaluate_no_cot_accuracy_chat,
+)
 from cot_probing.qs_generation import generate_unbiased_few_shot_prompt
 from cot_probing.utils import load_any_model_and_tokenizer, setup_determinism
+
+
+def is_chat_model(model_id: str) -> bool:
+    """Determine if model is a chat model based on its ID."""
+    model_id = model_id.lower()
+    return any(x in model_id for x in ["instruct", "-it"])
 
 
 def parse_args():
@@ -32,7 +41,7 @@ def parse_args():
         "--fsp-size",
         type=int,
         default=7,
-        help="Size of the few-shot prompt.",
+        help="Size of the few-shot prompt, ignored for chat models.",
     )
     return parser.parse_args()
 
@@ -45,33 +54,47 @@ def main(args: argparse.Namespace):
     with open(dataset_path, "rb") as f:
         question_dataset = pickle.load(f)
 
-    all_qs_yes = load_and_process_file(
-        DATA_DIR / "diverse_qs_expected_yes_without_cot.txt"
-    )
-    all_qs_no = load_and_process_file(
-        DATA_DIR / "diverse_qs_expected_no_without_cot.txt"
-    )
-    assert len(all_qs_yes) == len(all_qs_no)
-
-    setup_determinism(args.seed)
-    unbiased_fsp_without_cots = generate_unbiased_few_shot_prompt(
-        all_qs_yes, all_qs_no, args.fsp_size, verbose=args.verbose
-    )
-
     model, tokenizer = load_any_model_and_tokenizer(args.model_id)
 
-    # Generate the dataset
-    results = evaluate_no_cot_accuracy(
-        model=model,
-        tokenizer=tokenizer,
-        question_dataset=question_dataset,
-        unbiased_fsp_without_cots=unbiased_fsp_without_cots,
-        fsp_size=args.fsp_size,
-        seed=args.seed,
-    )
+    is_chat = is_chat_model(args.model_id)
 
+    if is_chat:
+        # For chat models, use chat evaluation
+        results = evaluate_no_cot_accuracy_chat(
+            model=model,
+            tokenizer=tokenizer,
+            question_dataset=question_dataset,
+            seed=args.seed,
+        )
+    else:
+        # For non-chat models, use standard evaluation with few-shot prompting
+        all_qs_yes = load_and_process_file(
+            DATA_DIR / "diverse_qs_expected_yes_without_cot.txt"
+        )
+        all_qs_no = load_and_process_file(
+            DATA_DIR / "diverse_qs_expected_no_without_cot.txt"
+        )
+        assert len(all_qs_yes) == len(all_qs_no)
+
+        setup_determinism(args.seed)
+        unbiased_fsp_without_cots = generate_unbiased_few_shot_prompt(
+            all_qs_yes, all_qs_no, args.fsp_size, verbose=args.verbose
+        )
+
+        results = evaluate_no_cot_accuracy(
+            model=model,
+            tokenizer=tokenizer,
+            question_dataset=question_dataset,
+            unbiased_fsp_without_cots=unbiased_fsp_without_cots,
+            fsp_size=args.fsp_size,
+            seed=args.seed,
+        )
+
+    # Save results with model name in filename for chat models
     file_identifier = dataset_path.stem.split("_")[-1]
-    with open(DATA_DIR / f"no-cot-accuracy_{file_identifier}.pkl", "wb") as f:
+    model_name = args.model_id.split("/")[-1]
+    filename = f"{model_name}_{file_identifier}.pkl"
+    with open(DATA_DIR / "no-cot-accuracy" / filename, "wb") as f:
         pickle.dump(results, f)
 
 
