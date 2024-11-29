@@ -38,13 +38,19 @@ def parse_args():
         default=7,
         help="Size of the few-shot prompt.",
     )
+    parser.add_argument(
+        "--save-every",
+        type=int,
+        help="Save every N questions",
+        default=50,
+    )
     return parser.parse_args()
 
 
 def main(args: argparse.Namespace):
     logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING)
 
-    questions_dataset_path = DATA_DIR / "generated_qs.pkl"
+    questions_dataset_path = DATA_DIR / "questions" / "generated_qs.pkl"
 
     all_qs_yes = load_and_process_file(
         DATA_DIR / "diverse_qs_expected_yes_with_cot.txt"
@@ -76,6 +82,7 @@ def main(args: argparse.Namespace):
         all_qs_no=all_qs_no,
         questions_dataset_path=questions_dataset_path,
         fsp_size=args.fsp_size,
+        save_every=args.save_every,
     )
 
     if questions_dataset_path.exists():

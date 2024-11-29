@@ -296,6 +296,7 @@ def generate_questions_dataset(
     all_qs_no: list[str],
     questions_dataset_path: Path,
     fsp_size: int,
+    save_every: int = 50,
 ) -> None:
     """
     Generate a dataset of questions that meet specified criteria.
@@ -309,7 +310,7 @@ def generate_questions_dataset(
         all_qs_no: List of questions that are expected to have the answer "no".
         questions_dataset_path: Path to save the questions dataset.
         fsp_size: Size of the few-shot prompt.
-
+        save_every: Save the dataset every N questions.
     Returns:
         None: The function modifies the global question_dataset and saves it to a file.
     """
@@ -354,9 +355,10 @@ def generate_questions_dataset(
             q_id = uuid.uuid4().hex
             question_dataset[q_id] = result
 
-            # Save the dataset
-            with open(questions_dataset_path, "wb") as f:
-                pickle.dump(question_dataset, f)
+            if successes % save_every == 0:
+                # Save the dataset
+                with open(questions_dataset_path, "wb") as f:
+                    pickle.dump(question_dataset, f)
 
             successes += 1
         attempts += 1
