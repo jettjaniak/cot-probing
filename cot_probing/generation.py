@@ -17,9 +17,8 @@ class LabeledCot:
 
 @dataclass
 class UnbiasedCotGeneration:
-    cots_by_qid: dict[str, list[LabeledCot]]
+    cots_by_qid: dict[str, list[list[int]]]
     model: str
-    model_size: int
     fsp_size: int
     seed: int
     max_new_tokens: int
@@ -125,12 +124,8 @@ def generate_completions_chat(
         if tokenizer.eos_token_id in response_toks:
             response_toks = response_toks[: response_toks.index(tokenizer.eos_token_id)]
 
-        # TODO: check if the chat response is finished
-        # if response_toks[-3:] not in [answer_yes_toks, answer_no_toks]:
-        #     logging.warning(
-        #         f"Generated completion does not end in 'Answer: Yes' or 'Answer: No': `{tokenizer.decode(response_toks)}`"
-        #     )
-        #     continue
+        if len(response_toks) == max_new_tokens:
+            continue
 
         if verbose:
             response_str = tokenizer.decode(response_toks)
@@ -175,8 +170,14 @@ def gen_unb_cots_chat(
     args: argparse.Namespace,
     verbose: bool = False,
 ) -> list[list[int]]:
+
+    instruction = f"""Here is a question that requires a few steps of reasoning before giving an answer, but it has a clear yes or no answer:
+
+{q.question}
+
+Take it seriously, and think step by step before answering it."""
     chat_prompt = make_chat_prompt(
-        instruction=q.question,
+        instruction=instruction,
         tokenizer=tokenizer,
     )
     prompt_toks = tokenizer.encode(chat_prompt, add_special_tokens=False)

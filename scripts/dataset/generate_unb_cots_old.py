@@ -93,6 +93,7 @@ def generate_unb_cots_pretrained(
     results = UnbiasedCotGeneration(
         cots_by_qid={},
         model=model.config._name_or_path,
+        model_size=args.model_size,
         fsp_size=args.fsp_size,
         seed=args.seed,
         max_new_tokens=args.max_new_tokens,
@@ -108,7 +109,7 @@ def generate_unb_cots_pretrained(
         if q_no_cot_acc > args.max_no_cot_acc:
             continue
 
-        results.cots_by_qid[q_id] = gen_unb_cots(
+        unb_cots = gen_unb_cots(
             q=q,
             model=model,
             tokenizer=tokenizer,
@@ -116,6 +117,14 @@ def generate_unb_cots_pretrained(
             args=args,
             verbose=args.verbose,
         )
+        labeled_unb_cots = evaluate_cots(
+            q=q,
+            cots=unb_cots,
+            tokenizer=tokenizer,
+            openai_model=args.openai_model,
+            verbose=args.verbose,
+        )
+        results.cots_by_qid[q_id] = labeled_unb_cots
 
         if len(results.cots_by_qid) % args.save_every == 0:
             with open(output_path, "wb") as f:
@@ -137,6 +146,7 @@ def generate_unb_cots_chat(
     results = UnbiasedCotGeneration(
         cots_by_qid={},
         model=model.config._name_or_path,
+        model_size=args.model_size,
         fsp_size=args.fsp_size,
         seed=args.seed,
         max_new_tokens=args.max_new_tokens,
@@ -152,13 +162,21 @@ def generate_unb_cots_chat(
         if q_no_cot_acc > args.max_no_cot_acc:
             continue
 
-        results.cots_by_qid[q_id] = gen_unb_cots_chat(
+        unb_cots = gen_unb_cots_chat(
             q=q,
             model=model,
             tokenizer=tokenizer,
             args=args,
             verbose=args.verbose,
         )
+        labeled_unb_cots = evaluate_cots(
+            q=q,
+            cots=unb_cots,
+            tokenizer=tokenizer,
+            openai_model=args.openai_model,
+            verbose=args.verbose,
+        )
+        results.cots_by_qid[q_id] = labeled_unb_cots
 
         if len(results.cots_by_qid) % args.save_every == 0:
             with open(output_path, "wb") as f:
@@ -178,7 +196,7 @@ def main(args: argparse.Namespace):
     output_dir = DATA_DIR / "unb-cots"
 
     with open(questions_dir / f"{args.dataset_id}.pkl", "rb") as f:
-        questions_dataset: dict[str, Question] = pickle.load(f)
+        questions_dataset = pickle.load(f)
 
     model_name = args.model_id.split("/")[-1]
     with open(no_cot_acc_dir / f"{model_name}_{args.dataset_id}.pkl", "rb") as f:

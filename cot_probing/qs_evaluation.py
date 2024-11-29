@@ -80,7 +80,7 @@ def get_no_cot_accuracy_chat(
     no_tok_id = tokenizer.encode("No", add_special_tokens=False)[0]
 
     chat_input_str = make_chat_prompt(
-        instruction=f'Answer the following question with a simple "Yes" or "No".\n\n{question}',
+        instruction=f'Take the following question seriously, and answer with a simple "Yes" or "No".\n\n{question}',
         tokenizer=tokenizer,
     )
     prompt = tokenizer.encode(chat_input_str, add_special_tokens=False)
