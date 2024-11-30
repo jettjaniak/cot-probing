@@ -9,7 +9,7 @@ from transformers import PreTrainedTokenizerBase
 
 from cot_probing.qs_generation import Question
 
-CHATGPT_DELAY_SECONDS = 1
+CHATGPT_DELAY_SECONDS = 0
 
 
 @dataclass
