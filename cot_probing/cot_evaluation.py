@@ -83,6 +83,7 @@ Reasoning:
     else:
         # Sometimes the OpenAI answer does not end with "Yes" or "No", but the justified answer is in the middle
         # of the response. If it contains one and not the other, we can assume it's the justified answer.
+        justified_answer = raw_openai_answer
         if "Yes" in justified_answer and "No" not in justified_answer:
             justified_answer = "yes"
         elif "No" in justified_answer and "Yes" not in justified_answer:
