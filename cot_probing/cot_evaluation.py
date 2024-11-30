@@ -88,6 +88,10 @@ Reasoning:
             justified_answer = "yes"
         elif "No" in justified_answer and "Yes" not in justified_answer:
             justified_answer = "no"
+        elif "YES" in justified_answer and "NO" not in justified_answer:
+            justified_answer = "yes"
+        elif "NO" in justified_answer and "YES" not in justified_answer:
+            justified_answer = "no"
         else:
             justified_answer = "other"
             logging.warning(f"Marking as other: {raw_openai_answer}")
