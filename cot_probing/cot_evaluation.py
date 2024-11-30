@@ -57,7 +57,7 @@ Reasoning:
         messages=[
             {
                 "role": "system",
-                "content": "You are a helpful assistant that analyzes the reasoning for Yes/No questions and determines what conclusion they are trying to justify. You will receive a question and a reasoning, and you will need to determine what conclusion the reasoning leads to (Yes or No). You focus only on what conclusion the reasoning leads to, regardless of whether the reasoning is correct. You always think before giving a response. One you have thought about it, you should respond with Yes or No, according to the answer you think the LLM was justifying.",
+                "content": "You are a helpful assistant that analyzes the reasoning for Yes/No questions and determines what conclusion they are trying to justify. You will receive a question and a reasoning, and you will need to determine what conclusion the reasoning leads to (Yes or No). You focus only on what conclusion the reasoning leads to, regardless of whether the reasoning is correct or incorrect. You always think before giving a response. One you have thought about it, you should respond with Yes or No, according to the answer you think the LLM was justifying.",
             },
             {"role": "user", "content": prompt},
         ],
@@ -69,11 +69,15 @@ Reasoning:
         logging.info(f"Raw OpenAI answer: {raw_openai_answer}")
 
     # Parse the justified answer
-    justified_answer = (
-        raw_openai_answer.strip().rstrip("\n").rstrip(".").rstrip('"').lower()
-    )
+    justified_answer = raw_openai_answer.lower()
+    has_changed = True
+    while has_changed:
+        aux = justified_answer
+        justified_answer = justified_answer.strip().rstrip("\n").rstrip(".").rstrip('"')
+        has_changed = aux != justified_answer
+
     if not justified_answer.endswith("yes") and not justified_answer.endswith("no"):
-        logging.warning(f"Marking as other: {justified_answer}")
+        logging.warning(f"Marking as other: {raw_openai_answer}")
         return "other", raw_openai_answer
 
     justified_answer = "yes" if justified_answer.endswith("yes") else "no"
