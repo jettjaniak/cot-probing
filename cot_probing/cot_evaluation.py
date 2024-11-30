@@ -76,13 +76,20 @@ Reasoning:
         justified_answer = justified_answer.strip().rstrip("\n").rstrip(".").rstrip('"')
         has_changed = aux != justified_answer
 
-    if not justified_answer.endswith("yes") and not justified_answer.endswith("no"):
-        logging.warning(f"Marking as other: {raw_openai_answer}")
-        return "other", raw_openai_answer
-
-    justified_answer = "yes" if justified_answer.endswith("yes") else "no"
-    if verbose:
-        logging.info(f"Justified answer: {justified_answer}")
+    if justified_answer.endswith("yes") or justified_answer.endswith("no"):
+        justified_answer = "yes" if justified_answer.endswith("yes") else "no"
+        if verbose:
+            logging.info(f"Justified answer: {justified_answer}")
+    else:
+        # Sometimes the OpenAI answer does not end with "Yes" or "No", but the justified answer is in the middle
+        # of the response. If it contains one and not the other, we can assume it's the justified answer.
+        if "Yes" in justified_answer and "No" not in justified_answer:
+            justified_answer = "yes"
+        elif "No" in justified_answer and "Yes" not in justified_answer:
+            justified_answer = "no"
+        else:
+            justified_answer = "other"
+            logging.warning(f"Marking as other: {raw_openai_answer}")
 
     return justified_answer, raw_openai_answer
 
