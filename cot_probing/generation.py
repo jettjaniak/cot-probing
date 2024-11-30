@@ -10,12 +10,6 @@ from cot_probing.utils import make_chat_prompt, setup_determinism
 
 
 @dataclass
-class LabeledCot:
-    cot: list[int]  # Ends in "\n". Does not include "Answer: Yes" or "Answer: No"
-    label: Literal["correct", "incorrect"]
-
-
-@dataclass
 class UnbiasedCotGeneration:
     cots_by_qid: dict[str, list[list[int]]]
     model: str
@@ -29,7 +23,7 @@ class UnbiasedCotGeneration:
 
 @dataclass
 class BiasedCotGeneration:
-    cots_by_qid: dict[str, list[LabeledCot]]
+    cots_by_qid: dict[str, list[list[int]]]
     model: str
     model_size: int
     fsp_size: int

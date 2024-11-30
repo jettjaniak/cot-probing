@@ -8,7 +8,6 @@ from tqdm import tqdm
 from transformers import PreTrainedModel, PreTrainedTokenizerBase
 
 from cot_probing import DATA_DIR
-from cot_probing.cot_evaluation import evaluate_cots
 from cot_probing.diverse_combinations import load_and_process_file
 from cot_probing.generation import (
     UnbiasedCotGeneration,
@@ -21,7 +20,7 @@ from cot_probing.utils import is_chat_model, load_any_model_and_tokenizer
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Generate and evaluate unbiased CoTs")
+    parser = argparse.ArgumentParser(description="Generate unbiased CoTs")
     parser.add_argument("-d", "--dataset-id", type=str, default="strategyqa")
     parser.add_argument(
         "-m",

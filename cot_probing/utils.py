@@ -35,7 +35,7 @@ def load_model_and_tokenizer(
 ) -> tuple[PreTrainedModel, PreTrainedTokenizerBase]:
     assert model_size in [8, 70]
     model_id = f"hugging-quants/Meta-Llama-3.1-{model_size}B-BNB-NF4-BF16"
-    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    tokenizer = load_tokenizer(model_id)
     model = AutoModelForCausalLM.from_pretrained(
         model_id,
         torch_dtype=torch.bfloat16,
@@ -54,10 +54,14 @@ def load_model_and_tokenizer(
     return model, tokenizer
 
 
+def load_tokenizer(model_id: str) -> PreTrainedTokenizerBase:
+    return AutoTokenizer.from_pretrained(model_id)
+
+
 def load_any_model_and_tokenizer(
     model_id: str,
 ) -> tuple[PreTrainedModel, PreTrainedTokenizerBase]:
-    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    tokenizer = load_tokenizer(model_id)
     model = AutoModelForCausalLM.from_pretrained(
         model_id,
         torch_dtype=torch.bfloat16,
