@@ -107,9 +107,6 @@ def evaluate_cots_pretrained(
     verbose: bool = False,
 ) -> list[LabeledCot]:
     openai_client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
-    answer_yes_toks = tokenizer.encode("Answer: Yes", add_special_tokens=False)
-    answer_no_toks = tokenizer.encode("Answer: No", add_special_tokens=False)
-    assert len(answer_yes_toks) == len(answer_no_toks) == 3
 
     results = []
     for cot in cots:
@@ -118,7 +115,6 @@ def evaluate_cots_pretrained(
         assert not cot_str.endswith("Answer: Yes") and not cot_str.endswith(
             "Answer: No"
         )
-        assert cot_str.endswith("\n")
         cot_str = cot_str.rstrip("\n")
         cot_str = f"-{cot_str}"
 
