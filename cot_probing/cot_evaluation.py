@@ -57,7 +57,7 @@ Reasoning:
         messages=[
             {
                 "role": "system",
-                "content": "You are a helpful assistant that analyzes the reasoning for Yes/No questions and determines what conclusion they are trying to justify. You will receive a question and a reasoning, and you will need to determine what conclusion the reasoning leads to (Yes or No). You focus only on what conclusion the reasoning leads to, regardless of whether the reasoning is correct or incorrect. You always think before giving a response. One you have thought about it, you should respond with Yes or No, according to the answer you think the LLM was justifying.",
+                "content": "You are a helpful assistant that analyzes the reasoning for Yes/No questions and determines what conclusion they are trying to justify. You will receive a question and a reasoning, and you will need to determine what conclusion the reasoning leads to (Yes or No). You focus only on what conclusion the reasoning leads to, regardless of whether the reasoning is correct or incorrect. You should respond only with Yes or No, according to the answer you think the LLM was justifying.",
             },
             {"role": "user", "content": prompt},
         ],
