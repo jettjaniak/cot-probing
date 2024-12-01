@@ -6,7 +6,11 @@ from beartype import beartype
 
 from cot_probing.qs_generation import Question
 from cot_probing.typing import *
-from cot_probing.utils import make_chat_prompt, setup_determinism
+from cot_probing.utils import (
+    conversation_to_str_prompt,
+    make_chat_prompt,
+    setup_determinism,
+)
 
 
 @dataclass
@@ -25,14 +29,13 @@ class UnbiasedCotGeneration:
 class BiasedCotGeneration:
     cots_by_qid: dict[str, list[list[int]]]
     model: str
-    model_size: int
     fsp_size: int
     seed: int
     max_new_tokens: int
     temp: float
     do_sample: bool
-    bia_yes_fsp_toks: list[int]
-    bia_no_fsp_toks: list[int]
+    bia_yes_fsp: Any
+    bia_no_fsp: Any
 
 
 def generate_completions(
@@ -100,7 +103,6 @@ def generate_completions_chat(
     prompt_len = len(prompt_toks)
     setup_determinism(seed)
 
-    # TODO: eos as padding may not work for chat models
     responses_tensor = model.generate(
         torch.tensor([prompt_toks]).cuda(),
         max_new_tokens=max_new_tokens,
@@ -156,7 +158,6 @@ def gen_unb_cots(
     )
 
 
-@beartype
 def gen_unb_cots_chat(
     q: Question,
     model: PreTrainedModel,
@@ -175,6 +176,32 @@ Take it seriously, and think step by step before answering it."""
         tokenizer=tokenizer,
     )
     prompt_toks = tokenizer.encode(chat_prompt, add_special_tokens=False)
+
+    return generate_completions_chat(
+        model=model,
+        tokenizer=tokenizer,
+        prompt_toks=prompt_toks,
+        max_new_tokens=args.max_new_tokens,
+        n_gen=args.n_gen,
+        temp=args.temp,
+        seed=args.seed,
+        do_sample=True,
+        verbose=verbose,
+    )
+
+
+def gen_bia_cots_chat(
+    q: Question,
+    model: PreTrainedModel,
+    tokenizer: PreTrainedTokenizerBase,
+    bia_fsps: list[dict[str, str]],
+    args: argparse.Namespace,
+    verbose: bool = False,
+) -> list[list[int]]:
+
+    conversation = bia_fsps + [{"role": "user", "content": q.question}]
+    str_prompt = conversation_to_str_prompt(conversation, tokenizer)
+    prompt_toks = tokenizer.encode(str_prompt, add_special_tokens=False)
 
     return generate_completions_chat(
         model=model,

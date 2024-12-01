@@ -238,16 +238,21 @@ def remove_llama_system_dates(chat_input_str: str) -> str:
     )
 
 
-def make_chat_prompt(instruction: str, tokenizer: PreTrainedTokenizerBase) -> str:
-    chat_input_str = tokenizer.apply_chat_template(
-        [
-            {
-                "role": "user",
-                "content": instruction,
-            },
-        ],
-        add_generation_prompt=True,
-        tokenize=False,
+def conversation_to_str_prompt(
+    conversation: list[dict[str, str]], tokenizer: PreTrainedTokenizerBase
+) -> str:
+    str_prompt = tokenizer.apply_chat_template(
+        conversation, add_generation_prompt=True, tokenize=False
     )
-    assert isinstance(chat_input_str, str)
-    return remove_llama_system_dates(chat_input_str)
+    assert isinstance(str_prompt, str)
+    return remove_llama_system_dates(str_prompt)
+
+
+def make_chat_prompt(instruction: str, tokenizer: PreTrainedTokenizerBase) -> str:
+    conversation = [
+        {
+            "role": "user",
+            "content": instruction,
+        }
+    ]
+    return conversation_to_str_prompt(conversation, tokenizer)
