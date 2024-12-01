@@ -223,8 +223,7 @@ def gen_bia_cots(
     q: Question,
     model: PreTrainedModel,
     tokenizer: PreTrainedTokenizerBase,
-    yes_fsp_toks: list[int],
-    no_fsp_toks: list[int],
+    bia_fsp_toks: list[int],
     args: argparse.Namespace,
     verbose: bool = False,
 ) -> list[list[int]]:
@@ -232,7 +231,6 @@ def gen_bia_cots(
         q.with_step_by_step_suffix(), add_special_tokens=False
     )
 
-    bia_fsp_toks = no_fsp_toks if q.expected_answer == "yes" else yes_fsp_toks
     prompt_toks = bia_fsp_toks + question_toks
     return generate_completions(
         model=model,

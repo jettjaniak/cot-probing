@@ -7,7 +7,6 @@ from collections import defaultdict
 from pathlib import Path
 
 from beartype import beartype
-from torch import int32
 from tqdm import tqdm
 from transformers import PreTrainedModel, PreTrainedTokenizerBase
 
