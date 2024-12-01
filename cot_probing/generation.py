@@ -121,6 +121,9 @@ def generate_completions_chat(
             response_toks = response_toks[: response_toks.index(tokenizer.eos_token_id)]
 
         if len(response_toks) == max_new_tokens:
+            logging.info(
+                f"Generated completion is too long: `{tokenizer.decode(response_toks)}`"
+            )
             continue
 
         if verbose:

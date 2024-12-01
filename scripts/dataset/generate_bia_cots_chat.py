@@ -50,7 +50,7 @@ def parse_args():
         "--max-new-tokens",
         type=int,
         help="Maximum number of new tokens to generate",
-        default=200,
+        default=2_000,
     )
     parser.add_argument(
         "--max-no-cot-acc",
