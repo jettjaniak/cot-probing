@@ -33,7 +33,7 @@ def parse_args():
         "-o",
         "--openai-model",
         type=str,
-        default="gpt-4o",
+        default="gpt-4o-mini",
         help="OpenAI model used to evaluate unbiased CoTs",
     )
     parser.add_argument(
