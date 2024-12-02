@@ -8,6 +8,7 @@ from cot_probing import DATA_DIR
 from cot_probing.qs_generation import Question
 from cot_probing.plots import (
     plot_accuracy_difference_histogram,
+    plot_accuracy_heatmap,
     plot_accuracy_histogram,
     plot_binary_histogram,
     plot_triple_histogram,
@@ -79,6 +80,14 @@ plot_accuracy_difference_histogram(
     labels=["Unbiased", "No-CoT"],
 )
 
+plot_accuracy_heatmap(
+    unb_cots_accuracy,
+    list(no_cot_acc_results.acc_by_qid.values()),
+    f"Unbiased CoT vs No-CoT Accuracy\n{model_name} on {dataset_id}",
+    "Unbiased CoT Accuracy",
+    "No-CoT Accuracy",
+)
+
 # %%
 with open(bia_cots_eval_dir / file_name, "rb") as f:
     bia_cots_results = pickle.load(f)
@@ -115,6 +124,24 @@ plot_accuracy_difference_histogram(
     bia_cots_accuracy,
     f"Accuracy Difference: Unbiased vs Biased\n{model_name} on {dataset_id}",
     labels=["Unbiased", "Biased"],
+)
+
+# Plot heatmap comparing no-CoT accuracy vs biased CoT accuracy
+plot_accuracy_heatmap(
+    list(no_cot_acc_results.acc_by_qid.values()),
+    bia_cots_accuracy,
+    f"Question Difficulty vs Biased CoT Accuracy\n{model_name} on {dataset_id}",
+    "No-CoT Accuracy (Question Difficulty)",
+    "Biased CoT Accuracy",
+)
+
+# Plot heatmap comparing unbiased CoT accuracy vs biased CoT accuracy
+plot_accuracy_heatmap(
+    unb_cots_accuracy,
+    bia_cots_accuracy,
+    f"Unbiased CoT vs Biased CoT Accuracy\n{model_name} on {dataset_id}",
+    "Unbiased CoT Accuracy",
+    "Biased CoT Accuracy",
 )
 
 # %%
