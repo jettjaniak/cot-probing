@@ -12,7 +12,6 @@ from transformers import PreTrainedModel, PreTrainedTokenizerBase
 from cot_probing import DATA_DIR
 from cot_probing.diverse_combinations import load_and_process_file
 from cot_probing.generation import BiasedCotGeneration, gen_bia_cots
-from cot_probing.qs_evaluation import NoCotAccuracy
 from cot_probing.qs_generation import Question
 from cot_probing.utils import (
     is_chat_model,
@@ -48,12 +47,6 @@ def parse_args():
         type=int,
         help="Maximum number of new tokens to generate",
         default=200,
-    )
-    parser.add_argument(
-        "--max-no-cot-acc",
-        type=float,
-        help="Maximum no-CoT accuracy to generate unbiased CoTs for",
-        default=0.6,
     )
     parser.add_argument(
         "-o",
@@ -93,7 +86,6 @@ def generate_bia_cots(
     model: PreTrainedModel,
     tokenizer: PreTrainedTokenizerBase,
     questions_dataset: dict[str, Question],
-    no_cot_acc: NoCotAccuracy,
     bia_yes_fsp_toks: list[int],
     bia_no_fsp_toks: list[int],
     args: argparse.Namespace,
@@ -112,14 +104,6 @@ def generate_bia_cots(
         bia_no_fsp=bia_no_fsp_toks,
     )
     for q_id, q in tqdm(questions_dataset.items(), desc="Processing questions"):
-        if q_id not in no_cot_acc.acc_by_qid:
-            continue
-
-        q_no_cot_acc = no_cot_acc.acc_by_qid[q_id]
-        if q_no_cot_acc > args.max_no_cot_acc:
-            continue
-
-        # bia_fsp_toks = no_fsp_toks if q.expected_answer == "yes" else yes_fsp_toks
         results.cots_by_qid[q_id] = gen_bia_cots(
             q=q,
             model=model,
@@ -146,27 +130,21 @@ def main(args: argparse.Namespace):
     model, tokenizer = load_any_model_and_tokenizer(args.model_id)
 
     questions_dir = DATA_DIR / "questions"
-    no_cot_acc_dir = DATA_DIR / "no-cot-accuracy"
     output_dir = DATA_DIR / "bia-cots"
 
     with open(questions_dir / f"{args.dataset_id}.pkl", "rb") as f:
         questions_dataset: dict[str, Question] = pickle.load(f)
 
-    model_name = args.model_id.split("/")[-1]
-    with open(no_cot_acc_dir / f"{model_name}_{args.dataset_id}.pkl", "rb") as f:
-        no_cot_acc: NoCotAccuracy = pickle.load(f)
-        assert no_cot_acc.model == model.config._name_or_path
-
     yes_fsps, no_fsps = build_bia_fsps(args)
     yes_fsp_toks, no_fsp_toks = [tokenizer.encode(fsp) for fsp in [yes_fsps, no_fsps]]
 
+    model_name = args.model_id.split("/")[-1]
     output_path = output_dir / f"{model_name}_{args.dataset_id}.pkl"
 
     generate_bia_cots(
         model=model,
         tokenizer=tokenizer,
         questions_dataset=questions_dataset,
-        no_cot_acc=no_cot_acc,
         bia_yes_fsp_toks=yes_fsp_toks,
         bia_no_fsp_toks=no_fsp_toks,
         args=args,
