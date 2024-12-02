@@ -13,6 +13,7 @@ from cot_probing.plots import (
     plot_binary_histogram,
     plot_triple_histogram,
 )
+from cot_probing.utils import load_tokenizer
 
 # %%
 questions_dir = DATA_DIR / "questions"
@@ -23,6 +24,7 @@ labeled_qs_dir = DATA_DIR / "labeled-qs"
 
 # %%
 
+full_model_name = "google/gemma-2-2b-it"
 model_name = "gemma-2-2b-it"
 dataset_id = "gpt-4o-oct28-1156"
 file_name = f"{model_name}_{dataset_id}.pkl"
@@ -44,13 +46,13 @@ plot_accuracy_histogram(
 
 # %%
 with open(unb_cots_eval_dir / file_name, "rb") as f:
-    unb_cots_results = pickle.load(f)
+    unb_cots_eval_results = pickle.load(f)
 
-print(len(unb_cots_results.labeled_cots_by_qid))
+print(len(unb_cots_eval_results.labeled_cots_by_qid))
 
 unb_cot_labels = [
     cot.justified_answer
-    for cots in unb_cots_results.labeled_cots_by_qid.values()
+    for cots in unb_cots_eval_results.labeled_cots_by_qid.values()
     for cot in cots
 ]
 
@@ -66,7 +68,7 @@ unb_cots_accuracy = [
             for cot in cots
         ]
     )
-    for q_id, cots in unb_cots_results.labeled_cots_by_qid.items()
+    for q_id, cots in unb_cots_eval_results.labeled_cots_by_qid.items()
 ]
 plot_accuracy_histogram(
     unb_cots_accuracy,
@@ -90,13 +92,13 @@ plot_accuracy_heatmap(
 
 # %%
 with open(bia_cots_eval_dir / file_name, "rb") as f:
-    bia_cots_results = pickle.load(f)
+    bia_cots_eval_results = pickle.load(f)
 
-print(len(bia_cots_results.labeled_cots_by_qid))
+print(len(bia_cots_eval_results.labeled_cots_by_qid))
 
 bia_cot_labels = [
     cot.justified_answer
-    for cots in bia_cots_results.labeled_cots_by_qid.values()
+    for cots in bia_cots_eval_results.labeled_cots_by_qid.values()
     for cot in cots
 ]
 
@@ -112,7 +114,7 @@ bia_cots_accuracy = [
             for cot in cots
         ]
     )
-    for q_id, cots in bia_cots_results.labeled_cots_by_qid.items()
+    for q_id, cots in bia_cots_eval_results.labeled_cots_by_qid.items()
 ]
 plot_accuracy_histogram(
     bia_cots_accuracy,
