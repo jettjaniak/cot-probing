@@ -120,6 +120,7 @@ def generate_bia_cots_chat(
         with open(output_path, "rb") as f:
             results: BiasedCotGeneration = pickle.load(f)
         logging.warning(f"Loaded existing results from {output_path}")
+        # TODO: check things are the same
     else:
         results = BiasedCotGeneration(
             cots_by_qid={},
@@ -155,11 +156,18 @@ def generate_bia_cots_chat(
         pickle.dump(results, f)
 
 
+MODELS_MAP = {
+    "G": "google/gemma-2-2b-it",
+    "L": "meta-llama/Llama-3.2-3B-Instruct",
+}
+
+
 def main(args: argparse.Namespace):
-    assert is_chat_model(args.model_id)
+    model_id = MODELS_MAP.get(args.model_id, args.model_id)
+    assert is_chat_model(model_id)
     logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING)
 
-    model, tokenizer = load_any_model_and_tokenizer(args.model_id)
+    model, tokenizer = load_any_model_and_tokenizer(model_id)
 
     questions_dir = DATA_DIR / "questions"
     unb_cots_eval_dir = DATA_DIR / "unb-cots-eval"
@@ -168,7 +176,7 @@ def main(args: argparse.Namespace):
     with open(questions_dir / f"{args.dataset_id}.pkl", "rb") as f:
         questions_dataset: dict[str, Question] = pickle.load(f)
 
-    model_name = args.model_id.split("/")[-1]
+    model_name = model_id.split("/")[-1]
 
     with open(unb_cots_eval_dir / f"{model_name}_{args.dataset_id}.pkl", "rb") as f:
         labeled_cots: LabeledCoTs = pickle.load(f)
