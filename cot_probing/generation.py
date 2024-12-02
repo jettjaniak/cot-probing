@@ -232,6 +232,11 @@ def gen_bia_cots(
     )
 
     prompt_toks = bia_fsp_toks + question_toks
+    if verbose:
+        logging.info(
+            f"Generating biased CoTs for prompt:\n{tokenizer.decode(prompt_toks)}\n\n"
+        )
+
     return generate_completions(
         model=model,
         tokenizer=tokenizer,

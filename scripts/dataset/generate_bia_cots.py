@@ -72,6 +72,10 @@ def build_bia_fsps(args: argparse.Namespace) -> tuple[str, str]:
     yes_fsps = "\n\n".join(yes_fsps) + "\n\n"
     no_fsps = "\n\n".join(no_fsps) + "\n\n"
 
+    if args.verbose:
+        logging.info(f"Yes FSP:\n{yes_fsps}\n\n")
+        logging.info(f"No FSP:\n{no_fsps}\n\n")
+
     return yes_fsps, no_fsps
 
 
@@ -83,6 +87,7 @@ def generate_bia_cots(
     bia_no_fsp_toks: list[int],
     args: argparse.Namespace,
     output_path: Path,
+    verbose: bool = False,
 ):
 
     results = BiasedCotGeneration(
@@ -105,7 +110,7 @@ def generate_bia_cots(
                 bia_yes_fsp_toks if q.expected_answer == "no" else bia_no_fsp_toks
             ),
             args=args,
-            verbose=args.verbose,
+            verbose=verbose,
         )
 
         if len(results.cots_by_qid) % args.save_every == 0:
@@ -142,6 +147,7 @@ def main(args: argparse.Namespace):
         bia_no_fsp_toks=no_fsp_toks,
         args=args,
         output_path=output_path,
+        verbose=args.verbose,
     )
 
 
