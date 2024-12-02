@@ -47,6 +47,7 @@ def parse_args():
         "--max-new-tokens",
         type=int,
         help="Maximum number of new tokens to generate",
+        # TODO: tune this number to ~99th percentile
         default=2_000,
     )
     parser.add_argument(
