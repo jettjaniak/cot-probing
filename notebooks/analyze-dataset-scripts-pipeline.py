@@ -95,7 +95,9 @@ with open(bia_cots_eval_dir / file_name, "rb") as f:
 print(len(bia_cots_results.labeled_cots_by_qid))
 
 bia_cot_labels = [
-    cot.label for cots in bia_cots_results.labeled_cots_by_qid.values() for cot in cots
+    cot.justified_answer
+    for cots in bia_cots_results.labeled_cots_by_qid.values()
+    for cot in cots
 ]
 
 plot_binary_histogram(
@@ -104,8 +106,13 @@ plot_binary_histogram(
 )
 
 bia_cots_accuracy = [
-    np.mean([1 if cot.label == "correct" else 0 for cot in cots])
-    for cots in bia_cots_results.labeled_cots_by_qid.values()
+    np.mean(
+        [
+            1 if cot.justified_answer == questions_dataset[q_id].expected_answer else 0
+            for cot in cots
+        ]
+    )
+    for q_id, cots in bia_cots_results.labeled_cots_by_qid.items()
 ]
 plot_accuracy_histogram(
     bia_cots_accuracy,
