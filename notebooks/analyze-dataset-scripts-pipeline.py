@@ -7,6 +7,7 @@ import numpy as np
 from cot_probing import DATA_DIR
 from cot_probing.qs_generation import Question
 from cot_probing.plots import (
+    plot_accuracy_difference_histogram,
     plot_accuracy_histogram,
     plot_binary_histogram,
     plot_triple_histogram,
@@ -71,6 +72,13 @@ plot_accuracy_histogram(
     f"Average accuracy of unbiased COTs per question\n{model_name} on {dataset_id} (total qs: {len(unb_cots_accuracy)})",
 )
 
+plot_accuracy_difference_histogram(
+    unb_cots_accuracy,
+    list(no_cot_acc_results.acc_by_qid.values()),
+    f"Accuracy Difference: Unbiased vs No-CoT\n{model_name} on {dataset_id}",
+    labels=["Unbiased", "No-CoT"],
+)
+
 # %%
 with open(bia_cots_eval_dir / file_name, "rb") as f:
     bia_cots_results = pickle.load(f)
@@ -93,6 +101,20 @@ bia_cots_accuracy = [
 plot_accuracy_histogram(
     bia_cots_accuracy,
     f"Average accuracy of biased COTs per question\n{model_name} on {dataset_id} (total qs: {len(bia_cots_accuracy)})",
+)
+
+plot_accuracy_difference_histogram(
+    bia_cots_accuracy,
+    list(no_cot_acc_results.acc_by_qid.values()),
+    f"Accuracy Difference: Biased vs No-CoT\n{model_name} on {dataset_id}",
+    labels=["Biased", "No-CoT"],
+)
+
+plot_accuracy_difference_histogram(
+    unb_cots_accuracy,
+    bia_cots_accuracy,
+    f"Accuracy Difference: Unbiased vs Biased\n{model_name} on {dataset_id}",
+    labels=["Unbiased", "Biased"],
 )
 
 # %%
