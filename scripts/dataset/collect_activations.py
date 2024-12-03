@@ -83,7 +83,7 @@ def get_last_q_toks_to_cache(
 
     for cot in bia_cots:
         cot_str = tokenizer.decode(cot)
-        assert "Question: " not in cot_str
+        assert "Question: " not in cot_str, f"Found 'Question: ' in {cot_str}"
 
     biased_cot_indexes_to_cache = []
     if biased_cots_collection_mode == "one":
