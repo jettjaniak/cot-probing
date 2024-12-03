@@ -73,14 +73,20 @@ def generate_completions(
         if tokenizer.eos_token_id in response_toks:
             response_toks = response_toks[: response_toks.index(tokenizer.eos_token_id)]
 
+        response_str = tokenizer.decode(response_toks)
         if response_toks[-3:] not in [answer_yes_toks, answer_no_toks]:
             logging.warning(
-                f"Generated completion does not end in 'Answer: Yes' or 'Answer: No': `{tokenizer.decode(response_toks)}`"
+                f"Generated completion does not end in 'Answer: Yes' or 'Answer: No': `{response_str}`"
+            )
+            continue
+
+        if "Question: " in response_str:
+            logging.warning(
+                f"Generated completion contains 'Question: ': `{response_str}`"
             )
             continue
 
         if verbose:
-            response_str = tokenizer.decode(response_toks)
             logging.info(f"Generated completion: `{response_str}`")
 
         # drop "\nAnswer: Yes/No"
