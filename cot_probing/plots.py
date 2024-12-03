@@ -1,3 +1,5 @@
+import random
+
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -11,6 +13,12 @@ def plot_accuracy_histogram(accuracies, title, color="orange"):
         color="red",
         linestyle="--",
         label=f"Median: {np.median(accuracies):.2f}",
+    )
+    plt.axvline(
+        x=np.mean(accuracies),
+        color="blue",
+        linestyle="--",
+        label=f"Mean: {np.mean(accuracies):.2f}",
     )
     plt.title(title)
     plt.xlabel("Accuracy")
@@ -67,7 +75,11 @@ def plot_accuracy_difference_histogram(
     """
     if accuracies1_by_qid.keys() != accuracies2_by_qid.keys():
         # Take intersection of keys
+        print(f"Warning: Keys are not the same. Taking intersection.")
         common_keys = set(accuracies1_by_qid.keys()) & set(accuracies2_by_qid.keys())
+        print(f"Common keys: {len(common_keys)}")
+        print(f"Set 1 keys: {len(accuracies1_by_qid.keys())}")
+        print(f"Set 2 keys: {len(accuracies2_by_qid.keys())}")
         accuracies1_by_qid = {k: accuracies1_by_qid[k] for k in common_keys}
         accuracies2_by_qid = {k: accuracies2_by_qid[k] for k in common_keys}
 
@@ -75,6 +87,13 @@ def plot_accuracy_difference_histogram(
         accuracies1_by_qid[q_id] - accuracies2_by_qid[q_id]
         for q_id in accuracies1_by_qid.keys()
     ]
+
+    # Print 10 random differences:
+    # for q_id in random.sample(list(accuracies1_by_qid.keys()), 10):
+    #     print(
+    #         f"QID: {q_id} - Acc1: {accuracies1_by_qid[q_id]} - Acc2: {accuracies2_by_qid[q_id]} - Diff: {accuracies1_by_qid[q_id] - accuracies2_by_qid[q_id]}"
+    #     )
+
     median_diff = np.median(differences)
     print(f"Median difference: {median_diff}")
 
@@ -104,6 +123,12 @@ def plot_accuracy_difference_histogram(
         color="red",
         linestyle="--",
         label=f"Median diff: {median_diff:.2f}",
+    )
+    plt.axvline(
+        x=mean_diff,
+        color="blue",
+        linestyle="--",
+        label=f"Mean diff: {mean_diff:.2f}",
     )
     plt.title(title)
     plt.xlabel(f"Accuracy Difference ({labels[0]} - {labels[1]})")

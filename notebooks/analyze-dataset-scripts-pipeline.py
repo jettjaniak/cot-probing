@@ -29,8 +29,8 @@ labeled_qs_dir = DATA_DIR / "labeled-qs"
 
 # %%
 
-full_model_name = "google/gemma-2-2b-it"
-model_name = "gemma-2-2b-it"
+full_model_name = "meta-llama/Llama-3.1-8B"
+model_name = "Llama-3.1-8B"
 dataset_id = "gpt-4o-oct28-1156" # "strategyqa" or "gpt-4o-oct28-1156"
 file_name = f"{model_name}_{dataset_id}.pkl"
 
@@ -77,7 +77,6 @@ unb_cots_accuracy_by_qid = {
         ]
     )
     for q_id, cots in unb_cots_eval_results.labeled_cots_by_qid.items()
-    if questions_dataset[q_id].expected_answer == "no"
 }
 
 plot_accuracy_histogram(
@@ -86,9 +85,9 @@ plot_accuracy_histogram(
 )
 
 plot_accuracy_difference_histogram(
-    no_cot_acc_results.acc_by_qid,
     unb_cots_accuracy_by_qid,
-    f"Accuracy Difference: Unbiased vs No-CoT\n{model_name} on {dataset_id}",
+    no_cot_acc_results.acc_by_qid,    
+    f"Accuracy Difference: Unbiased - No-CoT\n{model_name} on {dataset_id}",
     labels=["No-CoT", "Unbiased"],
 )
 
@@ -125,7 +124,6 @@ bia_cots_accuracy_by_qid = {
         ]
     )
     for q_id, cots in bia_cots_eval_results.labeled_cots_by_qid.items()
-    if questions_dataset[q_id].expected_answer == "no"
 }
 
 plot_accuracy_histogram(
@@ -134,16 +132,16 @@ plot_accuracy_histogram(
 )
 
 plot_accuracy_difference_histogram(
-    no_cot_acc_results.acc_by_qid,
     bia_cots_accuracy_by_qid,
-    f"Accuracy Difference: Biased vs No-CoT\n{model_name} on {dataset_id}",
+    no_cot_acc_results.acc_by_qid,
+    f"Accuracy Difference: Biased - No-CoT\n{model_name} on {dataset_id}",
     labels=["Biased", "No-CoT"],
 )
 
 plot_accuracy_difference_histogram(
-    unb_cots_accuracy_by_qid,
     bia_cots_accuracy_by_qid,
-    f"Accuracy Difference: Unbiased vs Biased\n{model_name} on {dataset_id}",
+    unb_cots_accuracy_by_qid,
+    f"Accuracy Difference: Biased Unbiased\n{model_name} on {dataset_id}",
     labels=["Unbiased", "Biased"],
 )
 
@@ -151,8 +149,8 @@ plot_accuracy_difference_histogram(
 plot_accuracy_heatmap(
     no_cot_acc_results.acc_by_qid,
     bia_cots_accuracy_by_qid,
-    f"Question Difficulty vs Biased CoT Accuracy\n{model_name} on {dataset_id}",
-    "No-CoT Accuracy (Question Difficulty)",
+    f"No-CoT Accuracy vs Biased CoT Accuracy\n{model_name} on {dataset_id}",
+    "No-CoT Accuracy",
     "Biased CoT Accuracy",
 )
 
