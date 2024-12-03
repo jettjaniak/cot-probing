@@ -141,7 +141,7 @@ plot_accuracy_difference_histogram(
 plot_accuracy_difference_histogram(
     bia_cots_accuracy_by_qid,
     unb_cots_accuracy_by_qid,
-    f"Accuracy Difference: Biased Unbiased\n{model_name} on {dataset_id}",
+    f"Accuracy Difference: Biased - Unbiased\n{model_name} on {dataset_id}",
     labels=["Unbiased", "Biased"],
 )
 
