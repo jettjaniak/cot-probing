@@ -168,12 +168,13 @@ def collect_activations_for_question(
     }
 
 
-def get_layer_file_path(output_file_stem: str, layer: int) -> str:
-    raise NotImplementedError
-    return f"activations/acts_L{layer:02d}_{output_file_stem}.pkl"
+def get_layer_file_path(output_dir: Path, output_file_stem: str, layer: int) -> Path:
+    return output_dir / f"acts_L{layer:02d}_{output_file_stem}.pkl"
 
 
-def load_existing_results(output_file_stem: str, layers: list[int]) -> tuple[dict, int]:
+def load_existing_results(
+    output_dir: Path, output_file_stem: str, layers: list[int]
+) -> tuple[dict, int]:
     """
     Loads existing results for all layers and returns them along with the last consistent index.
     Returns (layer_results, last_processed_index)
@@ -182,7 +183,7 @@ def load_existing_results(output_file_stem: str, layers: list[int]) -> tuple[dic
     last_indices = []
 
     for layer in layers:
-        layer_file = get_layer_file_path(output_file_stem, layer)
+        layer_file = get_layer_file_path(output_dir, output_file_stem, layer)
         print(f"Looking to load layer {layer} from {layer_file}")
         if os.path.exists(layer_file):
             try:
@@ -243,7 +244,9 @@ def collect_activations(
     biased_yes_fsp_cache = build_fsp_toks_cache(model, tokenizer, bia_yes_fsp_toks)
 
     # Load existing results and get last processed index in one pass
-    layer_results, start_idx = load_existing_results(output_file_stem, layers)
+    layer_results, start_idx = load_existing_results(
+        output_dir, output_file_stem, layers
+    )
 
     q_ids_to_process = list(bia_cots_results.cots_by_qid.keys())
 
