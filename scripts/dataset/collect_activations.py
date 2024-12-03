@@ -7,7 +7,7 @@ import pickle
 import random
 from pathlib import Path
 
-from tqdm.auto import tqdm
+from tqdm import tqdm
 from transformers import PreTrainedModel, PreTrainedTokenizerBase
 
 from cot_probing import DATA_DIR
