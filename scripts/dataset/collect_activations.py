@@ -1,42 +1,36 @@
 #!/usr/bin/env python3
 import argparse
 import copy
-import json
 import logging
 import os
 import pickle
 import random
 from pathlib import Path
 
-import torch
 from tqdm.auto import tqdm
 from transformers import PreTrainedModel, PreTrainedTokenizerBase
 
 from cot_probing import DATA_DIR
 from cot_probing.activations import (
-    build_fsp_cache,
     build_fsp_toks_cache,
     collect_resid_acts_no_pastkv,
     collect_resid_acts_with_pastkv,
 )
-from cot_probing.data.qs_evaluation import LabeledQuestions
-from cot_probing.generation import (
-    BiasedCotGeneration,
-    LabeledCot,
-    UnbiasedCotGeneration,
-)
+from cot_probing.cot_evaluation import LabeledCoTs
+from cot_probing.generation import BiasedCotGeneration, UnbiasedCotGeneration
 from cot_probing.qs_generation import Question
 from cot_probing.typing import *
-from cot_probing.utils import load_model_and_tokenizer
+from cot_probing.utils import load_any_model_and_tokenizer
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Collect activations from a model")
+    parser.add_argument("-d", "--dataset-id", type=str, default="strategyqa")
     parser.add_argument(
-        "-f",
-        "--file",
+        "-m",
+        "--model-id",
         type=str,
-        help="Path to the dataset of questions",
+        default="hugging-quants/Meta-Llama-3.1-8B-BNB-NF4-BF16",
     )
     parser.add_argument(
         "-l",
@@ -74,9 +68,7 @@ def parse_args():
 def get_last_q_toks_to_cache(
     tokenizer: PreTrainedTokenizerBase,
     question: str,
-    expected_answer: Literal["yes", "no"],
-    biased_labeled_cots: list[LabeledCot],
-    biased_cot_label: Literal["faithful", "unfaithful"],
+    bia_cots: list[list[int]],
     biased_cots_collection_mode: Literal["none", "one", "all"],
     fsp_context: Literal["biased-fsp", "unbiased-fsp", "no-fsp"],
 ):
@@ -89,52 +81,20 @@ def get_last_q_toks_to_cache(
         # Don't collect activations for biased COTs
         return [question_toks]
 
-    biased_cot_expected_state = None
-    if biased_cot_label == "faithful":
-        biased_cot_expected_state = "correct"
-    elif biased_cot_label == "unfaithful":
-        biased_cot_expected_state = "incorrect"
-
-    # Keep only the COTs that have the answer we expect based on the biased cot label
-    biased_cots = [
-        item.cot
-        for item in biased_labeled_cots
-        if item.label == biased_cot_expected_state
-    ]
-
-    assert (
-        len(biased_cots) > 0
-    ), f"No biased COTs found that match the biased CoT label {biased_cot_label}"
-
-    for cot in biased_cots:
+    for cot in bia_cots:
         cot_str = tokenizer.decode(cot)
         assert "Question: " not in cot_str
-
-    # Decide the answer token to cache based on the biased cot answer
-    answer_yes_toks = tokenizer.encode("Answer: Yes", add_special_tokens=False)
-    answer_no_toks = tokenizer.encode("Answer: No", add_special_tokens=False)
-    if biased_cot_expected_state == "correct":
-        if expected_answer == "yes":
-            answer_toks = answer_yes_toks
-        else:
-            answer_toks = answer_no_toks
-    else:
-        if expected_answer == "yes":
-            answer_toks = answer_no_toks
-        else:
-            answer_toks = answer_yes_toks
 
     biased_cot_indexes_to_cache = []
     if biased_cots_collection_mode == "one":
         # Pick one random biased COT
-        biased_cot_indexes_to_cache = [random.randint(0, len(biased_cots) - 1)]
+        biased_cot_indexes_to_cache = [random.randint(0, len(bia_cots) - 1)]
     elif biased_cots_collection_mode == "all":
         # Collect activations for all biased COTs
-        biased_cot_indexes_to_cache = list(range(len(biased_cots)))
+        biased_cot_indexes_to_cache = list(range(len(bia_cots)))
 
     input_ids_to_cache = [
-        question_toks + biased_cots[i] + answer_toks
-        for i in biased_cot_indexes_to_cache
+        question_toks + bia_cots[cot_idx] for cot_idx in biased_cot_indexes_to_cache
     ]
 
     return input_ids_to_cache
@@ -144,9 +104,8 @@ def collect_activations_for_question(
     model: PreTrainedModel,
     tokenizer: PreTrainedTokenizerBase,
     q: Question,
-    biased_cots: list[LabeledCot],
-    biased_cot_label: Literal["faithful", "unfaithful"],
     layers: list[int],
+    bia_cots: list[list[int]],
     unbiased_fsp_cache: tuple,
     biased_no_fsp_cache: tuple,
     biased_yes_fsp_cache: tuple,
@@ -161,9 +120,7 @@ def collect_activations_for_question(
     last_q_toks_to_cache = get_last_q_toks_to_cache(
         tokenizer=tokenizer,
         question=question,
-        expected_answer=expected_answer,
-        biased_labeled_cots=biased_cots,
-        biased_cot_label=biased_cot_label,
+        bia_cots=bia_cots,
         biased_cots_collection_mode=biased_cots_collection_mode,
         fsp_context=fsp_context,
     )
@@ -206,13 +163,13 @@ def collect_activations_for_question(
     return {
         "question": question,
         "expected_answer": expected_answer,
-        "biased_cot_label": biased_cot_label,
         "biased_cots_tokens_to_cache": last_q_toks_to_cache,
         "cached_acts": resid_acts,
     }
 
 
 def get_layer_file_path(output_file_stem: str, layer: int) -> str:
+    raise NotImplementedError
     return f"activations/acts_L{layer:02d}_{output_file_stem}.pkl"
 
 
@@ -265,36 +222,30 @@ def collect_activations(
     model: PreTrainedModel,
     tokenizer: PreTrainedTokenizerBase,
     qs_dataset: dict[str, Question],
-    labeled_qs_dataset: LabeledQuestions,
     unb_cots_results: UnbiasedCotGeneration,
     bia_cots_results: BiasedCotGeneration,
+    bia_cots_eval_results: LabeledCoTs,
     layers: list[int],
-    output_file_stem: str,
     biased_cots_collection_mode: Literal["none", "one", "all"],
     args: argparse.Namespace,
+    output_file_stem: str,
+    output_dir: Path,
 ):
-    model_size = 8 if "8B" in bia_cots_results.model else 70
-
-    unbiased_fsp = unb_cots_results.unb_fsp_toks
-    biased_no_fsp = bia_cots_results.bia_no_fsp_toks
-    biased_yes_fsp = bia_cots_results.bia_yes_fsp_toks
+    unb_fsp_toks = unb_cots_results.unb_fsp_toks
+    bia_no_fsp_toks = bia_cots_results.bia_no_fsp  # Should be list[int]
+    assert isinstance(bia_no_fsp_toks, list)
+    bia_yes_fsp_toks = bia_cots_results.bia_yes_fsp  # Should be list[int]
+    assert isinstance(bia_yes_fsp_toks, list)
 
     # Pre-cache FSP activations
-    biased_no_fsp_cache = build_fsp_toks_cache(model, tokenizer, biased_no_fsp)
-    biased_yes_fsp_cache = build_fsp_toks_cache(model, tokenizer, biased_yes_fsp)
-    unbiased_fsp_cache = build_fsp_toks_cache(model, tokenizer, unbiased_fsp)
-
-    # Create output directory if it doesn't exist
-    os.makedirs("activations", exist_ok=True)
+    unbiased_fsp_cache = build_fsp_toks_cache(model, tokenizer, unb_fsp_toks)
+    biased_no_fsp_cache = build_fsp_toks_cache(model, tokenizer, bia_no_fsp_toks)
+    biased_yes_fsp_cache = build_fsp_toks_cache(model, tokenizer, bia_yes_fsp_toks)
 
     # Load existing results and get last processed index in one pass
     layer_results, start_idx = load_existing_results(output_file_stem, layers)
 
-    q_ids_to_process = [
-        q_id
-        for q_id, label in labeled_qs_dataset.label_by_qid.items()
-        if label in ["faithful", "unfaithful"]
-    ]
+    q_ids_to_process = list(bia_cots_results.cots_by_qid.keys())
 
     # Create progress bar for remaining questions
     remaining_q_ids = q_ids_to_process[start_idx:]
@@ -305,15 +256,11 @@ def collect_activations(
 
     try:
         for idx, q_id in tqdm(enumerate(remaining_q_ids), "Processing questions"):
-            assert q_id in bia_cots_results.cots_by_qid
-            assert labeled_qs_dataset.label_by_qid[q_id] in ["faithful", "unfaithful"]
-
             res = collect_activations_for_question(
                 model=model,
                 tokenizer=tokenizer,
                 q=qs_dataset[q_id],
-                biased_cots=bia_cots_results.cots_by_qid[q_id],
-                biased_cot_label=labeled_qs_dataset.label_by_qid[q_id],
+                bia_cots=bia_cots_results.cots_by_qid[q_id],
                 layers=layers,
                 unbiased_fsp_cache=unbiased_fsp_cache,
                 biased_no_fsp_cache=biased_no_fsp_cache,
@@ -347,10 +294,9 @@ def collect_activations(
                 save_layer_results(
                     layer_results=layer_results,
                     layers=layers,
-                    unbiased_fsp=unbiased_fsp,
-                    biased_no_fsp=biased_no_fsp,
-                    biased_yes_fsp=biased_yes_fsp,
-                    model_size=model_size,
+                    unbiased_fsp=unb_fsp_toks,
+                    biased_no_fsp=bia_no_fsp_toks,
+                    biased_yes_fsp=bia_yes_fsp_toks,
                     args=args,
                     output_file_stem=output_file_stem,
                 )
@@ -368,10 +314,9 @@ def collect_activations(
         save_layer_results(
             layer_results=layer_results,
             layers=layers,
-            unbiased_fsp=unbiased_fsp,
-            biased_no_fsp=biased_no_fsp,
-            biased_yes_fsp=biased_yes_fsp,
-            model_size=model_size,
+            unbiased_fsp=unb_fsp_toks,
+            biased_no_fsp=bia_no_fsp_toks,
+            biased_yes_fsp=bia_yes_fsp_toks,
             args=args,
             output_file_stem=output_file_stem,
         )
@@ -379,14 +324,13 @@ def collect_activations(
 
 
 def save_layer_results(
-    layer_results,
-    layers,
-    unbiased_fsp,
-    biased_no_fsp,
-    biased_yes_fsp,
-    model_size,
-    args,
-    output_file_stem,
+    layer_results: dict[int, dict],
+    layers: list[int],
+    unbiased_fsp: list[int],
+    biased_no_fsp: list[int],
+    biased_yes_fsp: list[int],
+    args: argparse.Namespace,
+    output_file_stem: str,
 ):
     """Helper function to save results for all layers"""
     for layer in layers:
@@ -396,7 +340,6 @@ def save_layer_results(
             "biased_no_fsp": biased_no_fsp,
             "biased_yes_fsp": biased_yes_fsp,
             "qs": layer_results[layer],
-            "arg_model_size": model_size,
             **{f"arg_{k}": v for k, v in vars(args).items() if k not in skip_args},
         }
 
@@ -408,52 +351,55 @@ def save_layer_results(
 def main(args: argparse.Namespace):
     logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING)
 
-    dataset_path = Path(args.file)
-    assert dataset_path.exists()
-    with open(dataset_path, "rb") as f:
-        question_dataset = pickle.load(f)
+    model, tokenizer = load_any_model_and_tokenizer(args.model_id)
 
-    dataset_identifier = dataset_path.stem.split("_")[-1]
+    questions_dir = DATA_DIR / "questions"
+    unb_cots_dir = DATA_DIR / "unb-cots"
+    bia_cots_dir = DATA_DIR / "bia-cots"
+    bia_cots_eval_dir = DATA_DIR / "bia-cots-eval"
+    activations_dir = Path("activations")
 
-    # Load labeled questions dataset
-    with open(DATA_DIR / f"labeled_qs_{dataset_identifier}.pkl", "rb") as f:
-        labeled_qs_dataset: LabeledQuestions = pickle.load(f)
+    model_name = args.model_id.split("/")[-1]
+    output_name = f"{model_name}_{args.dataset_id}"
+    output_dir = activations_dir / output_name
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Load the biased COTs results
-    with open(DATA_DIR / f"unb-cots_{dataset_identifier}.pkl", "rb") as f:
+    with open(questions_dir / f"{args.dataset_id}.pkl", "rb") as f:
+        questions_dataset: dict[str, Question] = pickle.load(f)
+
+    with open(unb_cots_dir / f"{output_name}.pkl", "rb") as f:
         unb_cots_results: UnbiasedCotGeneration = pickle.load(f)
-    with open(DATA_DIR / f"bia-cots_{dataset_identifier}.pkl", "rb") as f:
+
+    with open(bia_cots_dir / f"{output_name}.pkl", "rb") as f:
         bia_cots_results: BiasedCotGeneration = pickle.load(f)
 
-    model_size = 8 if "8B" in bia_cots_results.model else 70
-    model, tokenizer = load_model_and_tokenizer(model_size)
+    with open(bia_cots_eval_dir / f"{output_name}.pkl", "rb") as f:
+        bia_cots_eval_results: LabeledCoTs = pickle.load(f)
 
     if args.layers:
         layers = [int(l) for l in args.layers.split(",")]
     else:
         layers = list(range(model.config.num_hidden_layers + 1))
 
-    output_file_stem = dataset_path.stem.replace("labeled_qs_", "").replace(
-        "with-unbiased-cots-", ""
-    )
     if args.context == "no-fsp":
-        output_file_stem = "no-fsp_" + output_file_stem
+        output_file_stem = "no-fsp"
     elif args.context == "unbiased-fsp":
-        output_file_stem = "unbiased-fsp_" + output_file_stem
+        output_file_stem = "unbiased-fsp"
     elif args.context == "biased-fsp":
-        output_file_stem = "biased-fsp_" + output_file_stem
+        output_file_stem = "biased-fsp"
 
     collect_activations(
         model=model,
         tokenizer=tokenizer,
-        qs_dataset=question_dataset,
-        labeled_qs_dataset=labeled_qs_dataset,
+        qs_dataset=questions_dataset,
         unb_cots_results=unb_cots_results,
         bia_cots_results=bia_cots_results,
+        bia_cots_eval_results=bia_cots_eval_results,
         layers=layers,
-        output_file_stem=output_file_stem,
         biased_cots_collection_mode=args.biased_cots_collection_mode,
         args=args,
+        output_file_stem=output_file_stem,
+        output_dir=output_dir,
     )
 
 
