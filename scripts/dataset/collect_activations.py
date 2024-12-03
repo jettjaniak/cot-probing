@@ -302,6 +302,7 @@ def collect_activations(
                     biased_yes_fsp=bia_yes_fsp_toks,
                     args=args,
                     output_file_stem=output_file_stem,
+                    output_dir=output_dir,
                 )
 
     except KeyboardInterrupt:
@@ -322,6 +323,7 @@ def collect_activations(
             biased_yes_fsp=bia_yes_fsp_toks,
             args=args,
             output_file_stem=output_file_stem,
+            output_dir=output_dir,
         )
         raise  # Re-raise the interrupt to exit the program
 
@@ -334,6 +336,7 @@ def save_layer_results(
     biased_yes_fsp: list[int],
     args: argparse.Namespace,
     output_file_stem: str,
+    output_dir: Path,
 ):
     """Helper function to save results for all layers"""
     for layer in layers:
@@ -346,7 +349,7 @@ def save_layer_results(
             **{f"arg_{k}": v for k, v in vars(args).items() if k not in skip_args},
         }
 
-        layer_file = get_layer_file_path(output_file_stem, layer)
+        layer_file = get_layer_file_path(output_dir, output_file_stem, layer)
         with open(layer_file, "wb") as f:
             pickle.dump(layer_output, f)
 
