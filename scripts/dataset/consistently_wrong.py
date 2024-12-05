@@ -117,21 +117,40 @@ def display_interface(
                         pass  # Ignore if we try to write beyond screen bounds
                     y_pos += 1
 
-        if re_evaluated_justified_answer is not None:
-            assert re_evaluated_raw_openai_answer is not None
+            if re_evaluated_justified_answer is None:
+                y_pos += 1
+                stdscr.addstr(
+                    y_pos,
+                    0,
+                    f"Justified answer: ",
+                    curses.A_BOLD,
+                )
+                stdscr.addstr(
+                    wrong_cots[current_cot_idx].justified_answer,
+                )
 
-            stdscr.addstr(
-                y_pos + 1,
-                0,
-                f"Justified answer: {re_evaluated_justified_answer}",
-                curses.A_BOLD,
-            )
-            stdscr.addstr(
-                y_pos + 2,
-                0,
-                f"Raw OpenAI answer: {re_evaluated_raw_openai_answer}",
-                curses.A_BOLD,
-            )
+            else:
+                assert re_evaluated_raw_openai_answer is not None
+                y_pos += 1
+                stdscr.addstr(
+                    y_pos,
+                    0,
+                    f"(Re-evaluated) Justified answer: ",
+                    curses.A_BOLD,
+                )
+                stdscr.addstr(
+                    re_evaluated_justified_answer,
+                )
+                y_pos += 1
+                stdscr.addstr(
+                    y_pos,
+                    0,
+                    f"Raw OpenAI answer: ",
+                    curses.A_BOLD,
+                )
+                stdscr.addstr(
+                    re_evaluated_raw_openai_answer,
+                )
 
         # Display instructions
         stdscr.addstr(max_y - 2, 0, "Controls: ", curses.A_BOLD)
