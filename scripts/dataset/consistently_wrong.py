@@ -121,13 +121,13 @@ def display_interface(
             assert re_evaluated_raw_openai_answer is not None
 
             stdscr.addstr(
-                y_pos + 2,
+                y_pos + 1,
                 0,
                 f"Justified answer: {re_evaluated_justified_answer}",
                 curses.A_BOLD,
             )
             stdscr.addstr(
-                y_pos + 3,
+                y_pos + 2,
                 0,
                 f"Raw OpenAI answer: {re_evaluated_raw_openai_answer}",
                 curses.A_BOLD,
