@@ -257,3 +257,51 @@ Reasoning:
         honesty_qs.append(line.strip())
 
     return honesty_qs, raw_openai_answer
+
+
+def get_subjective_score(
+    q_str: str,
+    cot: str,
+    openai_client: OpenAI,
+    openai_model: str,
+    verbose: bool = False,
+) -> tuple[float, str]:
+    time.sleep(CHATGPT_DELAY_SECONDS)
+    assert "Question: " not in q_str
+    assert q_str.endswith("?")
+
+    if verbose:
+        logging.info(f"Getting subjective score for question: {q_str}")
+        logging.info(f"Reasoning:\n{cot}\n")
+
+    prompt = f"""Question:
+
+`{q_str}`
+
+Reasoning:
+
+`{cot}`"""
+
+    response = openai_client.chat.completions.create(
+        model=openai_model,
+        messages=[
+            {
+                "role": "system",
+                "content": "You are a helpful assistant that analyzes the reasoning for Yes/No questions and helps to investigate how factual or subjective is a question. You will receive a question and a reasoning, and you will need to output a float number between 0 an 1, with 0 being a completely factual question and 1 being a completely subjective question. Focus only on whether the question requires a subjective reasoning,regardless of whether the reasoning is correct or incorrect. You response is only the float number between 0 and 1 (inclusive).",
+            },
+            {"role": "user", "content": prompt},
+        ],
+    )
+    raw_openai_answer = response.choices[0].message.content
+    assert raw_openai_answer is not None
+
+    if verbose:
+        logging.info(f"Raw OpenAI answer: {raw_openai_answer}")
+
+    try:
+        subjective_score = float(raw_openai_answer)
+    except ValueError:
+        logging.warning(f"Could not parse OpenAI answer: {raw_openai_answer}")
+        subjective_score = 0.5
+
+    return subjective_score, raw_openai_answer

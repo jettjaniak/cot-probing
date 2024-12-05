@@ -11,6 +11,7 @@ from cot_probing.cot_evaluation import (
     LabeledCoTs,
     get_honesty_questions,
     get_justified_answer,
+    get_subjective_score,
 )
 from cot_probing.qs_evaluation import NoCotAccuracy
 from cot_probing.qs_generation import Question
@@ -58,6 +59,7 @@ def display_interface(
     re_evaluated_justified_answer = None
     re_evaluated_raw_openai_answer = None
     honesty_questions = None
+    subjective_score = None
 
     while True:
         stdscr.clear()
@@ -167,10 +169,20 @@ def display_interface(
                 )
                 stdscr.addstr("\n".join(honesty_questions))
 
+            if subjective_score is not None:
+                y_pos += 1
+                stdscr.addstr(
+                    y_pos,
+                    0,
+                    f"Subjective score: ",
+                    curses.A_BOLD,
+                )
+                stdscr.addstr(str(subjective_score))
+
         # Display instructions
         stdscr.addstr(max_y - 2, 0, "Controls: ", curses.A_BOLD)
         stdscr.addstr(
-            "← → (navigate CoTs) | ↑ ↓ (navigate questions) | e (re-eval just. ans.) | h (eval honest.) | q (quit)",
+            "← → (navigate CoTs) | ↑ ↓ (navigate questions) | e (re-eval just. ans.) | h (eval honest.) | s (eval subjective) | q (quit)",
             curses.color_pair(2),
         )
 
@@ -185,23 +197,27 @@ def display_interface(
             re_evaluated_justified_answer = None
             re_evaluated_raw_openai_answer = None
             honesty_questions = None
+            subjective_score = None
         elif key == curses.KEY_LEFT and wrong_cots:
             current_cot_idx = (current_cot_idx - 1) % len(wrong_cots)
             re_evaluated_justified_answer = None
             re_evaluated_raw_openai_answer = None
             honesty_questions = None
+            subjective_score = None
         elif key == curses.KEY_DOWN:
             current_qid_idx = (current_qid_idx + 1) % len(qids)
             current_cot_idx = 0
             re_evaluated_justified_answer = None
             re_evaluated_raw_openai_answer = None
             honesty_questions = None
+            subjective_score = None
         elif key == curses.KEY_UP:
             current_qid_idx = (current_qid_idx - 1) % len(qids)
             current_cot_idx = 0
             re_evaluated_justified_answer = None
             re_evaluated_raw_openai_answer = None
             honesty_questions = None
+            subjective_score = None
         elif key == ord("e") and wrong_cots:
             # Re-evaluate the justified answer
             cot = wrong_cots[current_cot_idx]
@@ -228,9 +244,18 @@ def display_interface(
                 openai_model=labeled_cots.openai_model,
                 verbose=True,
             )
-            with open("asdf.txt", "w") as f:
-                # Write honesty_questions to disk
-                f.write("\n".join(honesty_questions))
+        elif key == ord("s") and wrong_cots:
+            # Re-evaluate the justified answer
+            cot = wrong_cots[current_cot_idx]
+            cot_str = tokenizer.decode(cot.cot)
+            question = qs_dataset[qid]
+            subjective_score, _ = get_subjective_score(
+                q_str=question.question,
+                cot=cot_str,
+                openai_client=openai_client,
+                openai_model=labeled_cots.openai_model,
+                verbose=True,
+            )
 
 
 def main(args: argparse.Namespace):
