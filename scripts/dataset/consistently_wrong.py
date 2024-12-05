@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 import argparse
 import curses
-import logging
+import os
 import pickle
-from typing import Optional
+
+from openai import OpenAI
 
 from cot_probing import DATA_DIR
-from cot_probing.cot_evaluation import LabeledCoTs
+from cot_probing.cot_evaluation import LabeledCoTs, get_justified_answer
 from cot_probing.qs_evaluation import NoCotAccuracy
 from cot_probing.qs_generation import Question
 from cot_probing.typing import *
-from cot_probing.utils import is_chat_model, load_tokenizer, setup_determinism
+from cot_probing.utils import is_chat_model, load_tokenizer
+
+openai_client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
 
 def parse_args():
@@ -48,6 +51,8 @@ def display_interface(
     current_qid_idx = 0
     current_cot_idx = 0
     qids = sorted(consistently_wrong_qids)
+    re_evaluated_justified_answer = None
+    re_evaluated_raw_openai_answer = None
 
     while True:
         stdscr.clear()
@@ -112,10 +117,26 @@ def display_interface(
                         pass  # Ignore if we try to write beyond screen bounds
                     y_pos += 1
 
+        if re_evaluated_justified_answer is not None:
+            assert re_evaluated_raw_openai_answer is not None
+
+            stdscr.addstr(
+                y_pos + 2,
+                0,
+                f"Justified answer: {re_evaluated_justified_answer}",
+                curses.A_BOLD,
+            )
+            stdscr.addstr(
+                y_pos + 3,
+                0,
+                f"Raw OpenAI answer: {re_evaluated_raw_openai_answer}",
+                curses.A_BOLD,
+            )
+
         # Display instructions
         stdscr.addstr(max_y - 2, 0, "Controls: ", curses.A_BOLD)
         stdscr.addstr(
-            "← → (navigate CoTs) | ↑ ↓ (navigate questions) | q (quit)",
+            "← → (navigate CoTs) | ↑ ↓ (navigate questions) | e (re-evaluate) | q (quit)",
             curses.color_pair(2),
         )
 
@@ -127,14 +148,36 @@ def display_interface(
             break
         elif key == curses.KEY_RIGHT and wrong_cots:
             current_cot_idx = (current_cot_idx + 1) % len(wrong_cots)
+            re_evaluated_justified_answer = None
+            re_evaluated_raw_openai_answer = None
         elif key == curses.KEY_LEFT and wrong_cots:
             current_cot_idx = (current_cot_idx - 1) % len(wrong_cots)
+            re_evaluated_justified_answer = None
+            re_evaluated_raw_openai_answer = None
         elif key == curses.KEY_DOWN:
             current_qid_idx = (current_qid_idx + 1) % len(qids)
             current_cot_idx = 0
+            re_evaluated_justified_answer = None
+            re_evaluated_raw_openai_answer = None
         elif key == curses.KEY_UP:
             current_qid_idx = (current_qid_idx - 1) % len(qids)
             current_cot_idx = 0
+            re_evaluated_justified_answer = None
+            re_evaluated_raw_openai_answer = None
+        elif key == ord("e") and wrong_cots:
+            # Re-evaluate the justified answer
+            cot = wrong_cots[current_cot_idx]
+            cot_str = tokenizer.decode(cot.cot)
+            question = qs_dataset[qid]
+            re_evaluated_justified_answer, re_evaluated_raw_openai_answer = (
+                get_justified_answer(
+                    q_str=question.question,
+                    cot=cot_str,
+                    openai_client=openai_client,
+                    openai_model=labeled_cots.openai_model,
+                    verbose=True,
+                )
+            )
 
 
 def main(args: argparse.Namespace):

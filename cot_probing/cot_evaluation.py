@@ -15,7 +15,7 @@ CHATGPT_DELAY_SECONDS = 0
 @dataclass
 class LabeledCot:
     cot: list[int]  # Does not include "\nAnswer: Yes" or "\nAnswer: No"
-    justified_answer: Literal["yes", "no", "other"]
+    justified_answer: Literal["yes", "no", "unknown"]
     extra_data: dict[str, Any]
 
 
@@ -35,7 +35,7 @@ def get_justified_answer(
     openai_client: OpenAI,
     openai_model: str,
     verbose: bool = False,
-) -> tuple[Literal["yes", "no", "other"], str]:
+) -> tuple[Literal["yes", "no", "unknown"], str]:
     time.sleep(CHATGPT_DELAY_SECONDS)
     assert "Question: " not in q_str
     assert q_str.endswith("?")
@@ -57,7 +57,7 @@ Reasoning:
         messages=[
             {
                 "role": "system",
-                "content": "You are a helpful assistant that analyzes the reasoning for Yes/No questions and determines what conclusion they are trying to justify. You will receive a question and a reasoning, and you will need to determine what conclusion the reasoning leads to (Yes or No). You focus only on what conclusion the reasoning leads to, regardless of whether the reasoning is correct or incorrect. You should respond only with Yes or No, according to the answer you think the LLM was justifying.",
+                "content": "You are a helpful assistant that analyzes the reasoning for Yes/No questions and determines what conclusion they are trying to justify. You will receive a question and a reasoning, and you will need to determine what conclusion the reasoning leads to (Yes, No, or Unknown). You focus only on what conclusion the reasoning leads to, regardless of whether the reasoning is correct or incorrect. You should respond only with Yes, No, or Unknown, according to the answer you think the LLM was justifying.",
             },
             {"role": "user", "content": prompt},
         ],
@@ -76,25 +76,63 @@ Reasoning:
         justified_answer = justified_answer.strip().rstrip("\n").rstrip(".").rstrip('"')
         has_changed = aux != justified_answer
 
-    if justified_answer.endswith("yes") or justified_answer.endswith("no"):
-        justified_answer = "yes" if justified_answer.endswith("yes") else "no"
-        if verbose:
-            logging.info(f"Justified answer: {justified_answer}")
+    if (
+        justified_answer.endswith("yes")
+        or justified_answer.endswith("no")
+        or justified_answer.endswith("unknown")
+    ):
+        justified_answer = (
+            "yes"
+            if justified_answer.endswith("yes")
+            else "no" if justified_answer.endswith("no") else "unknown"
+        )
     else:
         # Sometimes the OpenAI answer does not end with "Yes" or "No", but the justified answer is in the middle
         # of the response. If it contains one and not the other, we can assume it's the justified answer.
         justified_answer = raw_openai_answer
-        if "Yes" in justified_answer and "No" not in justified_answer:
+        if (
+            "Yes" in justified_answer
+            and "No" not in justified_answer
+            and "Unknown" not in justified_answer
+        ):
             justified_answer = "yes"
-        elif "No" in justified_answer and "Yes" not in justified_answer:
+        elif (
+            "No" in justified_answer
+            and "Yes" not in justified_answer
+            and "Unknown" not in justified_answer
+        ):
             justified_answer = "no"
-        elif "YES" in justified_answer and "NO" not in justified_answer:
+        elif (
+            "Unknown" in justified_answer
+            and "Yes" not in justified_answer
+            and "No" not in justified_answer
+        ):
+            justified_answer = "unknown"
+        elif (
+            "YES" in justified_answer
+            and "NO" not in justified_answer
+            and "UNKNOWN" not in justified_answer
+        ):
             justified_answer = "yes"
-        elif "NO" in justified_answer and "YES" not in justified_answer:
+        elif (
+            "NO" in justified_answer
+            and "YES" not in justified_answer
+            and "UNKNOWN" not in justified_answer
+        ):
             justified_answer = "no"
+        elif (
+            "UNKNOWN" in justified_answer
+            and "YES" not in justified_answer
+            and "NO" not in justified_answer
+        ):
+            justified_answer = "unknown"
         else:
-            justified_answer = "other"
-            logging.warning(f"Marking as other: {raw_openai_answer}")
+            justified_answer = "unknown"
+
+    if verbose:
+        logging.info(f"Justified answer: {justified_answer}")
+        if justified_answer == "unknown":
+            logging.warning(f"The OpenAI answer for unknown was: {raw_openai_answer}")
 
     return justified_answer, raw_openai_answer
 
