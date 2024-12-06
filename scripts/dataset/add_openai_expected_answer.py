@@ -4,6 +4,7 @@ import logging
 import os
 import pickle
 from pathlib import Path
+from typing import Literal
 
 from openai import OpenAI
 from tqdm import tqdm
@@ -26,6 +27,13 @@ def parse_args():
         help="OpenAI model used to evaluate unbiased CoTs",
     )
     parser.add_argument(
+        "--answer-mode",
+        type=str,
+        default="with-cot",
+        choices=["with-cot", "answer-only"],
+        help="Mode to use to get the expected answer",
+    )
+    parser.add_argument(
         "--save-every",
         type=int,
         help="Save every N questions",
@@ -38,6 +46,7 @@ def parse_args():
 def process_qs(
     questions_dataset: dict[str, Question],
     openai_model: str,
+    answer_mode: Literal["with-cot", "answer-only"],
     output_path: Path,
     verbose: bool = False,
     save_every: int = 50,
@@ -46,18 +55,20 @@ def process_qs(
 
     processed_count = 0
     for q_id, q in tqdm(questions_dataset.items(), desc="Processing questions"):
-        extra_data_key = f"{openai_model}_expected-answer"
+        extra_data_key = f"{openai_model}_expected-answer-{answer_mode}"
         if extra_data_key in q.extra_data:
             continue
 
-        openai_expected_answer, _ = get_openai_expected_answer(
+        openai_expected_answer, raw_openai_answer = get_openai_expected_answer(
             q=q,
             q_id=q_id,
             openai_client=openai_client,
             openai_model=openai_model,
+            answer_mode=answer_mode,
             verbose=verbose,
         )
         q.extra_data[extra_data_key] = openai_expected_answer
+        q.extra_data[f"{extra_data_key}-raw"] = raw_openai_answer
 
         processed_count += 1
 
@@ -80,6 +91,7 @@ def main(args: argparse.Namespace):
     process_qs(
         questions_dataset=questions_dataset,
         openai_model=args.openai_model,
+        answer_mode=args.answer_mode,
         output_path=questions_path,
         verbose=args.verbose,
         save_every=args.save_every,

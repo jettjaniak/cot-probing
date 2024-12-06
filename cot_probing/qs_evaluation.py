@@ -223,6 +223,7 @@ def get_openai_expected_answer(
     q_id: str,
     openai_client: OpenAI,
     openai_model: str,
+    answer_mode: Literal["with-cot", "answer-only"],
     verbose: bool = False,
 ) -> tuple[Literal["yes", "no", "unknown"], str]:
     assert "Question: " not in q.question
@@ -232,12 +233,22 @@ def get_openai_expected_answer(
         logging.info(f"Getting OpenAI expected answer for question: {q.question}")
         logging.info(f"Current expected answer: {q.expected_answer}")
 
+    if answer_mode == "answer-only":
+        system_prompt = "You are a helpful assistant that answers Yes/No/Unknown questions. You will receive a question and you will need to determine what is the correct answer. You should respond only with Yes, No, or Unknown, according to the conclusion you think fits best."
+    else:
+        system_prompt = """You are a helpful assistant that answers Yes/No/Unknown questions. You will receive a question and must determine the correct answer. Follow these rules:
+1. Think carefully about your answer
+2. Explain your reasoning clearly
+3. Your final Yes/No/Unknown answer MUST be consistent with your explanation
+4. End your response with a single word: either 'Yes', 'No', or 'Unknown'
+5. Double-check that your final answer matches your reasoning before responding"""
+
     response = openai_client.chat.completions.create(
         model=openai_model,
         messages=[
             {
                 "role": "system",
-                "content": "You are a helpful assistant that answers Yes/No questions. You will receive a question and you will need to determine what is the correct answer. You should respond only with Yes, No, or Unknown, according to the conclusion you think fits best.",
+                "content": system_prompt,
             },
             {"role": "user", "content": q.question},
         ],
@@ -319,8 +330,8 @@ def get_openai_expected_answer(
     if parsed_answer != q.expected_answer:
         logging.warning(
             f'Parsed OpenAI answer "{parsed_answer}" is different from expected answer "{q.expected_answer}"\n'
-            f"ID: {q_id}\n"
-            f"Question: {q.question}\n"
+            f"Question ({q_id}): {q.question}\n"
+            f"Raw OpenAI answer: {raw_openai_answer}\n"
         )
 
     return parsed_answer, raw_openai_answer
