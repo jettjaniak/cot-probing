@@ -161,7 +161,7 @@ def collect_activations_for_question(
         resid_acts = resid_acts_by_layer_by_cot
 
     return {
-        "question": question,
+        "question": q.question,
         "q_id": q_id,
         "expected_answer": expected_answer,
         "biased_cots_tokens_to_cache": last_q_toks_to_cache,
