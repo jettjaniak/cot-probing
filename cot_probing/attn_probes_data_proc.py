@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 
+import pickle
 from dataclasses import dataclass
 
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset
 
+from cot_probing import DATA_DIR
+from cot_probing.cot_evaluation import LabeledCot, LabeledCoTs
+from cot_probing.qs_generation import Question
 from cot_probing.typing import *
 from cot_probing.utils import setup_determinism
 
@@ -95,25 +99,92 @@ def collate_fn(
 
 def load_data(
     raw_q_dicts: list[dict],
-    data_device: str,
+    data_config: DataConfig,
+    min_faithful_threshold: float = 0.8,
+    max_unfaithful_threshold: float = 0.5,
 ) -> tuple[list[list[Float[torch.Tensor, "seq d_model"]]], list[int]]:
     """Extract sequences and labels from the dataset for probe training"""
+    data_device = data_config.data_device
+
+    bia_cots_eval_path = (
+        DATA_DIR
+        / "bia-cots-eval"
+        / f"{data_config.model_name}_{data_config.dataset_id}.pkl"
+    )
+    with open(bia_cots_eval_path, "rb") as f:
+        bia_cots_eval_results: LabeledCoTs = pickle.load(f)
+
+    unb_cots_eval_path = (
+        DATA_DIR
+        / "unb-cots-eval"
+        / f"{data_config.model_name}_{data_config.dataset_id}.pkl"
+    )
+    with open(unb_cots_eval_path, "rb") as f:
+        unb_cots_eval_results: LabeledCoTs = pickle.load(f)
+
+    questions_path = DATA_DIR / "questions" / f"{data_config.dataset_id}.pkl"
+    with open(questions_path, "rb") as f:
+        questions_dataset: dict[str, Question] = pickle.load(f)
+
     cots_by_q = []
     labels_by_q = []
     for q_dict in raw_q_dicts:
-        # labels
-        biased_cot_label = q_dict["biased_cot_label"]
-        if biased_cot_label == "faithful":
+        q_str = q_dict["question"]
+        expected_answer = q_dict["expected_answer"]
+
+        labeled_bia_cots: list[LabeledCot] | None = None
+        labeled_unb_cots: list[LabeledCot] | None = None
+        if "q_id" in q_dict:
+            q_id = q_dict["q_id"]
+        else:
+            # acts pickle file is misisng q_id
+            # We'll try to find the q_id for this question in the questions_dataset, using the question string
+            split_string = "\nLet's think step by step:\n-"
+            if q_str.endswith(split_string):
+                q_str = q_str[: -len(split_string)]
+            split_string = "Question: "
+            if q_str.startswith(split_string):
+                q_str = q_str[len(split_string) :]
+
+            q_id = next(
+                (q_id for q_id, q in questions_dataset.items() if q.question == q_str),
+                None,
+            )
+            if q_id is None:
+                raise ValueError(f"Could not find q_id for question: {q_str}")
+
+        labeled_bia_cots = bia_cots_eval_results.labeled_cots_by_qid[q_id]
+        labeled_unb_cots = unb_cots_eval_results.labeled_cots_by_qid[q_id]
+
+        # Label question as faithful or unfaithful
+        unb_cots_acc = sum(
+            1 for cot in labeled_unb_cots if cot.justified_answer == expected_answer
+        )
+        bia_cots_acc = sum(
+            1 for cot in labeled_bia_cots if cot.justified_answer == expected_answer
+        )
+        if bia_cots_acc > min_faithful_threshold * unb_cots_acc:
+            # the model is mostly faithful for this question
             label = 1
-        elif biased_cot_label == "unfaithful":
+        elif bia_cots_acc < max_unfaithful_threshold * unb_cots_acc:
+            # the model is quite unfaithful for this question
             label = 0
         else:
-            raise ValueError(f"{biased_cot_label=}")
+            # The model has a mixed behaviour, we skip the question.
+            continue
+
         labels_by_q.append(label)
-        # activations
-        # we have multiple CoTs per question
-        # TODO: just don't collect acts for answer tokens
-        acts_by_cot = [acts.to(data_device)[:-4] for acts in q_dict["cached_acts"]]
+        acts_by_cot = []
+        for i, acts in enumerate(q_dict["cached_acts"]):
+            if label == 1:
+                # Question is labeled as faithful, keep only the cots that lead to the correct answer
+                if labeled_bia_cots[i].justified_answer == expected_answer:
+                    acts_by_cot.append(acts.to(data_device))
+            else:
+                # Question is labeled as unfaithful, keep only the cots that lead to the incorrect answer
+                if labeled_bia_cots[i].justified_answer != expected_answer:
+                    acts_by_cot.append(acts.to(data_device))
+
         cots_by_q.append(acts_by_cot)
     return cots_by_q, labels_by_q
 
@@ -204,5 +275,5 @@ def load_and_split_data(
     tuple[DataLoader, DataLoader, DataLoader],
     tuple[list[int], list[int], list[int]],
 ]:
-    cots_by_q, labels_by_q_list = load_data(raw_q_dicts, data_config.data_device)
+    cots_by_q, labels_by_q_list = load_data(raw_q_dicts, data_config)
     return split_data(cots_by_q, labels_by_q_list, data_config)
