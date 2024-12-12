@@ -104,6 +104,7 @@ def collect_activations_for_question(
     model: PreTrainedModel,
     tokenizer: PreTrainedTokenizerBase,
     q: Question,
+    q_id: str,
     layers: list[int],
     bia_cots: list[list[int]],
     unbiased_fsp_cache: tuple,
@@ -162,6 +163,7 @@ def collect_activations_for_question(
 
     return {
         "question": question,
+        "q_id": q_id,
         "expected_answer": expected_answer,
         "biased_cots_tokens_to_cache": last_q_toks_to_cache,
         "cached_acts": resid_acts,
@@ -263,6 +265,7 @@ def collect_activations(
                 model=model,
                 tokenizer=tokenizer,
                 q=qs_dataset[q_id],
+                q_id=q_id,
                 bia_cots=bia_cots_results.cots_by_qid[q_id],
                 layers=layers,
                 unbiased_fsp_cache=unbiased_fsp_cache,
