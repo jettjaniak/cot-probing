@@ -16,7 +16,6 @@ from cot_probing.activations import (
     collect_resid_acts_no_pastkv,
     collect_resid_acts_with_pastkv,
 )
-from cot_probing.cot_evaluation import LabeledCoTs
 from cot_probing.generation import BiasedCotGeneration, UnbiasedCotGeneration
 from cot_probing.qs_generation import Question
 from cot_probing.typing import *
@@ -227,7 +226,6 @@ def collect_activations(
     qs_dataset: dict[str, Question],
     unb_cots_results: UnbiasedCotGeneration,
     bia_cots_results: BiasedCotGeneration,
-    bia_cots_eval_results: LabeledCoTs,
     layers: list[int],
     biased_cots_collection_mode: Literal["none", "one", "all"],
     args: argparse.Namespace,
@@ -365,7 +363,6 @@ def main(args: argparse.Namespace):
     questions_dir = DATA_DIR / "questions"
     unb_cots_dir = DATA_DIR / "unb-cots"
     bia_cots_dir = DATA_DIR / "bia-cots"
-    bia_cots_eval_dir = DATA_DIR / "bia-cots-eval"
     activations_dir = Path("activations")
 
     model_name = args.model_id.split("/")[-1]
@@ -381,9 +378,6 @@ def main(args: argparse.Namespace):
 
     with open(bia_cots_dir / f"{output_name}.pkl", "rb") as f:
         bia_cots_results: BiasedCotGeneration = pickle.load(f)
-
-    with open(bia_cots_eval_dir / f"{output_name}.pkl", "rb") as f:
-        bia_cots_eval_results: LabeledCoTs = pickle.load(f)
 
     if args.layers:
         layers = [int(l) for l in args.layers.split(",")]
@@ -403,7 +397,6 @@ def main(args: argparse.Namespace):
         qs_dataset=questions_dataset,
         unb_cots_results=unb_cots_results,
         bia_cots_results=bia_cots_results,
-        bia_cots_eval_results=bia_cots_eval_results,
         layers=layers,
         biased_cots_collection_mode=args.biased_cots_collection_mode,
         args=args,
