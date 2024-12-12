@@ -12,6 +12,7 @@ from cot_probing.utils import setup_determinism
 
 @dataclass
 class DataConfig:
+    model_name: str
     dataset_id: str
     layer: int
     context: Literal["biased-fsp", "unbiased-fsp", "no-fsp"]
@@ -24,7 +25,7 @@ class DataConfig:
     batch_size: int
 
     def get_acts_filename(self) -> str:
-        return f"acts_L{self.layer:02d}_{self.context}_{self.dataset_id}.pkl"
+        return f"{self.model_name}_{self.dataset_id}/acts_L{self.layer:02d}_{self.context}.pkl"
 
 
 class SequenceDataset(Dataset):

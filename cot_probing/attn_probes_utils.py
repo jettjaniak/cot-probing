@@ -66,13 +66,16 @@ def load_median_probe_test_data(
 
 
 def build_data_config(args: argparse.Namespace, cv_test_fold: int) -> DataConfig:
-    acts_str, layer_str, context, dataset_id = args.file.stem.split("_")
+    parent_name = args.file.parent.name
+    model_name, dataset_id = parent_name.split("_")
+    acts_str, layer_str, context = args.file.stem.split("_")
     assert acts_str == "acts"
     layer = int(layer_str[1:])
     assert layer_str == f"L{layer:02d}"
     assert context in ["biased-fsp", "unbiased-fsp", "no-fsp"]
 
     return DataConfig(
+        model_name=model_name,
         dataset_id=dataset_id,
         layer=layer,
         context=context,
