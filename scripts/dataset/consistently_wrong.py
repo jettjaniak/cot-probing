@@ -18,7 +18,7 @@ from cot_probing.qs_generation import Question
 from cot_probing.typing import *
 from cot_probing.utils import is_chat_model, load_tokenizer
 
-openai_client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+openai_client = OpenAI()
 
 
 def parse_args():
@@ -38,6 +38,35 @@ MODELS_MAP = {
     "G": "google/gemma-2-2b-it",
     "L": "meta-llama/Llama-3.2-3B-Instruct",
 }
+
+
+def display_lines(stdscr: curses.window, text: str, y_pos: int) -> int:
+    max_y, max_x = stdscr.getmaxyx()
+    lines = text.split("\n")
+    for line in lines:
+        # Then wrap each line to fit screen width
+        while line and y_pos < max_y - 3:  # Leave space for instructions
+            # Calculate how much of the line can fit
+            available_width = max_x - 2
+            chunk = line[:available_width]
+
+            # If this isn't the end of the line, try to break at a space
+            if len(line) > available_width:
+                last_space = chunk.rfind(" ")
+                if last_space > 0:  # If we found a space
+                    chunk = chunk[:last_space]
+                    line = line[last_space + 1 :]
+                else:
+                    line = line[available_width:]
+            else:
+                line = ""
+
+            try:
+                stdscr.addstr(y_pos, 0, chunk)
+            except curses.error:
+                pass  # Ignore if we try to write beyond screen bounds
+            y_pos += 1
+    return y_pos
 
 
 def display_interface(
@@ -93,36 +122,7 @@ def display_interface(
                 curses.A_BOLD,
             )
             cot_string = tokenizer.decode(wrong_cots[current_cot_idx].cot)
-
-            # Split into lines and handle wrapping
-            max_y, max_x = stdscr.getmaxyx()
-            y_pos = 9
-
-            # Split by newlines first
-            lines = cot_string.split("\n")
-            for line in lines:
-                # Then wrap each line to fit screen width
-                while line and y_pos < max_y - 3:  # Leave space for instructions
-                    # Calculate how much of the line can fit
-                    available_width = max_x - 2
-                    chunk = line[:available_width]
-
-                    # If this isn't the end of the line, try to break at a space
-                    if len(line) > available_width:
-                        last_space = chunk.rfind(" ")
-                        if last_space > 0:  # If we found a space
-                            chunk = chunk[:last_space]
-                            line = line[last_space + 1 :]
-                        else:
-                            line = line[available_width:]
-                    else:
-                        line = ""
-
-                    try:
-                        stdscr.addstr(y_pos, 0, chunk)
-                    except curses.error:
-                        pass  # Ignore if we try to write beyond screen bounds
-                    y_pos += 1
+            y_pos = display_lines(stdscr, cot_string, y_pos=9)
 
             if re_evaluated_justified_answer is None:
                 y_pos += 1
@@ -132,10 +132,11 @@ def display_interface(
                     f"Justified answer: ",
                     curses.A_BOLD,
                 )
-                stdscr.addstr(
+                y_pos = display_lines(
+                    stdscr,
                     wrong_cots[current_cot_idx].justified_answer,
+                    y_pos + 1,
                 )
-
             else:
                 assert re_evaluated_raw_openai_answer is not None
                 y_pos += 1
@@ -167,7 +168,7 @@ def display_interface(
                     f"Honesty questions: ",
                     curses.A_BOLD,
                 )
-                stdscr.addstr("\n".join(honesty_questions))
+                y_pos = display_lines(stdscr, "\n".join(honesty_questions), y_pos + 1)
 
             if subjective_score is not None:
                 y_pos += 1
@@ -179,10 +180,11 @@ def display_interface(
                 )
                 stdscr.addstr(str(subjective_score))
 
+        max_y, _max_x = stdscr.getmaxyx()
         # Display instructions
         stdscr.addstr(max_y - 2, 0, "Controls: ", curses.A_BOLD)
         stdscr.addstr(
-            "← → (navigate CoTs) | ↑ ↓ (navigate questions) | e (re-eval just. ans.) | h (eval honest.) | s (eval subjective) | q (quit)",
+            "← → (CoTs) | ↑ ↓ (Qs) | e (re-eval just. ans.) | h (eval honest.) | s (eval subjective) | q (quit)",
             curses.color_pair(2),
         )
 
