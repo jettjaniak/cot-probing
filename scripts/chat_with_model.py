@@ -32,14 +32,31 @@ def parse_args():
     return parser.parse_args()
 
 
+def get_multiline_input() -> str:
+    """Get multiline input from user. Use Ctrl+D (EOF) to finish input."""
+    print("\nYou: ", end="", flush=True)
+    lines = []
+
+    while True:
+        try:
+            line = input()
+            lines.append(line.rstrip())
+        except EOFError:  # Handle Ctrl+D
+            print("\nGenerating response...")
+            break
+
+    return "\n".join(lines).strip()
+
+
 def chat_loop(model, tokenizer, args):
     print("\nChat started. Type 'quit' or press Ctrl+C to exit.")
-    print("Type 'clear' to start a new conversation.\n")
+    print("Type 'clear' to start a new conversation.")
+    print("Enter your message (press Ctrl+D to finish):\n")
 
     conversation = []
     while True:
         try:
-            user_input = input("\nYou: ").strip()
+            user_input = get_multiline_input()
 
             if user_input.lower() == "quit":
                 break
