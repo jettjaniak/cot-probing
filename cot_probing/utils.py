@@ -70,9 +70,9 @@ def load_any_model_and_tokenizer(
     )
 
     # get rid of the warnings early
-    model(torch.tensor([[tokenizer.bos_token_id]]).cuda())
+    model(torch.tensor([[tokenizer.eos_token_id]]).cuda())
     model.generate(
-        torch.tensor([[tokenizer.bos_token_id]]).cuda(),
+        torch.tensor([[tokenizer.eos_token_id]]).cuda(),
         max_new_tokens=1,
         pad_token_id=tokenizer.eos_token_id,
     )
